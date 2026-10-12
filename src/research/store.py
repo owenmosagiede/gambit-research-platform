@@ -17,13 +17,16 @@ def inside(root,relative):
     return p
 
 def read_json(p):
+    from data.catalog_reads import reading
     def pairs(items):
         result={}
         for k,v in items:
             if k in result:raise ResearchError('Duplicate JSON key')
             result[k]=v
         return result
-    return json.loads(p.read_bytes(),object_pairs_hook=pairs,parse_constant=lambda v:(_ for _ in ()).throw(ResearchError('Nonfinite JSON')))
+    with reading(p):
+        data = p.read_bytes()
+    return json.loads(data,object_pairs_hook=pairs,parse_constant=lambda v:(_ for _ in ()).throw(ResearchError('Nonfinite JSON')))
 
 def install_bytes(path,data,*,mutable=False):
     path.parent.mkdir(parents=True,exist_ok=True)

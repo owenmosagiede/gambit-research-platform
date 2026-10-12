@@ -5,6 +5,7 @@ never computes observations, creates source-specific Features, or changes a
 historical Feature, Signal, materialization, or experiment identity.
 """
 from collections import Counter
+from data.catalog_reads import catalog_glob, memo
 from copy import deepcopy
 import re
 
@@ -169,7 +170,7 @@ def _pinned_read_context(root):
     is checked by strict binding reads or independently by a Scope resolver.
     """
     store=FeatureStore(root)
-    paths=sorted(store.path(REGISTRATION_ROOT).glob('*/manifest.json'))
+    paths=sorted(catalog_glob(store.path(REGISTRATION_ROOT), '*/manifest.json'))
     if not paths:raise ReusableRecipeNotFound('Reusable FX recipes have not been registered')
     registry,policy,variants=_context(root)
     definitions={key:_definition(registry,policy,item) for key,item in variants.items()}
@@ -226,6 +227,10 @@ def _pinned_read_context(root):
 
 
 def _registered(root):
+    return memo(root, 'registered_reusable_recipes', lambda: _read_registered(root))
+
+
+def _read_registered(root):
     store,registry,policy,definitions,bindings=_pinned_read_context(root)
     records={}
     for definition in definitions.values():

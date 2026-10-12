@@ -235,12 +235,12 @@ class ApplicationRoutes:
         if target.query:
             self.error(400,'UNSUPPORTED_QUERY','This endpoint does not accept query parameters.',head);return
         if target.path=='/api/signal-library-summaries':
-            try:value=catalogs.get("list_signal_summaries",lambda:list_signal_summaries(root))
+            try:value=catalogs.get_verified("list_signal_summaries",root,lambda:list_signal_summaries(root))
             except Exception:
                 self.error(503,'LIBRARY_UNAVAILABLE','Signal recipe summaries could not be loaded.',head);return
             self.send_json(200,value,head);return
         if target.path=='/api/feature-library':
-            try:value=catalogs.get("list_feature_library",lambda:list_feature_library(root))
+            try:value=catalogs.get_verified("list_feature_library",root,lambda:list_feature_library(root))
             except Exception:
                 self.error(503,'LIBRARY_UNAVAILABLE','Registered Feature definitions could not be loaded.',head);return
             self.send_json(200,value,head);return

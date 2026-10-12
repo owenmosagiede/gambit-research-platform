@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+from data.catalog_reads import reading, catalog_glob
 
 VERSION = '2.0.0'
 DEFAULT_ROOT = Path(__file__).resolve().parents[3]
@@ -37,7 +38,9 @@ def _read(path):
                 raise ValueError('Duplicate registry JSON key')
             value[key] = item
         return value
-    return json.loads(path.read_text(), object_pairs_hook=pairs,
+    with reading(path):
+        data = path.read_text()
+    return json.loads(data, object_pairs_hook=pairs,
                       parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Nonfinite registry value')))
 
 
@@ -61,7 +64,7 @@ class Registry:
 
     def _load(self, folder, kind, prefix=''):
         records = {}
-        for path in sorted((self.root/'definitions'/folder).glob('*/'+VERSION+'.json')):
+        for path in sorted(catalog_glob(self.root/'definitions'/folder, '*/'+VERSION+'.json')):
             if prefix and not path.parent.name.startswith(prefix):
                 continue
             if path.is_symlink() or not path.resolve().is_relative_to(self.root):
@@ -90,7 +93,8 @@ class Registry:
         target = self.root/f"storage/payloads/sha256/{payload['sha256'][:2]}/{payload['sha256']}.json"
         if not target.resolve().is_relative_to(self.root):
             raise ValueError('Policy payload path leaves platform')
-        data = target.read_bytes()
+        with reading(target):
+            data = target.read_bytes()
         if len(data) != payload['byte_count'] or hashlib.sha256(data).hexdigest() != payload['sha256']:
             raise ValueError('Policy evidence checksum mismatch')
 

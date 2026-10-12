@@ -9,6 +9,8 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -119,8 +121,8 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             'source_view':item['feature']['body']['recipe']['sources'][0]['source_view'],
             'price_snapshot':item['manifest']['input_key']['source_snapshots'][0]} for recipe,item in [*pairs,*unmaterialized]}
         for identifier in outputs:(self.root/signal_library.ENTRIES/identifier).mkdir()
-        def load(root,identifier):
-            return (store,[deepcopy(outputs[identifier])]) if identifier in outputs else original(root,identifier)
+        def load(root,identifier,**kwargs):
+            return (store,[deepcopy(outputs[identifier])]) if identifier in outputs else original(root,identifier,**kwargs)
         def project(feature):return deepcopy(mapping[feature['id']]['recipe'])
         for recipe,_ in [*pairs,*unmaterialized]:store.install_record(recipe)
         with patch('data.reusable_features.list_reusable_fx_recipes',return_value=list({r['id']:r for r,_ in [*pairs,*unmaterialized]}.values())), patch.object(signal_summaries,'_load_output_metadata',side_effect=load), \
@@ -172,6 +174,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertEqual(untested['outputs'],[]);self.assertEqual(untested['research']['state'],'untested')
 
     def test_authoritative_research_joins_existing_recipe_without_changing_outputs(self):
+        from api.catalog_cache import CatalogCache
         from runtime.research_jobs import ResearchJobs
         from test_research_runtime import Adapter, KernelSpy, profile, intent
         recipe, output = self.fx_item()
@@ -180,10 +183,16 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         request = intent(mode='CS'); request['feature'] = {'id':recipe['id'],'version':recipe['version']}
         jobs = ResearchJobs(self.root, adapter=Adapter(), kernels=KernelSpy())
         self.addCleanup(jobs.close)
-        jobs.submit(request); jobs.run_pending_once()
+        cache = CatalogCache()
+        read = lambda: cache.get_verified('signals', self.root, self.list)
+        with self.fx_outputs([(recipe,output)]):
+            before = read()
+            self.assertEqual(next(e for e in before['entries'] if e['id']==recipe['id'])['research']['state'], 'untested')
+            jobs.submit(request); jobs.run_pending_once()
+            result = read()
         self.assertEqual(jobs.get(request['request_id'])['status'],'succeeded')
-        with self.fx_outputs([(recipe,output)]): result = self.list()
         group = next(entry for entry in result['entries'] if entry['id']==recipe['id'])
+        self.assertEqual(group['outputs'], next(e for e in before['entries'] if e['id']==recipe['id'])['outputs'])
         self.assertEqual(result['entry_count'],2)  # Existing CES-style fixture plus one FX recipe.
         self.assertEqual(len(group['outputs']),1)
         self.assertIsNone(group['observation_count'])
@@ -281,6 +290,49 @@ class SignalRecipeSummaryTests(unittest.TestCase):
                     self.assertEqual((head_status,head_body),(200,b''))
                     self.assertEqual(headers['Content-Length'],head_headers['Content-Length'])
         self.assertEqual(inventory(self.root),before)
+
+    def test_http_caches_refresh_after_a_separate_process_publishes_output(self):
+        args=deepcopy(self.arguments)
+        args['result']=execute_recipe(args['input_series'],args['feature']['body']['recipe'],['2020-03-15'],
+            registry=Registry(self.root),implementation=reference(args['implementation']))
+        args['operand_links']=[args['operand_links'][-1]]
+        arguments_path=Path(self.temp.name)/'publication.json'
+        arguments_path.write_text(json.dumps(args))
+        endpoint='/api/signal-library-summaries'
+        with running(self.root) as first, running(self.root) as second:
+            for address in (first,second):
+                status,_,body=request(address,endpoint)
+                self.assertEqual(status,200)
+                self.assertEqual(json.loads(body)['entries'][0]['signal']['materialization_count'],1)
+            child=subprocess.run([sys.executable,'-c',
+                'import json,sys; from pathlib import Path; from data.feature_store import publish_feature; '
+                'publish_feature(Path(sys.argv[1]),**json.loads(Path(sys.argv[2]).read_text()))',
+                str(self.root),str(arguments_path)],capture_output=True,text=True,timeout=30)
+            self.assertEqual(child.returncode,0,child.stderr)
+            after_publication=inventory(self.root)
+            for address in (first,second):
+                status,_,body=request(address,endpoint)
+                self.assertEqual(status,200)
+                response=json.loads(body)
+                self.assertEqual(response['issues'],[])
+                self.assertEqual(response['entries'][0]['signal']['materialization_count'],2)
+            self.assertEqual(inventory(self.root),after_publication)
+
+    def test_warm_catalog_rechecks_corrupt_metadata_and_recovers_after_repair(self):
+        from api.catalog_cache import CatalogCache
+        from data.feature_store import record_path
+        cache=CatalogCache()
+        read=lambda:cache.get_verified('signals',self.root,self.list)
+        original=read()
+        operator=Registry(self.root).operator('TR_BASE_change_pct')
+        path=self.root/record_path(operator);saved=path.read_bytes()
+        path.write_bytes(b'{')
+        broken=read()
+        self.assertTrue(broken['issues'])
+        self.assertFalse(cache.verified_entries)
+        self.assertNotEqual(broken,original)
+        path.write_bytes(saved)
+        self.assertEqual(read(),original)
 
     def test_http_rejects_invalid_queries_and_mutations_without_writes(self):
         before=inventory(self.root);detail='/api/signal-library-outputs/'+self.signal_id

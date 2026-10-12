@@ -21,6 +21,9 @@ SUITES = [
     'test_research_http', 'test_separate_services', 'test_production_access',
     'test_production_http', 'test_production_session_js', 'test_queue_ui',
     'test_signal_recipe_ui', 'test_library_pages_ui', 'test_research_ui',
+    'test_catalog_cache', 'test_catalog_reads', 'test_signal_recipe_summaries',
+    'test_signal_library_api', 'test_feature_library_api',
+    'test_reusable_feature_recipes', 'test_feature_research_dashboard',
     'test_cloud_migration', 'test_cloud_backup', 'test_cloud_health',
 ]
 

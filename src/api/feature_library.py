@@ -5,6 +5,7 @@ addressable through the Signal Library but are not duplicate selectable recipes.
 """
 import re
 from pathlib import Path
+from data.catalog_reads import catalog_glob
 
 from data.alfred_onboarding import stable_read, strict_json
 from data.feature_store import FeatureStore, record_path, PublicationError
@@ -49,16 +50,19 @@ def _item(store, record, kind):
         'transformations':transformations,'signal_id':None if kind=='reusable_fx_recipe' else body['signal_id']}
 
 
-def list_feature_library(root):
+def list_feature_library(root, *, store=None):
     from data.reusable_features import list_reusable_fx_recipes, ReusableRecipeNotFound
-    store=FeatureStore(root)
+    store=store or FeatureStore(root)
+    # New definitions can make a formerly unique reference ambiguous. Include
+    # membership across all definition types, not only currently selected files.
+    tuple(catalog_glob(store.path('definitions'), '*/*/*.json'))
     try:native=list_reusable_fx_recipes(root)
     except ReusableRecipeNotFound:
-        if any(store.path('storage/catalog/feature_recipes').glob('*/manifest.json')):raise
+        if any(catalog_glob(store.path('storage/catalog/feature_recipes'), '*/manifest.json')):raise
         native=[]
     features=[_item(store,record,'reusable_fx_recipe') for record in native]
     issues=[]
-    for path in sorted(store.path('definitions/features').glob('*/*.json')):
+    for path in sorted(catalog_glob(store.path('definitions/features'), '*/*.json')):
         try:
             record=strict_json(stable_read(path))
             if not _legacy_non_fx(store,record):continue
