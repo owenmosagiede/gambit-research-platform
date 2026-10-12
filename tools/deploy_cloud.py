@@ -2,6 +2,7 @@
 """Operator-triggered release transfer. Default action only previews changes."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -13,8 +14,15 @@ from release_bundle import verify
 def ssh_args(key, known_hosts):
     for path in (key, known_hosts):
         if not Path(path).is_file(): raise ValueError('An existing deployment key and pinned known_hosts file are required')
+    control = Path('/tmp/gambit-cloud-608233107')
+    if control.is_symlink(): raise ValueError('Unsafe SSH control directory')
+    control.mkdir(mode=0o700, exist_ok=True)
+    if control.stat().st_uid != os.getuid() or control.stat().st_mode & 0o077:
+        raise ValueError('SSH control directory must be private to this user')
     return ['ssh', '-i', str(key), '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
             '-o', 'UserKnownHostsFile='+str(known_hosts), '-o', 'IPQoS=none', '-o', 'ConnectTimeout=15',
+            '-o', 'ConnectionAttempts=2', '-o', 'ControlMaster=auto', '-o', 'ControlPersist=900',
+            '-o', 'ControlPath='+str(control/'ssh'),
             'root@64.23.188.70']
 
 

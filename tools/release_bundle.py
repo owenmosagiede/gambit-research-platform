@@ -21,7 +21,7 @@ def safe_path(name):
             or any(x in {'private', '__pycache__', '.git'} for x in p.parts)
             or any(x.startswith('.env') for x in p.parts)
             or '.local.' in p.name or p.suffix in {'.key', '.pem', '.pyc', '.log', '.sqlite', '.sqlite3', '.db'}
-            or p.name.startswith(('credentials', 'secrets'))):
+            or p.name == '.gitkeep' or p.name.startswith(('credentials', 'secrets'))):
         return False
     return name in ROOT_FILES or (len(p.parts) > 1 and p.parts[0] in FOLDERS)
 
@@ -45,7 +45,7 @@ def build(root, output):
     commit = git('rev-parse', 'HEAD').decode().strip()
     files = {}
     for name in git('ls-files', '-z').decode().split('\0'):
-        if not name or name.startswith('.github/') or name in {'.gitignore', 'AGENTS.md'}:
+        if not name or name.startswith('.github/') or name in {'.gitignore', 'AGENTS.md'} or PurePosixPath(name).name == '.gitkeep':
             continue
         if not safe_path(name):
             raise ValueError('File is outside the release allowlist: '+name)

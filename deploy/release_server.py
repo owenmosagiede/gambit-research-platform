@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 from release_bundle import verify, sha, canonical
@@ -26,7 +27,7 @@ STATE = Path('/var/lib/gambit-releases')
 BACKUP = Path('/var/lib/gambit-backup')
 UNITS = ('gambit-web.service', 'gambit-worker.service')
 LOCKS = ('research-worker-service', 'research-executor', 'research-writer')
-CODE_DIRS = {'src', 'ui', 'tools', 'specs', 'docs'}
+CODE_DIRS = {'src', 'ui', 'tools', 'docs'}
 
 
 def safe_target(root, name):
@@ -45,7 +46,10 @@ def plan(root, manifest, files):
         if old == row['sha256']: continue
         if folder in CODE_DIRS:
             changes.append({'path': name, 'before': old, 'after': row['sha256']})
-        elif folder in {'definitions', 'config'} or name.startswith('requirements-'):
+        elif (folder in {'definitions', 'config', 'specs'} or name.startswith('requirements-')
+              or (folder == 'deploy' and (target.suffix in {'.sh', '.service', '.timer'}
+                  or target.name in {'Caddyfile', 'gunicorn.conf.py', 'production.env.example',
+                                     'backup_cloud.py', 'health_cloud.py'}))):
             blocked.append({'path': name, 'reason': 'Requires an explicit registry/configuration/runtime migration'})
         # Tests, documentation for operators, and service installers may travel
         # in the artifact but are never implicitly installed as service changes.
@@ -190,8 +194,9 @@ def apply(machine, manifest, files, expected_plan):
         if proposal['blockers']: raise RuntimeError('Deployment plan has migration blockers')
         if not proposal['changes']: return dict(proposal, status='already_installed')
         machine.backup_ready(); stop_idle(machine)
-        folder = machine.state/(manifest['commit']+'-'+expected_plan[:12])
-        receipt = dict(proposal, status='installing', started_at=datetime.now(timezone.utc).isoformat())
+        release_id = manifest['commit']+'-'+uuid.uuid4().hex[:12]
+        folder = machine.state/release_id
+        receipt = dict(proposal, release_id=release_id, status='installing', started_at=datetime.now(timezone.utc).isoformat())
         can_restart = True
         try:
             with ExitStack() as locks:

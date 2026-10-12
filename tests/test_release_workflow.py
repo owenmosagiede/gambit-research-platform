@@ -68,7 +68,7 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'checksum'):bundle.verify(p,'0'*64)
     def test_storage_secrets_traversal_and_unlisted_members_rejected(self):
         for name in ('storage/observations.json','auth/auth.sqlite3','config/storage.local.json',
-                     'src/../storage/raw.json','/tmp/escape','deploy/private/key','config/.env'):
+                     'src/../storage/raw.json','/tmp/escape','deploy/private/key','config/.env','config/.gitkeep'):
             with self.subTest(name=name):self.assertFalse(bundle.safe_path(name))
         p=self.archive(extra={'src/not-in-manifest.py':b'x'})
         with self.assertRaisesRegex(ValueError,'inventory'):bundle.verify(p,bundle.sha(p.read_bytes()))
@@ -88,6 +88,13 @@ class ReleaseTests(unittest.TestCase):
     def test_existing_code_removal_blocked(self):
         (self.m.root/'src/extra.py').write_bytes(b'existing')
         self.assertTrue(self.proposal()['blockers'])
+    def test_schema_dependencies_and_service_changes_require_explicit_migration(self):
+        for name in ('specs/schema.json','requirements-cloud.lock','deploy/systemd/gambit-worker.service',
+                     'deploy/backup_cloud.py','deploy/gunicorn.conf.py','deploy/install_services.sh'):
+            with self.subTest(name=name):
+                files=dict(self.files);files[name]=b'changed contract or service'
+                proposal=server.plan(self.m.root,artifact(files),files)
+                self.assertTrue(any(row['path']==name for row in proposal['blockers']))
     def test_symlink_parent_cannot_redirect_code_into_storage(self):
         (self.m.root/'tools').symlink_to(self.m.root/'storage',target_is_directory=True)
         with self.assertRaisesRegex(ValueError,'Unsafe'):server.safe_target(self.m.root,'tools/file.py')
@@ -144,6 +151,11 @@ class ReleaseTests(unittest.TestCase):
     def test_duplicate_apply_is_noop(self):
         self.apply();events=list(self.m.events)
         self.assertEqual(self.apply()['status'],'already_installed');self.assertEqual(self.m.events,events)
+    def test_release_can_be_applied_again_after_a_successful_rollback(self):
+        first=self.apply();server.rollback(self.m,first['release_id']);second=self.apply()
+        self.assertEqual(second['status'],'succeeded')
+        self.assertNotEqual(first['release_id'],second['release_id'])
+        self.assertEqual(len(list(self.m.state.glob('*/receipt.json'))),2)
     def test_failed_restoration_leaves_services_stopped(self):
         def broken_write(path, data): raise RuntimeError('disk unavailable')
         self.m.write=broken_write
