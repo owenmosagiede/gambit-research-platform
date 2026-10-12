@@ -51,8 +51,8 @@ This uploads only the verified source archive and prints a read-only plan.
 Inspect changed files, migration blockers, and active requests. To apply that
 exact plan, repeat with action `apply` and `--plan-sha256 PLAN_SHA256`.
 
-Application code, UI, tools, schemas and developer docs can be updated by this
-path. Existing code removal, new/changed definitions or policy configuration,
+Application code, UI, tools and developer docs can be updated by this path.
+Existing code removal, new/changed definitions, schemas or policy configuration,
 dependencies, and service/runtime changes need a separately reviewed migration.
 Service installers are not executed automatically. Historical data and records
 are never copied from the Mac over the cloud.

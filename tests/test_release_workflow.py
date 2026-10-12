@@ -88,6 +88,13 @@ class ReleaseTests(unittest.TestCase):
     def test_existing_code_removal_blocked(self):
         (self.m.root/'src/extra.py').write_bytes(b'existing')
         self.assertTrue(self.proposal()['blockers'])
+    def test_schema_dependencies_and_service_changes_require_explicit_migration(self):
+        for name in ('specs/schema.json','requirements-cloud.lock','deploy/systemd/gambit-worker.service',
+                     'deploy/backup_cloud.py','deploy/gunicorn.conf.py','deploy/install_services.sh'):
+            with self.subTest(name=name):
+                files=dict(self.files);files[name]=b'changed contract or service'
+                proposal=server.plan(self.m.root,artifact(files),files)
+                self.assertTrue(any(row['path']==name for row in proposal['blockers']))
     def test_symlink_parent_cannot_redirect_code_into_storage(self):
         (self.m.root/'tools').symlink_to(self.m.root/'storage',target_is_directory=True)
         with self.assertRaisesRegex(ValueError,'Unsafe'):server.safe_target(self.m.root,'tools/file.py')

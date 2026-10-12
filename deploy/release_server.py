@@ -27,7 +27,7 @@ STATE = Path('/var/lib/gambit-releases')
 BACKUP = Path('/var/lib/gambit-backup')
 UNITS = ('gambit-web.service', 'gambit-worker.service')
 LOCKS = ('research-worker-service', 'research-executor', 'research-writer')
-CODE_DIRS = {'src', 'ui', 'tools', 'specs', 'docs'}
+CODE_DIRS = {'src', 'ui', 'tools', 'docs'}
 
 
 def safe_target(root, name):
@@ -46,7 +46,10 @@ def plan(root, manifest, files):
         if old == row['sha256']: continue
         if folder in CODE_DIRS:
             changes.append({'path': name, 'before': old, 'after': row['sha256']})
-        elif folder in {'definitions', 'config'} or name.startswith('requirements-'):
+        elif (folder in {'definitions', 'config', 'specs'} or name.startswith('requirements-')
+              or (folder == 'deploy' and (target.suffix in {'.sh', '.service', '.timer'}
+                  or target.name in {'Caddyfile', 'gunicorn.conf.py', 'production.env.example',
+                                     'backup_cloud.py', 'health_cloud.py'}))):
             blocked.append({'path': name, 'reason': 'Requires an explicit registry/configuration/runtime migration'})
         # Tests, documentation for operators, and service installers may travel
         # in the artifact but are never implicitly installed as service changes.
