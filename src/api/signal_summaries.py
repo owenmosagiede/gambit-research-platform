@@ -5,6 +5,8 @@ observation verification occurs when an output is opened. Research links retain 
 original relationship and result references; they never certify a whole recipe.
 """
 from copy import deepcopy
+from pathlib import Path
+from data.catalog_reads import catalog_glob
 
 from api.signal_library import (ENTRIES, SIGNAL_ID, MATERIALIZATION_ID,
     SignalNotFound, _summary, _coverage, _detail)
@@ -119,10 +121,10 @@ def _output_summary(store,loaded):
     return output
 
 
-def _load_output_metadata(root, identifier):
+def _load_output_metadata(root, identifier, *, store=None):
     """Validate exact catalog references without opening observation payloads."""
-    store=FeatureStore(root);entries=[];bindings={};feature_ref=None
-    for path in sorted(store.path(ENTRIES+'/'+identifier).glob('*.json')):
+    store=store or FeatureStore(root);entries=[];bindings={};feature_ref=None
+    for path in sorted(catalog_glob(store.path(ENTRIES+'/'+identifier), '*.json')):
         entry=normalize_library_entry(strict_json(stable_read(path)))
         if entry['signal_id']!=identifier or path.name!=digest(entry)+'.json':
             raise PublicationError('Signal projection identity mismatch')
@@ -187,7 +189,9 @@ def _research_catalog(root):
     from research.store import ResearchStore, FOLDERS, inside
     from research.contracts import ref
     store=ResearchStore(root);result={}
-    for path in sorted(inside(root,'storage/catalog/'+FOLDERS['link']).glob('RESEARCHLINK_*.json')):
+    relative='storage/catalog/'+FOLDERS['link']
+    inside(root,relative)  # Preserve confinement and watch the original path too.
+    for path in sorted(catalog_glob(Path(root)/relative, 'RESEARCHLINK_*.json')):
         link=store.get('link',path.stem);relation=store.resolve('relationship',link['body']['relationship'])
         recipe_id=relation['body']['recipe']['id']
         result.setdefault(recipe_id,[]).append({'signal_id':'SIGNAL_'+recipe_id.removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
@@ -199,7 +203,7 @@ def _research_catalog(root):
 def list_signal_summaries(root):
     store=FeatureStore(root);folder=store.path(ENTRIES);groups={};legacy=[];issues=[]
     from api.feature_library import list_feature_library
-    catalog=list_feature_library(root)
+    catalog=list_feature_library(root, store=store)
     issues.extend(catalog['issues'])
     for item in catalog['features']:
         feature=store.resolve(item['reference']);entry=_registered_entry(store,feature)
@@ -209,12 +213,12 @@ def list_signal_summaries(root):
     except Exception:
         research_catalog=None
         issues.append({'code':'RESEARCH_STATUS_UNAVAILABLE','message':'Research status could not be checked; definitions remain visible.'})
-    for path in sorted(folder.iterdir()) if folder.exists() else []:
+    for path in sorted(catalog_glob(folder, '*')):
         if path.name.startswith('.'):continue
         sid=path.name if SIGNAL_ID.fullmatch(path.name) else None
         try:
             if sid is None or not path.is_dir():raise SignalNotFound('Unknown Signal')
-            loaded_store,loaded=_load_output_metadata(root,sid)
+            loaded_store,loaded=_load_output_metadata(root,sid,store=store)
             if loaded[0]['metadata']['dataset']['body'].get('kind')!='fx_constructed_dataset':
                 # Existing non-FX summary fields and presentation are unchanged.
                 summary=_metadata_summary(loaded_store,loaded)

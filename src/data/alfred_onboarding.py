@@ -54,8 +54,10 @@ def identified(kind, body, prefix, schema='0.1.0'):
     return dict(base, id=prefix+sha(canonical(base)))
 
 def stable_read(path, expected_sha=None):
+    from data.catalog_reads import reading
     path = Path(path)
-    before = path.stat(); data = path.read_bytes(); after = path.stat()
+    with reading(path):
+        before = path.stat(); data = path.read_bytes(); after = path.stat()
     if (before.st_ino,before.st_size,before.st_mtime_ns) != (after.st_ino,after.st_size,after.st_mtime_ns):
         raise ValueError('source changed during bounded read')
     if expected_sha is not None and sha(data) != expected_sha: raise ValueError('source checksum mismatch')

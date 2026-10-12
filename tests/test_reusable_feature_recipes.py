@@ -169,6 +169,16 @@ class ReusableFeatureRecipeTests(unittest.TestCase):
             self.assertEqual((first['legacy_binding_count'],first['new_observations'],first['historical_records_rewritten']),(7740,0,0))
             listed=reusable.list_reusable_fx_recipes(self.root)
             self.assertEqual(len(listed),180)
+            from data.catalog_reads import catalog_reads
+            with patch.object(reusable,'_read_registered',wraps=reusable._read_registered) as verified:
+                with catalog_reads(self.root) as dependencies:
+                    self.assertEqual(reusable.list_reusable_fx_recipes(self.root),listed)
+                    mappings,_=reusable.reusable_recipe_mapping_context(self.root)
+                    self.assertEqual(len(mappings),7740)
+                self.assertEqual(verified.call_count,1)
+                self.assertFalse(dependencies.values)
+                self.assertEqual(reusable.list_reusable_fx_recipes(self.root),listed)
+                self.assertEqual(verified.call_count,2)
             selected=next(r for r in listed if r['display_name']=='Log -> Skip-Recent Difference (k=63, s=5)')
             loaded=reusable.load_reusable_recipe(self.root,selected['id'])
             self.assertEqual(reference(selected),reference(loaded))
