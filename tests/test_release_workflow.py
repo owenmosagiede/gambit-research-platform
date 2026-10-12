@@ -144,6 +144,11 @@ class ReleaseTests(unittest.TestCase):
     def test_duplicate_apply_is_noop(self):
         self.apply();events=list(self.m.events)
         self.assertEqual(self.apply()['status'],'already_installed');self.assertEqual(self.m.events,events)
+    def test_release_can_be_applied_again_after_a_successful_rollback(self):
+        first=self.apply();server.rollback(self.m,first['release_id']);second=self.apply()
+        self.assertEqual(second['status'],'succeeded')
+        self.assertNotEqual(first['release_id'],second['release_id'])
+        self.assertEqual(len(list(self.m.state.glob('*/receipt.json'))),2)
     def test_failed_restoration_leaves_services_stopped(self):
         def broken_write(path, data): raise RuntimeError('disk unavailable')
         self.m.write=broken_write

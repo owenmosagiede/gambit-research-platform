@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 from release_bundle import verify, sha, canonical
@@ -190,8 +191,9 @@ def apply(machine, manifest, files, expected_plan):
         if proposal['blockers']: raise RuntimeError('Deployment plan has migration blockers')
         if not proposal['changes']: return dict(proposal, status='already_installed')
         machine.backup_ready(); stop_idle(machine)
-        folder = machine.state/(manifest['commit']+'-'+expected_plan[:12])
-        receipt = dict(proposal, status='installing', started_at=datetime.now(timezone.utc).isoformat())
+        release_id = manifest['commit']+'-'+uuid.uuid4().hex[:12]
+        folder = machine.state/release_id
+        receipt = dict(proposal, release_id=release_id, status='installing', started_at=datetime.now(timezone.utc).isoformat())
         can_restart = True
         try:
             with ExitStack() as locks:

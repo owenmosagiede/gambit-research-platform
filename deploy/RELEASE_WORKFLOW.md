@@ -78,7 +78,7 @@ Off-host research backups remain governed by `BACKUP_RECOVERY.txt`.
 python tools/deploy_cloud.py rollback \
   --ssh-key /protected/path/to/deployment-key \
   --known-hosts /protected/path/to/known_hosts \
-  --release-id COMMIT-PLANPREFIX
+  --release-id COMMIT-ATTEMPTSUFFIX
 ```
 
 Rollback also requires idle research and a recent backup. It restores code only,
