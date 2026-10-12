@@ -68,7 +68,7 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'checksum'):bundle.verify(p,'0'*64)
     def test_storage_secrets_traversal_and_unlisted_members_rejected(self):
         for name in ('storage/observations.json','auth/auth.sqlite3','config/storage.local.json',
-                     'src/../storage/raw.json','/tmp/escape','deploy/private/key','config/.env'):
+                     'src/../storage/raw.json','/tmp/escape','deploy/private/key','config/.env','config/.gitkeep'):
             with self.subTest(name=name):self.assertFalse(bundle.safe_path(name))
         p=self.archive(extra={'src/not-in-manifest.py':b'x'})
         with self.assertRaisesRegex(ValueError,'inventory'):bundle.verify(p,bundle.sha(p.read_bytes()))
