@@ -1,0 +1,103 @@
+EXTERNAL STORED FEATURE → INDIVIDUAL INSTRUMENT TS
+Implementation and verification report | 2026-10-10
+
+Active root: /Users/owenmckinleyosagiede/Desktop/Multi-Asset Model/research_platform
+Governing review: docs/feature_scope_alignment_review.txt
+Authorization: the user's updated attached implementation request approves DAILY_STATE, strictly later scheduled weekdays for date-only availability, and persistence until superseded including invalid updates.
+
+IMPLEMENTED
+The instrument-native branch remains instrument → TS and universe → CS. A second application branch consumes a registered external stored Feature and exactly one instrument Scope. It preserves the external Feature/Signal identity, economic source entity, measure, dimensions, source snapshot, materialization, evaluation policy and operand lineage. Changing the target instrument does not create another Feature definition.
+
+Application routing uses the registered representation and verified source contracts. A reusable per-member recipe continues through the native branch. A source-bound Feature must have exactly one SourceView, one selected entity/measure/dimensions series, supported stored observations, approved pinned source policies and a compatible alignment policy. Native constructed-FX bindings cannot bypass their reusable registry by entering the external branch. No provider or CES name dispatch is used in the new alignment engine.
+
+Execution path:
+ui/features.js read-only compatibility GET → api.feature_library._legacy_resolution → external profile/policy loading → research.inputs.resolve_plan.
+Explicit Submit → api.server.Handler.do_POST → runtime.research_jobs.ResearchJobs.submit → same compatibility planner → immutable submission containing the frozen external Research Spec, exact source bindings and frozen plan → existing durable queue → ResearchJobs._run → inputs.prepare_phase → external_features.prepare → P1 inputs.load_phase/external_features.load → existing real P1 kernel/gates → admitted, direction-compatible horizons only → P2 preparation/load and existing real P2 kernel → ResearchStore trial/artifact/admission/validation/relationship/link records → existing experiment status/results APIs and Signal Library authoritative results reader.
+
+No new worker, research engine, feature clone, common-factor broadcasting, research mode selector, provider client, LLM call or runtime agent is introduced. Browsing/preflight reads published evidence but does not prepare Features, publish alignment observations, enqueue jobs or run research.
+
+INSTALLED SCIENTIFIC OBJECTS
+1. definitions/alignment_policies/POL_EXTERNAL_STORED_DAILY_STATE/1.0.0.json
+   Exact canonical policy hash: 837333194cd787d920681da4eb43a991b5612cb3ae58b8dc916922ba034adbd6
+   DAILY_STATE; date-only; availability AND evaluation strictly before anchor; latest update wins including null/invalid; duplicate effective dates rejected; scheduled grid retained; one prevailing preperiod state.
+   Initial freshness: UNTIL_SUPERSEDED, evaluation_cutoff basis, calendar_days, select_newest_then_age.
+2. definitions/research_specs/RSPEC_EXTERNAL_STORED_TS/1.0.0.json
+   Exact canonical profile hash: f1166b3928db19dd40039b3f470d490af0b80a568d8032dc710774ced7e5b3d1
+   Inherits the approved FX research periods, source/Target pins, scheduled_weekday_hac_v2, unresolved_required_v1 and exposure classification. Adds an exact alignment policy reference and external_stored_feature_to_individual_ts application class. The inherited approval text describes the retained statistical policy; the new external alignment approval is the user instruction above and its explicit policy binding.
+3. config/external_feature_alignment.json
+   Exact external Research Spec reference. Existing config/research_execution.json and RSPEC_FX_SCOPE_ROUTED_SUBMIT@2.0.0 were not replaced.
+
+Discovery ends before 2022-01-01. Validation runs 2022-01-01 through 2026-08-31 inclusive. The discovery structural start is the later of canonical instrument source coverage and the external Feature's first eligible scheduled anchor, independent of observed performance. All five 1/7/21/63/252 scheduled-weekday Targets remain fixed. No threshold, directional hypothesis, quote orientation, endpoint or HAC clock is changed.
+
+TEMPORAL AND INTEGRITY CONTRACT
+The supported stored-observation profile is feature_store 0.3.0: date precision, derived_at_cutoff, one source series. That existing profile requires availability == evaluation cutoff; the alignment primitive separately checks both conditions, including tests where they differ. Independently dated availability/evaluation storage requires an extension of the upstream observation contract, not an inferred conversion.
+
+The phase reader verifies immutable references, policy approval, payload hashes, temporal indexes, source selection and a byte-computed semantic checksum. It scans temporal/series headers before decoding numerical observations. It decodes only the phase's eligible observations and the one immediately preceding prevailing state. Earlier superseded values and future Feature values are not handed to research. Exact selected PIT operands are verified by native row locators and hashes without decoding unrelated PIT values. Whole-payload checksums are integrity operations, not access to future numeric observations. Planning and UI may inspect materialization coverage metadata; P1 numerical execution receives only phase-safe values.
+
+At each canonical prediction anchor, the latest state eligible under both temporal conditions is selected before validity/freshness is applied. Friday becomes Monday; earlier reference months cannot backdate availability. A newer invalid or null update supersedes the older state even if that older state was valid. Nothing is interpolated, backward-filled, changed to zero, reciprocated or sign-flipped.
+
+MAX_AGE and EVENT_ONLY freshness behaviors are executable and tested, but are not selected by the initial installed Research Spec. MAX_AGE requires an explicit maximum, availability/evaluation age basis, calendar-day unit and inclusive/exclusive boundary. EVENT_ONLY permits only the first eligible canonical weekday and rejects collisions. New policies/profiles must explicitly pin different semantics; no numeric age threshold was invented.
+
+The existing Target reader remains authoritative. Missing exact endpoint prices stay missing. Phase-crossing Target intervals remain excluded with the existing ENDPOINT_OUTSIDE_PHASE accounting; no future validation labels are supplied to discovery. P2 still requires exact plan/direction/horizon admission.
+
+PREPARATION, IDENTITY AND RESULTS
+External preparation produces a phase-scoped descriptor, not cloned source observations or a new currency Feature. It references the original materialization and hashes the selected phase observations. Plan, policy, Feature/source/materialization, phase and implementation fingerprint contribute to preparation identity. Those dependencies, exact Target definitions/materializations, direction, Research Spec, implementation and aligned input digest also participate in authoritative trial identity. Identical evidence is reused. Changed scientific dependencies do not overwrite prior trials.
+
+Aligned artifact rows preserve prediction anchor, original observation locator/hash, Feature definition, materialization, source selection, reference period, availability/evaluation cutoff, vintage, status/reason/value, age basis/unit, source snapshots, operand lineage, target instrument, exact Target interval and policy reference. Multiple weekdays point to the same source observation locator; they do not create new Feature observations.
+
+Coverage and persisted trial sample metadata report aligned weekday row count, distinct prevailing source update count, and valid distinct update count. The first count includes safe scheduled Target rows, including ordinary missing observations. Distinct update count can include a prevailing preperiod or invalid state; it is not an assertion of independently released economic information. Kernel sample counts and statistical gates remain unchanged.
+
+Signal Library results for an external Feature now resolve through ResearchStore by the original Feature ID. Authoritative per-Scope/Target/horizon/direction/period results are displayed as linked research evidence; preparation alone remains Untested. No editable metric copies or recipe-wide validation claims are created.
+
+UI AND FAILURE HANDLING
+The existing four selection controls and Submit are preserved. A stored Feature selection is invalid while compatibility is pending or blocked. Successful resolution displays the daily-state policy and actual external Research Spec. An individual target instrument can be changed without altering the Feature definition. Unmaterialized aligned coverage is not presented as a cloned, ready instrument Feature.
+
+The backend independently rechecks compatibility before writing an external submission. Explicit rejection returns HTTP 422 with recorded=false and reasons. The UI distinguishes this from an uncertain network response. The existing durable queue, cancellation, restart/recovery and P2 admission mechanisms are reused.
+
+The old blocked CES submission 5414fe02-ed5d-4b3c-bf26-27115563894e remains an unchanged historical request with its earlier implementation/specification. A new Submit is required to use this installed pathway; installation did not resume, replace or execute that old request.
+
+FILES CREATED OR CHANGED (relative to active root)
+- src/research/external_features.py — generic policy validation, stored Feature classification/metadata checks, phase-safe source/operand reader, state/freshness alignment, preparation and aligned result construction.
+- src/research/inputs.py — external branch through existing Scope/Target planning; preserved native branch; phase/admission and external frozen-plan checks.
+- src/runtime/research_jobs.py — external preflight/frozen plan before enqueue; use frozen plan; persist distinct-update reporting in trial sample metadata.
+- src/api/feature_library.py — read-only shared external compatibility planner; independent source coverage; policy and Research Spec binding.
+- src/api/server.py — explicit pre-enqueue compatibility rejection response.
+- src/api/signal_library.py — resolve external Feature research summaries/details from authoritative records.
+- ui/features.js — external compatibility validity gate, policy display and selection-state notification.
+- ui/submission.js — resolved Research Spec/method display and definite rejection handling.
+- tools/install_external_feature_alignment.py — idempotent immutable installation; no research execution.
+- definitions/alignment_policies/POL_EXTERNAL_STORED_DAILY_STATE/1.0.0.json — new approved policy.
+- definitions/research_specs/RSPEC_EXTERNAL_STORED_TS/1.0.0.json — new external research profile.
+- config/external_feature_alignment.json — exact installed profile reference.
+- tests/test_external_feature_alignment.py — temporal/invalid/freshness/phase/integrity/identity/native Target integration tests.
+- tests/test_external_feature_end_to_end.py — isolated synthetic external HTTP Submit, queue, actual P1/P2, persistence, retrieval, rejection and evidence reuse.
+- tests/test_external_feature_ui.py — actual selector/submission JavaScript checks for compatibility, pending/changed Scope and explicit rejection.
+- tests/test_feature_store.py — optional synthetic source/history arguments in the existing fixture; defaults preserved.
+- tests/test_research_ui.py — test harness distinguishes structured HTTP rejection from simulated network interruption.
+- tests/test_reusable_feature_ui.py — retain exact open-signal event assertions while allowing the new compatibility display notification.
+- docs/external_feature_alignment_report.txt — this report.
+- outputs/external_feature_alignment/verification.json — machine-readable verification evidence and changed-file hashes.
+- outputs/external_feature_alignment/tests.txt — final consolidated test output.
+- outputs/external_feature_alignment/ui-compatibility.png — actual running UI with CES, USDJPY, alignment policy and resolved external Research Spec; Submit was not clicked.
+
+COMPONENTS REUSED
+Existing Feature IDs, source/policy/lineage registries, publication contracts, temporal_eligible primitive, fixed Scope membership resolution, instrument/price snapshots, approved Target construction and phase reader, queue and worker, implementation fingerprint, scheduled-distance statistics, P1/P2 kernels and gates, durable scientific stores, status/results routes, Signal Library and UI selection controls.
+
+VERIFICATION
+PASS: consolidated suite — 297 tests in 142.123 seconds. A final generic dimension-label correction (allowing bracketed labels and escaping native field names) was verified with 19 overlapping alignment and real external end-to-end tests in 21.577 seconds; all passed. Final test totals and exact commands are recorded in outputs/external_feature_alignment/verification.json and tests.txt. Earlier runs also passed 290 regression tests, 67 focused boundary/API tests, the separate real external TS and native CS integration cases, and 49 final UI/external-path tests; these overlap and must not be summed as independent tests.
+
+The external end-to-end fixture uses synthetic monthly stored Feature values (source entity US) and independent synthetic USDJPY prices. Registry/source admission boundaries are fixtures; actual stored Feature publication, Target arithmetic, external phase reading/alignment, HTTP server, queue, worker, P1/P2 numerical kernels and authoritative storage execute. Five P1 relationships are evaluated; at least one admitted horizon actually executes P2. Scientific success is not hard-coded. The Submit connection closes before the worker starts. Results are retrievable through the Signal Library API. Repeating the same request and making a new identical request reuse existing scientific evidence. Another individual Scope reuses the same Feature definition. Universe rejection agrees between UI preflight and backend and creates no submission.
+
+Separately, the actual installed CES → USDJPY selection was checked read-only against its 187 stored source observations, with first eligible anchor 2011-03-07. The running browser displayed compatibility, POL_EXTERNAL_STORED_DAILY_STATE@1.0.0, and RSPEC_EXTERNAL_STORED_TS@1.0.0. No real CES P1/P2 outcome is claimed: production research was deliberately not run.
+
+An inventory of 139 existing production submission, trial-ledger, Feature-store and Signal-library JSON records was compared across deployment/UI verification. All bytes and record counts remained unchanged. Legacy data locations were not modified. The local service was reloaded only after confirming no queued/running research and an idle worker.
+
+SUPPORTED BOUNDARY / REMAINING LIMITATIONS
+- Another already-published external Feature conforming to the supported 0.3.0 observation, date availability, single-series, approved-policy and PIT-operand lineage contracts can use this alignment/Submit adapter without a provider-specific research branch.
+- No CES ID, source symbol, monthly arithmetic or provider-specific calculation is embedded in the new alignment engine. The tests and read-only certification identify CES as the initial real example.
+- Existing upstream Feature publication/full numerical retrieval currently specialize in a single monthly fractional-change calculation. Those older components were not generalized here. Publishing new kinds of Features/providers may require their own preparation/publisher extension; this task does not claim universal onboarding or publication support.
+- Exactly one compatible stored materialization is required unless the profile explicitly pins one via external_materializations. Multiple captures are never silently ranked by file name or hash. Joining/stitching captures is not implemented.
+- Timestamp/mixed-precision observations, unknown availability, unsupported lineage types, multi-source mappings, mixed series, ambiguous events, arbitrary custom orientation/construction, external universes and common-factor broadcasting are rejected, not inferred.
+- Stored-schema validation is separate from alignment. Existing source evaluation and source availability policies still apply; date mapping does not repair unverified upstream timing.
+- Only UNTIL_SUPERSEDED is installed for live UI use in this task; alternate supported freshness semantics require an explicit registered policy/profile.
+- Archive dates and the following-weekday convention support retrospective research only. Exact dissemination time, certified historical decision-time eligibility, tradability and live readiness remain unverified. No production research, new timing certification or cloud deployment was performed.

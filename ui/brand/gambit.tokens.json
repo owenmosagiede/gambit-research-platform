@@ -1,0 +1,154 @@
+{
+  "version": "1.0.0",
+  "status": "review edition",
+  "color": {
+    "ink": "#151817",
+    "ivory": "#F3F1E9",
+    "paper": "#FFFFFF",
+    "stone": "#D7D2C5",
+    "graphite": "#5C625E",
+    "line": "#D8DCD6",
+    "signal": "#9ED64A",
+    "green": "#356B34",
+    "dark": "#101512",
+    "darkPanel": "#1B211D",
+    "darkLine": "#465249",
+    "darkMuted": "#B3B9B2",
+    "success": "#2E6844",
+    "successFill": "#EAF3EC",
+    "warning": "#84620C",
+    "warningFill": "#FBF3DA",
+    "error": "#AA3D32",
+    "errorFill": "#FBEDE9",
+    "info": "#315C7A",
+    "infoFill": "#E9F0F5",
+    "controlBorder": "#858C84",
+    "darkControlBorder": "#728273",
+    "darkSuccess": "#A8D9B6",
+    "darkSuccessFill": "#173523",
+    "darkWarning": "#E9CE82",
+    "darkWarningFill": "#352B13",
+    "darkError": "#F4B4AA",
+    "darkErrorFill": "#391F1B",
+    "darkInfo": "#ADD0EA",
+    "darkInfoFill": "#1A2C3B"
+  },
+  "semantic": {
+    "light": {
+      "canvas": "#FFFFFF",
+      "editorial": "#F3F1E9",
+      "surface": "#FFFFFF",
+      "text": "#151817",
+      "muted": "#5C625E",
+      "border": "#D8DCD6",
+      "primary": "#151817",
+      "onPrimary": "#FFFFFF",
+      "link": "#356B34",
+      "focus": "#356B34",
+      "inputBorder": "#858C84"
+    },
+    "dark": {
+      "canvas": "#101512",
+      "surface": "#1B211D",
+      "text": "#F3F1E9",
+      "muted": "#B3B9B2",
+      "border": "#465249",
+      "primary": "#F3F1E9",
+      "onPrimary": "#151817",
+      "link": "#9ED64A",
+      "focus": "#9ED64A",
+      "inputBorder": "#728273"
+    }
+  },
+  "font": {
+    "logo": "Outlined Archivo Expanded 800 and Inter 600",
+    "display": "Inter",
+    "body": "Inter",
+    "data": "IBM Plex Mono"
+  },
+  "type": {
+    "display": {
+      "size": 56,
+      "lineHeight": 60,
+      "weight": 500,
+      "tracking": -1.5
+    },
+    "h1": {
+      "size": 36,
+      "lineHeight": 42,
+      "weight": 500,
+      "tracking": -0.7
+    },
+    "h2": {
+      "size": 24,
+      "lineHeight": 30,
+      "weight": 500
+    },
+    "h3": {
+      "size": 18,
+      "lineHeight": 24,
+      "weight": 600
+    },
+    "body": {
+      "size": 16,
+      "lineHeight": 24,
+      "weight": 400
+    },
+    "ui": {
+      "size": 14,
+      "lineHeight": 20,
+      "weight": 400
+    },
+    "label": {
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 600
+    },
+    "overline": {
+      "size": 11,
+      "lineHeight": 16,
+      "weight": 500,
+      "tracking": 1.6
+    },
+    "data": {
+      "size": 13,
+      "lineHeight": 20,
+      "weight": 400
+    }
+  },
+  "space": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64,
+    96
+  ],
+  "radius": {
+    "control": 4,
+    "panel": 4,
+    "badge": 2
+  },
+  "border": {
+    "default": 1,
+    "focusRing": 2,
+    "focusOffset": 2
+  },
+  "size": {
+    "control": 40,
+    "touchControl": 44,
+    "tableRow": 44,
+    "sidebar": 216,
+    "contentMax": 1280,
+    "readingMax": 720
+  },
+  "motion": {
+    "fastMs": 120,
+    "normalMs": 180,
+    "easing": "cubic-bezier(0.2,0,0,1)",
+    "reducedMotionMs": 0
+  }
+}

@@ -1,0 +1,1 @@
+{"id":"LINEAGE_a6f155b5bfbfc3bba27760c662740a925e795ade86175ff3412bae552d27bad4","implementation":null,"inputs":[],"operation":{"content_sha256":"6cac75e5555a5150100aaa06932572b990ec89b15dd2e120d3aaaaf10d3dc099","id":"POL_FIXTURE_AVAILABILITY","version":"1.0.0"},"policy_bindings":[],"record_type":"lineage_manifest","schema_version":"0.2.0","version":"1.0.0"}

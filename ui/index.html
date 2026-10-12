@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gambit Systems | Research platform</title>
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/brand/gambit-app-mark.svg">
+  <link rel="stylesheet" href="/brand/gambit.css">
+  <link rel="stylesheet" href="/library.css">
+  <link rel="stylesheet" href="/signal-research.css">
+  <link rel="stylesheet" href="/gambit-theme.css">
+  <script src="/library.js" defer></script>
+  <script src="/signal-research.js" defer></script>
+  <script src="/signals.js" defer></script>
+  <script src="/features.js" defer></script>
+  <script src="/targets.js" defer></script>
+  <script src="/scopes.js" defer></script>
+  <script src="/submission.js" defer></script>
+  <script src="/queue.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#experiment-inputs">Skip to experiment inputs</a>
+  <div class="app-layout">
+    <aside class="library" aria-label="Workspace navigation">
+      <div class="brand"><img src="/brand/gambit-wordmark-reverse.svg" width="160" height="35" alt="Gambit Systems"><p>Research platform</p></div>
+      <nav class="page-navigation" aria-label="Workspace">
+        <a href="#experiment" data-page="experiment" aria-current="page">Experiment</a>
+        <a href="#pit" data-page="pit">PIT Data Library</a>
+        <a href="#signals" data-page="signals">Signal Library</a>
+        <a href="#ledger" data-page="ledger">Trial Ledger</a>
+      </nav>
+    </aside>
+    <main id="experiment-inputs" tabindex="-1">
+      <header class="page-header"><p class="section-label">Research</p><h1>New experiment</h1></header>
+    <form aria-label="Experiment inputs">
+      <div>
+        <label for="feature">Feature</label>
+        <select id="feature" name="feature" required disabled aria-describedby="feature-status">
+          <option value="" disabled selected>Loading features…</option>
+        </select>
+        <p id="feature-status" class="field-note" role="status" aria-live="polite">Loading registered Features…</p>
+        <button id="feature-details-link" class="text-button" type="button" hidden>View Signal details ↗</button>
+        <button id="feature-retry" class="text-button" type="button" hidden>Retry loading features</button>
+      </div>
+      <div>
+        <label for="target">Target</label>
+        <select id="target" name="target" required disabled aria-describedby="target-status">
+          <option value="" disabled selected>Loading targets…</option>
+        </select>
+        <p id="target-status" class="field-note" role="status" aria-live="polite">Loading stored Targets…</p>
+        <button id="target-details-link" class="text-button" type="button" hidden>View Target details ↗</button>
+        <button id="target-retry" class="text-button" type="button" hidden>Retry loading targets</button>
+      </div>
+      <div>
+        <label for="scope">Scope</label>
+        <select id="scope" name="scope" required disabled aria-describedby="scope-status">
+          <option value="" disabled selected>Loading scopes…</option>
+        </select>
+        <p id="scope-status" class="field-note" role="status" aria-live="polite">Loading registered scopes…</p>
+        <button id="scope-retry" class="text-button" type="button" hidden>Retry loading scopes</button>
+      </div>
+      <div>
+        <label for="expected-direction">Expected Direction</label>
+        <select id="expected-direction" name="expected_direction" required>
+          <option value="" disabled selected>Select a direction</option>
+          <option value="POSITIVE">Positive</option>
+          <option value="NEGATIVE">Negative</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button id="experiment-submit" aria-describedby="submit-availability" class="submit-button" type="submit" disabled>Submit</button>
+      </div>
+    </form>
+      <p id="submit-availability" class="field-note" role="status" aria-live="polite" hidden></p>
+      <button id="submission-check" class="text-button" type="button" hidden>Check previous submission status</button>
+      <section class="research-readiness" aria-label="Research readiness">
+        <p id="research-readiness-status" class="field-note" role="status" aria-live="polite">Checking research readiness…</p>
+        <p id="research-method-summary" class="field-note"></p>
+        <p id="research-specification" class="field-note"></p>
+        <ul id="research-readiness-blockers" class="research-blockers" hidden></ul>
+        <ul id="research-operational-incidents" class="research-blockers" aria-label="Operational failures" hidden></ul>
+        <button id="research-readiness-retry" class="text-button" type="button" hidden>Check readiness again</button>
+      </section>
+      <p id="submission-notice" class="field-note" role="status" aria-live="polite"></p>
+      <section id="trial-queue" class="trial-queue" aria-labelledby="trial-queue-title">
+        <div class="queue-heading"><div><p class="section-label">Observability</p><h2 id="trial-queue-title">Trial queue</h2></div><span class="status-pill">Sequential execution</span></div>
+        <p class="page-description">Submit another experiment while research runs. Each card is one submission across all five horizons. Waiting jobs run in submission order. Remove resolved items from Needs attention in this browser; their records stay in the Trial Ledger.</p>
+        <p id="queue-status" class="field-note" role="status" aria-live="polite">Loading saved submissions…</p>
+        <button id="queue-refresh" type="button" class="text-button">Refresh queue</button>
+        <p id="queue-action-status" class="field-note" role="status" aria-live="polite"></p>
+        <a class="text-button" href="#ledger">View completed trials in Trial Ledger →</a>
+        <div id="queue-board" class="queue-board"></div>
+      </section>
+      <details id="selection-details" class="definition-panel">
+        <summary>Selection details and stored coverage</summary>
+      <section id="feature-coverage" class="feature-coverage" aria-labelledby="feature-coverage-title" aria-busy="false" hidden>
+        <p class="section-label">Feature and Scope</p>
+        <h2 id="feature-coverage-title">Stored coverage</h2>
+        <p id="feature-coverage-status" class="details-description" role="status" aria-live="polite"></p>
+        <p class="field-note">Selection checks existing outputs only. Registration does not establish data coverage or research readiness.</p>
+        <button id="feature-coverage-retry" class="text-button" type="button" hidden>Retry coverage check</button>
+        <div id="feature-coverage-body"></div>
+      </section>
+      <details id="target-instruments" class="definition-panel" hidden>
+        <summary id="target-instruments-heading">Registered instruments</summary>
+        <p class="field-note">Stored snapshots, constructed prices and return labels have separate readiness. Historical replay, source closing times and live trading remain uncertified.</p>
+        <div id="target-instrument-table"></div>
+      </details>
+      <section id="target-details" class="dataset-details" aria-labelledby="target-details-title" aria-busy="false" hidden>
+        <p class="section-label">Target details</p>
+        <h2 id="target-details-title" tabindex="-1">Stored return Target</h2>
+        <p id="target-details-status" class="details-description" role="status" aria-live="polite"></p>
+        <button id="target-detail-retry" class="text-button" type="button" hidden>Retry Target details</button>
+        <div id="target-details-body"></div>
+      </section>
+      </details>
+    </main>
+    <main id="ledger-page" tabindex="-1" hidden>
+      <header class="page-header"><p class="section-label">Research history</p><h1>Trial Ledger</h1><p class="page-description">Completed research and saved submission history. Expand an entry to see each horizon’s outcome.</p></header>
+      <section class="library-filters ledger-filters" aria-label="Trial ledger search and filters">
+        <div><label for="ledger-search">Search</label><input id="ledger-search" type="search" placeholder="Feature, Scope or submission ID" autocomplete="off"></div>
+        <div><label for="ledger-state">Status</label><select id="ledger-state"><option value="">All saved history</option><option value="succeeded">Completed</option><option value="blocked">Blocked</option><option value="failed">Execution failed</option><option value="cancelled">Cancelled</option></select></div>
+        <div><label for="ledger-from">Finished from</label><input id="ledger-from" type="date"></div>
+        <div><label for="ledger-to">Finished through</label><input id="ledger-to" type="date"></div>
+        <button id="ledger-clear" class="filter-clear" type="button">Clear filters</button>
+        <p class="filter-note">Completion describes execution. Research acceptance and validation are shown separately. Dates use UTC.</p>
+      </section>
+      <p id="ledger-status" class="field-note" role="status" aria-live="polite">Loading saved history…</p>
+      <div id="ledger-items" class="ledger-items"></div>
+    </main>
+    <main id="pit-page" tabindex="-1" hidden>
+      <header class="page-header"><p class="section-label">Data</p><h1>PIT Data Library</h1><p class="page-description">Browse saved datasets and explore their coverage, source and timing.</p></header>
+      <section class="library-filters" aria-label="PIT data search and filters">
+        <div class="search-field"><label for="pit-search">Search</label><input id="pit-search" type="search" placeholder="Search by name, ID or attribute" autocomplete="off"></div>
+        <div><label for="pit-provider">Provider</label><select id="pit-provider"><option value="">All providers</option></select></div>
+        <div><label for="pit-frequency">Frequency</label><select id="pit-frequency"><option value="">All frequencies</option></select></div>
+        <div><label for="pit-from">Coverage from</label><input id="pit-from" type="date"></div>
+        <div><label for="pit-to">Coverage to</label><input id="pit-to" type="date"></div>
+        <button id="pit-clear" class="filter-clear" type="button">Clear filters</button>
+        <p class="filter-note">Dates match overlapping stored observation coverage.</p>
+      </section>
+      <p id="library-status" class="library-status" role="status" aria-live="polite" aria-atomic="true">Loading saved datasets…</p>
+      <p id="library-issues" class="library-issues" hidden></p>
+      <button id="library-retry" class="retry-button" type="button" hidden>Retry</button>
+      <div id="library-items" class="library-cards" aria-busy="true"></div>
+      <div id="dataset-detail-home" hidden>
+      <section id="dataset-details" class="dataset-details" aria-labelledby="details-title" hidden>
+        <p class="section-label">Dataset details</p>
+        <h2 id="details-title" tabindex="-1">Explore your saved data</h2>
+        <p id="details-description" class="details-description">Choose a dataset from the library to view its details.</p>
+        <div id="details-body" hidden></div>
+      </section>
+      </div>
+    </main>
+    <main id="signal-page" tabindex="-1" hidden>
+      <div id="signal-catalog-view">
+      <header class="page-header">
+        <p class="section-label">Research</p>
+        <h1>Signal Library</h1>
+        <p class="page-description">Explore a Feature. Follow its hypothesis from discovery to validation.</p>
+      </header>
+      <section class="library-filters" aria-label="Signal search and filters">
+        <div class="search-field"><label for="signal-search">Search</label><input id="signal-search" type="search" placeholder="Search by name, ID or attribute" autocomplete="off"></div>
+        <div><label for="signal-provider">Provider</label><select id="signal-provider"><option value="">All providers</option></select></div>
+        <div><label for="signal-state">Research status</label><select id="signal-state"><option value="">All statuses</option></select></div>
+        <div><label for="signal-from">Coverage from</label><input id="signal-from" type="date"></div>
+        <div><label for="signal-to">Coverage to</label><input id="signal-to" type="date"></div>
+        <button id="signal-clear" class="filter-clear" type="button">Clear filters</button>
+        <p class="filter-note">Dates match overlapping stored observation coverage; provider and dates must match the same stored output.</p>
+      </section>
+      <p id="signal-library-status" class="library-status" role="status" aria-live="polite">Loading Signals…</p>
+      <p id="signal-library-issues" class="library-issues" hidden></p>
+      <button id="signal-library-retry" class="retry-button" type="button" hidden>Retry</button>
+      <div id="signal-table-container" class="library-cards" aria-busy="true"></div>
+      </div>
+      <div id="signal-detail-home" hidden>
+      <section id="signal-detail" class="signal-detail" aria-labelledby="signal-detail-title" aria-busy="false" hidden>
+        <button id="signal-back" class="research-back" type="button">← Signal Library</button>
+        <p class="section-label">Feature research</p>
+        <h2 id="signal-detail-title" tabindex="-1">Select a Signal</h2>
+        <p id="signal-detail-status" class="details-description" role="status">Choose a library entry to explore its recipe and stored outputs.</p>
+        <button id="signal-detail-retry" class="retry-button" type="button" hidden>Retry details</button>
+        <div id="signal-detail-body"></div>
+      </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

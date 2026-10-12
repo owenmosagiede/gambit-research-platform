@@ -1,0 +1,41 @@
+{
+  "schema": "registry_support_v1",
+  "files": [
+    {
+      "path": "storage/catalog/onboarding/evidence/EVIDENCE_2f62ddbb165eb25bfc3e03e3808c88ad55d7a6a392641baa7c8c2bd9efcc2cce.json",
+      "bytes": 516,
+      "sha256": "509113215be6fa71fb7b4c3f45e3b00912025910d439501f1cd304fee0ffdf5e",
+      "purpose": "approved transformation execution policy; no observations"
+    },
+    {
+      "path": "storage/payloads/sha256/72/72c5dfee54e6af0a17d99d5b331997039581654827121b7b1996b1175e19a6ed.json",
+      "bytes": 4591,
+      "sha256": "72c5dfee54e6af0a17d99d5b331997039581654827121b7b1996b1175e19a6ed",
+      "purpose": "approved transformation execution policy; no observations"
+    },
+    {
+      "path": "storage/catalog/onboarding/evidence/EVIDENCE_5efa04508d2982b34e5a9d75ba43f4789f4e18e4072a8b4ece6f368f9d2aa768.json",
+      "bytes": 516,
+      "sha256": "5aab2d73365a82802f0c1b43dd9d06f0ec46f259c2e29ad8219958652010334f",
+      "purpose": "approved transformation execution policy; no observations"
+    },
+    {
+      "path": "storage/payloads/sha256/56/56823d2e6f26ffbdf97c9ebce76fae44ef952d2a31c4b8da505245779a92fe55.json",
+      "bytes": 4212,
+      "sha256": "56823d2e6f26ffbdf97c9ebce76fae44ef952d2a31c4b8da505245779a92fe55",
+      "purpose": "approved transformation execution policy; no observations"
+    },
+    {
+      "path": "storage/catalog/onboarding/evidence/EVIDENCE_9a6568d04f73e0470989628172b31c8a63ea357910bbdc3ac42012a53201e085.json",
+      "bytes": 489,
+      "sha256": "17791bb9e56dbf7a840fbae746c67ceec0e13b2cf004fdafce41644511dd07da",
+      "purpose": "approved transformation execution policy; no observations"
+    },
+    {
+      "path": "storage/payloads/sha256/02/02a28ca854454a95f604e88016a02bd04e9b6f2f582fefa2ddd905ca581bd6bc.json",
+      "bytes": 1072,
+      "sha256": "02a28ca854454a95f604e88016a02bd04e9b6f2f582fefa2ddd905ca581bd6bc",
+      "purpose": "approved transformation execution policy; no observations"
+    }
+  ]
+}

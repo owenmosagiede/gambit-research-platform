@@ -1,0 +1,1700 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-platform.local/schemas/fx-0.5.0",
+  "title": "Additive FX snapshot, recipe and compact Target contracts",
+  "description": "Registry envelopes use the existing directories and shared payload namespace. Runtime adapters additionally validate exact typed bodies, decimal arithmetic, input identity, coverage, checksums and lineage.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/registry"
+    },
+    {
+      "$ref": "#/$defs/target_manifest"
+    },
+    {
+      "$ref": "#/$defs/target_observation"
+    },
+    {
+      "$ref": "#/$defs/source_observation"
+    }
+  ],
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "content_sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "version",
+        "body"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "record_type": {
+          "enum": [
+            "provider_contract",
+            "dataset_definition",
+            "source_view_definition",
+            "policy_definition",
+            "transformation_definition",
+            "snapshot_manifest",
+            "onboarding_evidence",
+            "ingestion_receipt",
+            "capability_assessment"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z_]+[a-f0-9]{64}$"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "body": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "fx_source_snapshot"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "record_type": {
+                "const": "snapshot_manifest"
+              },
+              "body": {
+                "$ref": "#/$defs/source_snapshot_body"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "body": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "fx_raw_snapshot"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "record_type": {
+                "const": "snapshot_manifest"
+              },
+              "body": {
+                "$ref": "#/$defs/raw_snapshot_body"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "target_manifest": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "definition",
+        "state",
+        "input_key",
+        "partitions",
+        "row_count",
+        "status_counts",
+        "reason_counts",
+        "research_readiness",
+        "readiness_capabilities",
+        "semantic_content_sha256",
+        "price_snapshot",
+        "schedule",
+        "implementation"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "record_type": {
+          "const": "target_materialization_manifest"
+        },
+        "state": {
+          "const": "ready"
+        },
+        "definition": {
+          "$ref": "#/$defs/reference"
+        },
+        "price_snapshot": {
+          "$ref": "#/$defs/reference"
+        },
+        "research_readiness": {
+          "const": "uncertified"
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "partitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "blob_sha256",
+              "format",
+              "codec",
+              "byte_count",
+              "row_count",
+              "semantic_sha256",
+              "coverage"
+            ],
+            "properties": {
+              "format": {
+                "const": "bin"
+              },
+              "codec": {
+                "const": "gzip_jsonl"
+              }
+            }
+          }
+        }
+      }
+    },
+    "target_observation": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "target",
+        "prediction_anchor",
+        "entry_time",
+        "exit_time",
+        "intended_end",
+        "temporal_precision",
+        "value",
+        "status",
+        "reason_code",
+        "operands",
+        "source_availability",
+        "label_available_at",
+        "original_capture_complete_at",
+        "historical_eligibility_certified",
+        "maturity"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "0.5.0"
+        },
+        "record_type": {
+          "const": "target_observation"
+        },
+        "target": {
+          "$ref": "#/$defs/reference"
+        },
+        "temporal_precision": {
+          "const": "date"
+        },
+        "status": {
+          "enum": [
+            "valid",
+            "missing",
+            "invalid",
+            "pending"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_availability": {
+          "type": "null"
+        },
+        "label_available_at": {
+          "type": "null"
+        },
+        "historical_eligibility_certified": {
+          "const": false
+        },
+        "maturity": {
+          "enum": [
+            "elapsed_endpoint",
+            "future_endpoint"
+          ]
+        },
+        "operands": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "role",
+              "reference_time",
+              "price_observation_id"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "entry",
+                  "exit"
+                ]
+              },
+              "price_observation_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "native_date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "positive_decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+      "not": {
+        "pattern": "^0(\\.0+)?$"
+      }
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+    },
+    "source_symbol": {
+      "enum": [
+        "AUD/USD",
+        "EUR/USD",
+        "GBP/USD",
+        "NZD/USD",
+        "USD/CNH",
+        "CAD/USD",
+        "CHF/USD",
+        "JPY/USD",
+        "CZK/USD",
+        "HKD/USD",
+        "HUF/USD",
+        "ILS/USD",
+        "MXN/USD",
+        "NOK/USD",
+        "PLN/USD",
+        "SEK/USD",
+        "SGD/USD",
+        "ZAR/USD"
+      ]
+    },
+    "date_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/native_date"
+        },
+        "end": {
+          "$ref": "#/$defs/native_date"
+        }
+      }
+    },
+    "unknown_source_timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timezone",
+        "bar_boundary",
+        "session_convention",
+        "synchronization"
+      ],
+      "properties": {
+        "timezone": {
+          "type": "null"
+        },
+        "bar_boundary": {
+          "type": "null"
+        },
+        "session_convention": {
+          "type": "null"
+        },
+        "synchronization": {
+          "const": "unverified"
+        }
+      }
+    },
+    "source_readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "historical_replay",
+        "live_api_daily_pull",
+        "exact_synchronization"
+      ],
+      "properties": {
+        "historical_replay": {
+          "const": "blocked"
+        },
+        "live_api_daily_pull": {
+          "const": "unresolved"
+        },
+        "exact_synchronization": {
+          "const": "blocked"
+        }
+      }
+    },
+    "raw_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "provider_symbol",
+        "base_currency",
+        "quote_currency",
+        "unit",
+        "frequency",
+        "price_field",
+        "price_basis",
+        "timing",
+        "timestamp_precision",
+        "provenance_classification",
+        "historical_availability",
+        "historical_vintages_verified",
+        "source_calendar",
+        "native_vintage_policy"
+      ],
+      "properties": {
+        "provider": {
+          "const": "Twelve Data"
+        },
+        "provider_symbol": {
+          "$ref": "#/$defs/source_symbol"
+        },
+        "base_currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "quote_currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "unit": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}_per_[A-Z]{3}$"
+        },
+        "frequency": {
+          "const": "daily"
+        },
+        "price_field": {
+          "const": "close"
+        },
+        "price_basis": {
+          "const": "unknown"
+        },
+        "timing": {
+          "$ref": "#/$defs/unknown_source_timing"
+        },
+        "timestamp_precision": {
+          "const": "date"
+        },
+        "provenance_classification": {
+          "const": "retrospective_snapshot"
+        },
+        "historical_availability": {
+          "type": "null"
+        },
+        "historical_vintages_verified": {
+          "const": false
+        },
+        "source_calendar": {
+          "type": "null"
+        },
+        "native_vintage_policy": {
+          "const": "captured_snapshot_only"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "AUD/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "AUD"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_AUD"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "EUR/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "EUR"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_EUR"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "GBP/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "GBP"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_GBP"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "NZD/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "NZD"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_NZD"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "USD/CNH"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "USD"
+              },
+              "quote_currency": {
+                "const": "CNH"
+              },
+              "unit": {
+                "const": "CNH_per_USD"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "CAD/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "CAD"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_CAD"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "CHF/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "CHF"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_CHF"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "JPY/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "JPY"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_JPY"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "CZK/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "CZK"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_CZK"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "HKD/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "HKD"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_HKD"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "HUF/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "HUF"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_HUF"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "ILS/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "ILS"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_ILS"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "MXN/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "MXN"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_MXN"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "NOK/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "NOK"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_NOK"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "PLN/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "PLN"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_PLN"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "SEK/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "SEK"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_SEK"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "SGD/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "SGD"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_SGD"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider_symbol": {
+                "const": "ZAR/USD"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "base_currency": {
+                "const": "ZAR"
+              },
+              "quote_currency": {
+                "const": "USD"
+              },
+              "unit": {
+                "const": "USD_per_ZAR"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "raw_member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blob_sha256",
+        "format",
+        "byte_count",
+        "row_count",
+        "role"
+      ],
+      "properties": {
+        "blob_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "format": {
+          "const": "json"
+        },
+        "byte_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "row_count": {
+          "type": "null"
+        },
+        "role": {
+          "const": "legacy_raw"
+        }
+      }
+    },
+    "gzip_member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blob_sha256",
+        "format",
+        "byte_count",
+        "row_count",
+        "role",
+        "codec",
+        "partition",
+        "semantic_sha256",
+        "coverage"
+      ],
+      "properties": {
+        "blob_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "format": {
+          "const": "bin"
+        },
+        "byte_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "role": {
+          "$ref": "#/$defs/token"
+        },
+        "codec": {
+          "const": "gzip_jsonl"
+        },
+        "partition": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$"
+        },
+        "semantic_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "coverage": {
+          "$ref": "#/$defs/date_coverage"
+        }
+      }
+    },
+    "source_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_time",
+        "observation_date",
+        "entity_id",
+        "value",
+        "status",
+        "reason_code",
+        "available_at",
+        "original_ingested_at",
+        "source_vintage_at",
+        "legacy_vintage_id",
+        "legacy_revision_number",
+        "vintage_id",
+        "source_record_id",
+        "source_ingestion_id",
+        "base_currency",
+        "quote_currency",
+        "unit",
+        "source_precision",
+        "lineage_key",
+        "lineage"
+      ],
+      "properties": {
+        "reference_time": {
+          "$ref": "#/$defs/native_date"
+        },
+        "observation_date": {
+          "$ref": "#/$defs/native_date"
+        },
+        "entity_id": {
+          "type": "string",
+          "pattern": "^FX_[A-Z]{6}$"
+        },
+        "value": {
+          "$ref": "#/$defs/positive_decimal"
+        },
+        "status": {
+          "const": "valid"
+        },
+        "reason_code": {
+          "type": "null"
+        },
+        "available_at": {
+          "type": "null"
+        },
+        "original_ingested_at": {
+          "$ref": "#/$defs/utc_timestamp"
+        },
+        "source_vintage_at": {
+          "type": "null"
+        },
+        "legacy_vintage_id": {
+          "$ref": "#/$defs/utc_timestamp"
+        },
+        "legacy_revision_number": {
+          "const": 0
+        },
+        "vintage_id": {
+          "type": "string",
+          "pattern": "^LEGACY_[a-f0-9]{64}$"
+        },
+        "source_record_id": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}/[A-Z]{3}:[0-9]{4}-[0-9]{2}-[0-9]{2}:close$"
+        },
+        "source_ingestion_id": {
+          "$ref": "#/$defs/token"
+        },
+        "base_currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "quote_currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "unit": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}_per_[A-Z]{3}$"
+        },
+        "source_precision": {
+          "const": "date"
+        },
+        "lineage_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "lineage": {
+          "type": "string",
+          "pattern": "^FXSOURCE_[a-f0-9]{64}$"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "base_currency": {
+              "const": "AUD"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_AUD"
+            },
+            "entity_id": {
+              "const": "FX_AUDUSD"
+            },
+            "source_record_id": {
+              "pattern": "^AUD/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "EUR"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_EUR"
+            },
+            "entity_id": {
+              "const": "FX_EURUSD"
+            },
+            "source_record_id": {
+              "pattern": "^EUR/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "GBP"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_GBP"
+            },
+            "entity_id": {
+              "const": "FX_GBPUSD"
+            },
+            "source_record_id": {
+              "pattern": "^GBP/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "NZD"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_NZD"
+            },
+            "entity_id": {
+              "const": "FX_NZDUSD"
+            },
+            "source_record_id": {
+              "pattern": "^NZD/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "USD"
+            },
+            "quote_currency": {
+              "const": "CNH"
+            },
+            "unit": {
+              "const": "CNH_per_USD"
+            },
+            "entity_id": {
+              "const": "FX_USDCNH"
+            },
+            "source_record_id": {
+              "pattern": "^USD/CNH:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "CAD"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_CAD"
+            },
+            "entity_id": {
+              "const": "FX_CADUSD"
+            },
+            "source_record_id": {
+              "pattern": "^CAD/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "CHF"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_CHF"
+            },
+            "entity_id": {
+              "const": "FX_CHFUSD"
+            },
+            "source_record_id": {
+              "pattern": "^CHF/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "JPY"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_JPY"
+            },
+            "entity_id": {
+              "const": "FX_JPYUSD"
+            },
+            "source_record_id": {
+              "pattern": "^JPY/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "CZK"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_CZK"
+            },
+            "entity_id": {
+              "const": "FX_CZKUSD"
+            },
+            "source_record_id": {
+              "pattern": "^CZK/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "HKD"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_HKD"
+            },
+            "entity_id": {
+              "const": "FX_HKDUSD"
+            },
+            "source_record_id": {
+              "pattern": "^HKD/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "HUF"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_HUF"
+            },
+            "entity_id": {
+              "const": "FX_HUFUSD"
+            },
+            "source_record_id": {
+              "pattern": "^HUF/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "ILS"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_ILS"
+            },
+            "entity_id": {
+              "const": "FX_ILSUSD"
+            },
+            "source_record_id": {
+              "pattern": "^ILS/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "MXN"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_MXN"
+            },
+            "entity_id": {
+              "const": "FX_MXNUSD"
+            },
+            "source_record_id": {
+              "pattern": "^MXN/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "NOK"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_NOK"
+            },
+            "entity_id": {
+              "const": "FX_NOKUSD"
+            },
+            "source_record_id": {
+              "pattern": "^NOK/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "PLN"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_PLN"
+            },
+            "entity_id": {
+              "const": "FX_PLNUSD"
+            },
+            "source_record_id": {
+              "pattern": "^PLN/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "SEK"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_SEK"
+            },
+            "entity_id": {
+              "const": "FX_SEKUSD"
+            },
+            "source_record_id": {
+              "pattern": "^SEK/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "SGD"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_SGD"
+            },
+            "entity_id": {
+              "const": "FX_SGDUSD"
+            },
+            "source_record_id": {
+              "pattern": "^SGD/USD:"
+            }
+          }
+        },
+        {
+          "properties": {
+            "base_currency": {
+              "const": "ZAR"
+            },
+            "quote_currency": {
+              "const": "USD"
+            },
+            "unit": {
+              "const": "USD_per_ZAR"
+            },
+            "entity_id": {
+              "const": "FX_ZARUSD"
+            },
+            "source_record_id": {
+              "pattern": "^ZAR/USD:"
+            }
+          }
+        }
+      ]
+    },
+    "source_snapshot_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "profile",
+        "definition",
+        "upstream_snapshots",
+        "members",
+        "lineage_members",
+        "record_count",
+        "coverage",
+        "semantic_content_sha256",
+        "semantic_lineage_sha256",
+        "source_metadata",
+        "source_evidence",
+        "policy",
+        "original_ingestions",
+        "readiness",
+        "limitation_codes",
+        "original_ingestion_times",
+        "completion_state"
+      ],
+      "properties": {
+        "kind": {
+          "const": "fx_source_snapshot"
+        },
+        "profile": {
+          "const": "fx_snapshot.1.0.0"
+        },
+        "definition": {
+          "$ref": "#/$defs/reference"
+        },
+        "upstream_snapshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/gzip_member"
+              },
+              {
+                "properties": {
+                  "role": {
+                    "const": "fx_source_observations"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "lineage_members": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/gzip_member"
+              },
+              {
+                "properties": {
+                  "role": {
+                    "const": "fx_source_lineage"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "record_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "coverage": {
+          "$ref": "#/$defs/date_coverage"
+        },
+        "semantic_content_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "semantic_lineage_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_metadata": {
+          "$ref": "#/$defs/raw_metadata"
+        },
+        "source_evidence": {
+          "$ref": "#/$defs/reference"
+        },
+        "policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "original_ingestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 1
+        },
+        "readiness": {
+          "$ref": "#/$defs/source_readiness"
+        },
+        "limitation_codes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "original_ingestion_times": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/utc_timestamp"
+          }
+        },
+        "completion_state": {
+          "const": "complete"
+        }
+      }
+    },
+    "raw_snapshot_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "profile",
+        "definition",
+        "upstream_snapshots",
+        "members",
+        "record_count",
+        "coverage",
+        "semantic_content_sha256",
+        "source_evidence",
+        "policy",
+        "source_metadata",
+        "readiness"
+      ],
+      "properties": {
+        "kind": {
+          "const": "fx_raw_snapshot"
+        },
+        "profile": {
+          "const": "fx_snapshot.1.0.0"
+        },
+        "definition": {
+          "$ref": "#/$defs/reference"
+        },
+        "upstream_snapshots": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/raw_member"
+          },
+          "minItems": 1
+        },
+        "record_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "coverage": {
+          "$ref": "#/$defs/date_coverage"
+        },
+        "semantic_content_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_evidence": {
+          "$ref": "#/$defs/reference"
+        },
+        "policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "source_metadata": {
+          "$ref": "#/$defs/raw_metadata"
+        },
+        "readiness": {
+          "$ref": "#/$defs/source_readiness"
+        }
+      }
+    },
+    "source_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_time",
+        "lineage_key",
+        "lineage",
+        "source_row_content_sha256",
+        "legacy_row_sha256",
+        "legacy_canonical_path",
+        "legacy_canonical_sha256",
+        "legacy_canonical_row_index",
+        "raw_blob_sha256",
+        "raw_relative_path",
+        "raw_row_index",
+        "raw_datetime",
+        "raw_field",
+        "raw_value",
+        "raw_row_sha256",
+        "legacy_available_at",
+        "legacy_original_release_at",
+        "legacy_availability_precision",
+        "availability_evidence_disposition",
+        "original_ingested_at"
+      ],
+      "properties": {
+        "reference_time": {
+          "$ref": "#/$defs/native_date"
+        },
+        "lineage_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "lineage": {
+          "type": "string",
+          "pattern": "^FXSOURCE_[a-f0-9]{64}$"
+        },
+        "source_row_content_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "legacy_row_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "legacy_canonical_path": {
+          "type": "string",
+          "pattern": "^production/twelve_data_fx/symbol=[A-Z]{3}_[A-Z]{3}/page=[0-9]{4}/observations\\.jsonl\\.gz$"
+        },
+        "legacy_canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "legacy_canonical_row_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw_blob_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "raw_relative_path": {
+          "type": "string",
+          "pattern": "^raw/v1/twelve_data_fx/[a-f0-9]{2}/[a-f0-9]{64}\\.json$"
+        },
+        "raw_row_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "raw_datetime": {
+          "$ref": "#/$defs/native_date"
+        },
+        "raw_field": {
+          "const": "close"
+        },
+        "raw_value": {
+          "$ref": "#/$defs/positive_decimal"
+        },
+        "raw_row_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "legacy_available_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/utc_timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "legacy_original_release_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/utc_timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "legacy_availability_precision": {
+          "const": "inferred"
+        },
+        "availability_evidence_disposition": {
+          "const": "adapter_inference_not_historical_evidence"
+        },
+        "original_ingested_at": {
+          "$ref": "#/$defs/utc_timestamp"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://research-platform.local/schemas/target_store.0.4.0.schema.json",
+  "title": "Return Target records 0.4.0",
+  "description": "Structural schema; canonical identity, source certification, field compatibility, temporal ordering and scientific domains additionally require executable data.targets.contracts validators. Historical platform0.2 Target drafts are not overwritten.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/target_definition"
+    },
+    {
+      "$ref": "#/$defs/policy_definition"
+    },
+    {
+      "$ref": "#/$defs/target_observation"
+    }
+  ],
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "content_sha256"
+      ]
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "measure": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "entity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ]
+          }
+        }
+      },
+      "required": [
+        "measure",
+        "entity_id",
+        "dimensions"
+      ]
+    },
+    "duration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unit": {
+          "enum": [
+            "calendar_days",
+            "elapsed_seconds"
+          ]
+        }
+      },
+      "required": [
+        "amount",
+        "unit"
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "enum": [
+            "anchor_mark",
+            "next_scheduled"
+          ]
+        },
+        "delay": {
+          "$ref": "#/$defs/duration"
+        }
+      },
+      "required": [
+        "rule",
+        "delay"
+      ]
+    },
+    "horizon": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unit": {
+          "enum": [
+            "trading_sessions",
+            "scheduled_bars",
+            "calendar_days",
+            "elapsed_seconds"
+          ]
+        },
+        "counting": {
+          "const": "exclusive_entry"
+        }
+      },
+      "required": [
+        "amount",
+        "unit",
+        "counting"
+      ]
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "enum": [
+            "exact",
+            "next_scheduled"
+          ]
+        },
+        "tolerance": {
+          "$ref": "#/$defs/duration"
+        }
+      },
+      "required": [
+        "rule",
+        "tolerance"
+      ]
+    },
+    "cadence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frequency": {
+          "enum": [
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "annual",
+            "semiannual",
+            "tick",
+            "intraday",
+            "irregular",
+            "event"
+          ]
+        },
+        "ordering": {
+          "const": "reference_time"
+        },
+        "gap_policy": {
+          "enum": [
+            "reject",
+            "explicit_missing"
+          ]
+        },
+        "calendar": {
+          "const": "gregorian"
+        },
+        "interval_seconds": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "frequency",
+        "ordering",
+        "gap_policy",
+        "calendar"
+      ]
+    },
+    "economic_source_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "economic_source"
+        },
+        "source_view": {
+          "$ref": "#/$defs/reference"
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "instrument_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "investment_series_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "instrument_class": {
+          "enum": [
+            "spot_fx",
+            "equity",
+            "fund",
+            "index",
+            "certified_investment_series",
+            "macro",
+            "yield",
+            "spread",
+            "rate",
+            "futures"
+          ]
+        },
+        "input_kind": {
+          "enum": [
+            "price",
+            "wealth_index",
+            "period_returns"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "value_semantics": {
+          "enum": [
+            "numeric_level",
+            "price",
+            "difference",
+            "fractional_change",
+            "log_change",
+            "log_level",
+            "score",
+            "volatility",
+            "indicator",
+            "count",
+            "statistic"
+          ]
+        },
+        "temporal_precision": {
+          "enum": [
+            "date",
+            "utc_timestamp"
+          ]
+        },
+        "cadence": {
+          "$ref": "#/$defs/cadence"
+        },
+        "history_policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "base_currency": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quote_currency": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quotation_direction": {
+          "enum": [
+            "quote_per_base",
+            "base_per_quote",
+            "not_applicable"
+          ]
+        },
+        "observation_convention": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "calendar_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "calendar_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "economic_coverage": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "adjustment_convention": {
+          "enum": [
+            "unadjusted_price",
+            "certified_price_adjustments",
+            "certified_total_return",
+            "certified_period_returns",
+            "ambiguous"
+          ]
+        },
+        "includes_income": {
+          "type": "boolean"
+        },
+        "includes_corporate_actions": {
+          "type": "boolean"
+        },
+        "period_representation": {
+          "enum": [
+            null,
+            "simple",
+            "log"
+          ]
+        },
+        "availability_basis": {
+          "enum": [
+            "first_published",
+            "first_archived",
+            "first_ingested",
+            "unknown"
+          ]
+        },
+        "vintage_capability": {
+          "enum": [
+            "complete_history",
+            "pinned_state"
+          ]
+        },
+        "availability_evidence_complete": {
+          "type": "boolean"
+        },
+        "zero_terminal_allowed": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "kind",
+        "source_view",
+        "selection",
+        "instrument_id",
+        "investment_series_id",
+        "instrument_class",
+        "input_kind",
+        "unit",
+        "value_semantics",
+        "temporal_precision",
+        "cadence",
+        "history_policy",
+        "currency",
+        "base_currency",
+        "quote_currency",
+        "quotation_direction",
+        "observation_convention",
+        "calendar_id",
+        "calendar_version",
+        "timezone",
+        "economic_coverage",
+        "adjustment_convention",
+        "includes_income",
+        "includes_corporate_actions",
+        "period_representation",
+        "availability_basis",
+        "vintage_capability",
+        "availability_evidence_complete",
+        "zero_terminal_allowed",
+        "evidence"
+      ]
+    },
+    "outcome_selection_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "outcome_selection"
+        },
+        "selection": {
+          "enum": [
+            "first_defensible",
+            "pinned_later"
+          ]
+        },
+        "availability_basis": {
+          "enum": [
+            "first_published",
+            "first_archived",
+            "first_ingested",
+            "unknown"
+          ]
+        },
+        "finalization_wait": {
+          "$ref": "#/$defs/duration"
+        },
+        "label_precision_policy": {
+          "enum": [
+            "conservative_date_boundary",
+            "exact_timestamp"
+          ]
+        },
+        "unknown_availability": {
+          "enum": [
+            "allow_uncertified",
+            "reject"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "selection",
+        "availability_basis",
+        "finalization_wait",
+        "label_precision_policy",
+        "unknown_availability"
+      ]
+    },
+    "mathematical_validity_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mathematical_validity"
+        },
+        "missing": {
+          "const": "retain_null"
+        },
+        "stale": {
+          "const": "reject"
+        },
+        "nonpositive_start": {
+          "const": "retain_null"
+        },
+        "nonfinite": {
+          "const": "reject_source"
+        },
+        "negative_end": {
+          "const": "retain_null"
+        },
+        "zero_terminal": {
+          "const": "source_contract"
+        },
+        "period_coverage": {
+          "const": "exact_complete"
+        }
+      },
+      "required": [
+        "kind",
+        "missing",
+        "stale",
+        "nonpositive_start",
+        "nonfinite",
+        "negative_end",
+        "zero_terminal",
+        "period_coverage"
+      ]
+    },
+    "return_calculation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "return_calculation"
+        },
+        "calculation_version": {
+          "const": "1.0.0"
+        },
+        "arithmetic": {
+          "const": "decimal_50_then_binary64_guard"
+        }
+      },
+      "required": [
+        "kind",
+        "calculation_version",
+        "arithmetic"
+      ]
+    },
+    "target_schedule_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "target_schedule"
+        },
+        "calendar_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "calendar_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_convention": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "temporal_precision": {
+          "enum": [
+            "date",
+            "utc_timestamp"
+          ]
+        },
+        "anchor_convention": {
+          "const": "declared_marks"
+        }
+      },
+      "required": [
+        "kind",
+        "calendar_id",
+        "calendar_version",
+        "timezone",
+        "observation_convention",
+        "temporal_precision",
+        "anchor_convention"
+      ]
+    },
+    "policy_body": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/economic_source_policy"
+        },
+        {
+          "$ref": "#/$defs/outcome_selection_policy"
+        },
+        {
+          "$ref": "#/$defs/mathematical_validity_policy"
+        },
+        {
+          "$ref": "#/$defs/return_calculation_policy"
+        },
+        {
+          "$ref": "#/$defs/target_schedule_policy"
+        }
+      ]
+    },
+    "source_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "instrument",
+            "benchmark"
+          ]
+        },
+        "source_view": {
+          "$ref": "#/$defs/reference"
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "economic_policy": {
+          "$ref": "#/$defs/reference"
+        }
+      },
+      "required": [
+        "role",
+        "source_view",
+        "selection",
+        "economic_policy"
+      ]
+    },
+    "construction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "price",
+            "total_return",
+            "benchmark_excess"
+          ]
+        },
+        "representation": {
+          "enum": [
+            "simple",
+            "log"
+          ]
+        },
+        "comparison": {
+          "enum": [
+            "none",
+            "arithmetic_difference",
+            "log_difference"
+          ]
+        },
+        "instrument_basis": {
+          "enum": [
+            "price",
+            "total_return"
+          ]
+        },
+        "benchmark_basis": {
+          "enum": [
+            null,
+            "price",
+            "total_return"
+          ]
+        }
+      },
+      "required": [
+        "basis",
+        "representation",
+        "comparison",
+        "instrument_basis",
+        "benchmark_basis"
+      ]
+    },
+    "definition_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_binding"
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "construction": {
+          "$ref": "#/$defs/construction"
+        },
+        "unit": {
+          "enum": [
+            "dimensionless_fraction",
+            "natural_log_return"
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "economic_coverage": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "schedule_policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "anchor_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "market_schedule",
+                "explicit"
+              ]
+            },
+            "anchor_set_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "mode",
+            "anchor_set_id"
+          ]
+        },
+        "entry": {
+          "$ref": "#/$defs/entry"
+        },
+        "horizon": {
+          "$ref": "#/$defs/horizon"
+        },
+        "endpoint": {
+          "$ref": "#/$defs/endpoint"
+        },
+        "outcome_policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "validity_policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "calculation": {
+          "$ref": "#/$defs/reference"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        }
+      },
+      "required": [
+        "sources",
+        "construction",
+        "unit",
+        "currency",
+        "economic_coverage",
+        "schedule_policy",
+        "anchor_policy",
+        "entry",
+        "horizon",
+        "endpoint",
+        "outcome_policy",
+        "validity_policy",
+        "calculation",
+        "dependencies"
+      ]
+    },
+    "target_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.4.0"
+        },
+        "record_type": {
+          "const": "target_definition"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^TARGET_[0-9a-f]{64}$"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "$ref": "#/$defs/definition_body"
+        }
+      },
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "version",
+        "display_name",
+        "body"
+      ]
+    },
+    "policy_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.4.0"
+        },
+        "record_type": {
+          "const": "policy_definition"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^POLICY_[0-9a-f]{64}$"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "$ref": "#/$defs/policy_body"
+        }
+      },
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "version",
+        "display_name",
+        "body"
+      ]
+    },
+    "operand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "entry",
+            "exit",
+            "period"
+          ]
+        },
+        "reference_time": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "available_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "vintage_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "lineage": {
+          "$ref": "#/$defs/reference"
+        },
+        "interval_start": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interval_end": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "reference_time",
+        "available_at",
+        "vintage_id",
+        "lineage",
+        "interval_start",
+        "interval_end"
+      ]
+    },
+    "selected_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "instrument",
+            "benchmark"
+          ]
+        },
+        "source_view": {
+          "$ref": "#/$defs/reference"
+        },
+        "source_snapshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 1
+        },
+        "economic_policy": {
+          "$ref": "#/$defs/reference"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "operands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operand"
+          }
+        }
+      },
+      "required": [
+        "role",
+        "source_view",
+        "source_snapshots",
+        "economic_policy",
+        "provenance",
+        "operands"
+      ]
+    },
+    "target_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0.4.0"
+        },
+        "record_type": {
+          "const": "target_observation"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^TARGETOBS_[0-9a-f]{64}$"
+        },
+        "target": {
+          "$ref": "#/$defs/reference"
+        },
+        "instrument_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "investment_series_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "prediction_anchor": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "anchor_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "temporal_precision": {
+          "enum": [
+            "date",
+            "utc_timestamp"
+          ]
+        },
+        "entry_time": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "intended_end": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "exit_time": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "horizon": {
+          "$ref": "#/$defs/horizon"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|-?([1-9][0-9]*(\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "enum": [
+            "dimensionless_fraction",
+            "natural_log_return"
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "status": {
+          "enum": [
+            "valid",
+            "invalid",
+            "missing",
+            "pending"
+          ]
+        },
+        "reason_code": {
+          "enum": [
+            null,
+            "FUTURE_ENDPOINT",
+            "FINALIZATION_PENDING",
+            "MISSING_ENDPOINT",
+            "ENDPOINT_NOT_AVAILABLE",
+            "SOURCE_MISSING",
+            "SOURCE_INVALID",
+            "NONPOSITIVE_START",
+            "NEGATIVE_END",
+            "ZERO_TERMINAL_NOT_CERTIFIED",
+            "NONPOSITIVE_LOG_INPUT",
+            "NONFINITE_OUTPUT",
+            "PERIOD_GAP",
+            "PERIOD_OVERLAP",
+            "PERIOD_BOUNDARY_MISMATCH",
+            "INVALID_PERIOD_RETURN"
+          ]
+        },
+        "selected_sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selected_source"
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "source_availability": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome_selection_cutoff": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+        },
+        "label_available_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "historical_eligibility_certified": {
+          "type": "boolean"
+        },
+        "availability_basis": {
+          "enum": [
+            "first_published",
+            "first_archived",
+            "first_ingested",
+            "unknown"
+          ]
+        },
+        "label_precision_policy": {
+          "enum": [
+            "conservative_date_boundary",
+            "exact_timestamp"
+          ]
+        },
+        "economic_coverage": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        }
+      },
+      "required": [
+        "schema_version",
+        "record_type",
+        "id",
+        "target",
+        "instrument_id",
+        "investment_series_id",
+        "prediction_anchor",
+        "anchor_id",
+        "temporal_precision",
+        "entry_time",
+        "intended_end",
+        "exit_time",
+        "horizon",
+        "value",
+        "unit",
+        "currency",
+        "status",
+        "reason_code",
+        "selected_sources",
+        "source_availability",
+        "outcome_selection_cutoff",
+        "label_available_at",
+        "historical_eligibility_certified",
+        "availability_basis",
+        "label_precision_policy",
+        "economic_coverage"
+      ]
+    }
+  }
+}

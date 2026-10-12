@@ -1,0 +1,10 @@
+[Unit]
+Description=Gambit private operational health check
+After=gambit-web.service gambit-worker.service
+[Service]
+Type=oneshot
+User=root
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/gambit/venv/bin/python /srv/gambit/research_platform/deploy/health_cloud.py
+TimeoutStartSec=20
+UMask=0027

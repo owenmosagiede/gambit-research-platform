@@ -1,0 +1,270 @@
+You are starting in a fresh session. Do not assume access to previous conversations.
+
+TASK
+
+Create the foundation package for a new quantitative research platform inside the existing workspace named "Multi-Asset Model".
+
+The new application root should be:
+
+Multi-Asset Model/research_platform/
+
+Implement this foundation package now. Do not merely propose it. Do not rebuild the entire system in this task.
+
+The required deliverables are:
+
+1. A storage inventory and proposed retention classification.
+2. An understandable new folder skeleton.
+3. A root README that explains the system and its locations.
+4. A specification index for the entire system.
+5. A canonical experiment submission contract, with machine readable structure, synthetic examples, and small contract tests.
+
+Then stop. Completing the remaining specifications and building the first UI page are subsequent tasks.
+
+CONTEXT AND INTENT
+
+I am rebuilding an existing research system using what we learned from it. This is a new implementation, not a blind copy or a wholesale refactor of the old codebase.
+
+The eventual UI is the visible expression of the infrastructure. Its first page will be a plain white page containing exactly five research inputs:
+
+Feature + Target + Scope + Expected Direction + Research Spec
+
+There will also be a Submit Experiment button and a truthful submission status. Do not build that page yet.
+
+A human using the UI and an agent making the same submission must eventually use the same backend contract. Scientific logic must not live in the UI.
+
+There is an attached P3/P4 design specification. Treat it as the intended design for those processes, while recording its unresolved implementation details. Do not silently replace it with the legacy implementation or your preferred methodology.
+
+If the attachment is unavailable, look for a clearly matching local specification within this workspace. Record the source you actually found. If no source is available, record that limitation and complete the structural work without inventing the missing science.
+
+FIRST INSPECT, THEN WRITE
+
+Read applicable workspace instructions, including AGENTS.md when present. Establish the actual workspace location and inspect the existing directory structure, relevant specifications, and current version control state.
+
+Use targeted inspection. Do not read every dataset, hash all historical payloads, launch research jobs, or conduct an unrestricted filesystem search.
+
+Inspect existing identities, definitions, ledgers, and storage conventions sufficiently to distinguish known facts from assumptions. Old code is evidence about what exists, not automatic authority over the new design.
+
+If research_platform already contains substantive work, inspect it first. Do not overwrite it or silently create another competing platform root. Continue only where the existing material is clearly compatible with this task; report conflicts without destructive changes.
+
+SAFETY BOUNDARY
+
+All legacy system locations are read only for this task. Write only inside the new platform root, apart from test processes using ordinary temporary locations.
+
+Do not delete, move, rename, compact, truncate, or rewrite any legacy files. Do not terminate processes, change schedules, alter provider credentials, migrate data, or repair the old system.
+
+Do not copy raw or PIT datasets into the new folder. Reference their existing locations through configuration and document the mapping.
+
+Do not install a new application stack, introduce cloud infrastructure, connect a broker, submit trades, or launch a full research replay.
+
+Do not expose credentials or copy secrets into documentation. Do not reset version control, overwrite unrelated changes, or commit or push anything.
+
+Unknown dependencies mean retention status is unresolved, not permission to delete. This task produces no deletion authorization.
+
+DELIVERABLE 1: STORAGE INVENTORY
+
+Create:
+
+docs/storage_inventory.md
+docs/storage_inventory.csv
+
+Inventory meaningful storage groups and the largest consumers. Descend into large directories as needed rather than generating an enormous list of every observation or payload.
+
+For each inventoried group, record its path, apparent purpose, measured size where practical, measurement method and time, proposed treatment, supporting evidence, and unresolved dependencies. Record whether writer activity is known, unknown, or verified absent; absence of an observed process is not proof that the location is inactive.
+
+Clearly label partial coverage, inaccessible locations, changing directories, and estimated sizes. Do not present summed nested directories as unique disk usage. Account for symlinks and hard links where relevant, and do not follow external storage links automatically.
+
+Use these proposed treatments:
+
+KEEP_DATA: Raw provider data, PIT data, release and availability timestamps, vintage information, source metadata, and essential mappings.
+
+KEEP_SCIENTIFIC_MEMORY: Definitions, Research Specs, trial ledgers, validation evidence, failure records, decisions, lineage, compact summaries, research period exposure records, and the code and environment references needed to interpret retained evidence.
+
+ARCHIVE_CANDIDATE: Cold evidence whose reproducibility and retention requirements still need verification.
+
+REGENERABLE_CANDIDATE: Suspected caches, intermediates, temporary payloads, or duplicates. Explain what would be needed to prove regeneration or duplication before deletion.
+
+UNKNOWN: Anything whose purpose, dependencies, or retention requirements cannot yet be established.
+
+Distinguish measured storage from potentially reclaimable storage. Do not report candidate bytes as guaranteed recoverable space.
+
+No deletion, archive transfer, or automated cleanup should occur. Include the verification and approval prerequisites for a later cleanup task.
+
+DELIVERABLE 2: FOLDER SKELETON
+
+Create this structure:
+
+research_platform/
+    README.md
+    docs/
+    specs/
+    definitions/
+        features/
+        targets/
+        scopes/
+        research_specs/
+        mandates/
+        venue_profiles/
+    config/
+    src/
+        contracts/
+        data/
+        research/
+            p1_discovery/
+            p2_validation/
+            p3_forecasting/
+            p4_portfolios/
+            p5_allocation/
+        runtime/
+        api/
+        execution/
+    ui/
+    tests/
+        fixtures/
+    tools/
+    storage/
+        catalog/
+        payloads/
+        cache/
+        temporary/
+        logs/
+    archive/
+        legacy/
+
+Keep it understandable. Do not add speculative layers, microservices, or framework boilerplate.
+
+The research folders contain reusable Python computation modules, not datasets or independent custom scripts for every experiment. P1 and P2 contain scientific testing logic; tests/ verifies whether the software works correctly.
+
+The p5_allocation folder is provisional. Its presence does not approve a final P5 contract.
+
+Keep application code, scientific definitions, execution state, and large payloads conceptually separate. The catalog may reference definitions but must not become a second independently editable source of them.
+
+Use small purpose notes where useful. Add an appropriate local .gitignore so credentials, local path configuration, datasets, payloads, caches, logs, and archive contents are not accidentally tracked. Preserve the intended empty directory structure without storing fake scientific results.
+
+Document external raw and PIT store references in a configuration example. Keep any actual machine specific mapping local and excluded from version control. Physical paths must not become scientific identities.
+
+DELIVERABLE 3: ROOT README
+
+Explain in plain language:
+
+What this platform is intended to do.
+What exists after this task versus what remains unimplemented.
+Where code, definitions, data references, results, failures, specifications, and UI components belong.
+How an experiment is intended to move through the system.
+How to inspect the inventory and run the small contract tests.
+What the next implementation task is.
+
+The process map should preserve these boundaries:
+
+P1: Discovery testing and candidate admission under a Research Spec.
+P2: Prescribed validation and production of validated SignalHorizon relationships.
+P3: Individual Signal calibration, decay, forecast dependence, and combination into InstrumentHorizonForecast. It does not choose positions.
+P4: Portfolio construction using forecasts, uncertainty, market risk, costs, mandate, and venue context, producing TargetPosition and RequiredTrade.
+P5: Proposed coordination across portfolios and shared capital. Final ownership and feedback with P4 remain unresolved.
+Execution: Eventual order submission and reconciliation. RequiredTrade is not itself authorization to send an order.
+
+DELIVERABLE 4: SPECIFICATION INDEX
+
+Create specs/README.md identifying the purpose, dependencies, source material, status, and open decisions for:
+
+00_system_boundaries.md
+01_canonical_objects.md
+02_data_and_readiness.md
+03_features_targets_scopes.md
+04_experiment_submission.md
+05_p1_discovery.md
+06_p2_validation.md
+07_p3_forecasting.md
+08_p4_portfolios.md
+09_p5_and_execution_boundary.md
+10_runtime_recovery_storage.md
+11_ui_and_observability.md
+
+Do not pretend the full specification set is complete. Create concise stubs where useful, but fully develop only the experiment contract and the common identity rules needed for it in this task.
+
+Every future transformation specification must define inputs, permitted information set, calculations, output units and shape, validity rules, failure behavior, reuse and invalidation rules, persistence, and acceptance tests.
+
+Preserve the attached P3/P4 reference without rewriting its substance. Record its source and distinguish source requirements from proposals and unresolved questions.
+
+Explicitly list these unresolved questions rather than deciding them in code:
+
+The exact return basis and horizon units used by calibration and horizon conversion.
+The distinction between forecast error variance and uncertainty in an estimated expected return.
+The permitted estimation timeline for calibration, decay, covariance, and combination weights.
+P4 versus P5 ownership, including shared capital and aggregate constraints.
+
+DELIVERABLE 5: CANONICAL EXPERIMENT CONTRACT
+
+Develop specs/04_experiment_submission.md, machine readable contract schemas, minimal Python contract definitions or pure validation functions in src/contracts/, and synthetic examples in tests/fixtures/.
+
+The user supplies exactly five scientific inputs:
+
+Feature: A reference to a registered predictor definition.
+Target: A reference to the exact predicted outcome, with an unambiguous return basis and horizon convention.
+Scope: A reference to an instrument or universe definition, including applicable membership and exclusion rules.
+Expected Direction: POSITIVE or NEGATIVE, declared before inspecting results.
+Research Spec: A reference to the prescribed methodology, including TS or CS mode, periods, tests, and admission rules.
+
+Use explicit versioned references. Do not silently resolve mutable "latest" definitions in a reproducible experiment. Reject unknown fields and arbitrary executable text. Do not infer Expected Direction from observed results.
+
+Keep these concepts distinct:
+
+Experiment definition: The scientific intent represented by the five inputs.
+Submission request: The operational request and its idempotency identifier.
+Resolved experiment: The definition bound to the actual immutable scientific dependencies needed to reproduce the calculation.
+Execution attempt: One attempt to execute a resolved experiment, with its own identity, timestamps, and operational state.
+
+Specify which identities change when scientific inputs, data snapshots, or implementation versions change, and which do not change merely because a folder moves or an execution is retried. Define deterministic normalization before any content based identity is computed.
+
+Document how the resolver will bind data snapshots, availability policy, definition and implementation versions, relevant certificates, and randomness settings when applicable. These are recorded execution dependencies, not extra required UI research fields. Distinguish required dependencies from optional or inapplicable ones rather than using invented values.
+
+If one request can expand into several trials, record the requirement for deterministic expansion and explicit trial identities. Do not invent an undocumented parameter grid or implement an expansion engine now.
+
+Specify that retrying the same request identifier with the same content returns the existing submission; reusing it with different content is an error. This is a future persistence requirement, not a claim that a submission service already exists.
+
+Separate execution outcomes from scientific outcomes. A completed experiment that rejects a hypothesis is not a software failure. Reuse existing scientific terminology where its meaning is verified; record unknown stage semantics instead of inventing them.
+
+Unresolved references or missing readiness evidence must be reported as unresolved or blocked, never falsely ready. A recorded request must not be reported as running when no executor exists.
+
+Scope dependent transformations must bind their Scope before the relevant calculation, not merely filter completed results afterward.
+
+The five inputs define research intent. They do not supply capital, positions, costs, mandate, venue, or trading authorization. Those are separate downstream portfolio and execution contexts. Do not hide them in the Research Spec.
+
+Use clearly marked synthetic fixtures, not fabricated production registrations. Test required fields, unexpected fields, invalid direction, unpinned references, and the implemented identity or normalization behavior. Distinguish structural validation from registry resolution and readiness checks that are not implemented yet.
+
+Do not build an API, database, scheduler, UI, provider connector, scientific estimator, or portfolio optimizer in this task. Small contract validators and their tests are sufficient.
+
+SYSTEM RULES TO CARRY INTO THE SPECIFICATIONS
+
+Processes consume canonical scientific objects, not the producer's run directory, roster, or operation identifier.
+
+Readiness evidence is bound to a particular immutable dependency state and validation policy. Reuse is permitted only while that evidence remains valid. Certificates need invalidation rules; they are not permanent permission to trust changing data.
+
+Historical reproducibility and live generation capability are separate certifications. Newly arriving data still requires appropriate batch checks.
+
+After normalization, downstream scientific calculations must not branch on provider identity. Provider provenance remains available through lineage.
+
+Repairs preserve failed attempts, replace only affected work, and reconcile successors without restarting unrelated valid work.
+
+Large payloads should be stored once and referenced. Preserve scientific memory while giving regenerable intermediates explicit retention policies.
+
+A new implementation does not erase prior tests or make previously inspected validation periods untouched. Carry that knowledge forward without silently declaring legacy outputs newly certified.
+
+Observability must eventually distinguish execution progress, scientific outcomes, failures, blockers, and storage use without making log parsing the source of scientific truth.
+
+COMPLETION AND STOPPING POINT
+
+Run the small available contract tests and inspect the created structure. Be explicit about what was actually checked. Do not install a large dependency stack merely to validate this foundation.
+
+Finish with:
+
+1. The actual new root path and concise file tree.
+2. The files created or modified inside it.
+3. Measured storage findings, proposed treatments, and inventory limitations.
+4. The canonical experiment contract and identity decisions.
+5. Tests run and their actual results.
+6. Open decisions or missing source material that block later scientific implementation.
+7. The next bounded task: complete the remaining specifications, then implement the white submission page against the approved contract.
+
+Report any unavoidable deviations. Do not claim a working research platform, completed migration, reclaimed disk space, live certification, or functioning UI.
+
+Stop after the foundation package. Do not proceed into the UI or scientific engines during this task.

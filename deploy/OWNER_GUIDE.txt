@@ -1,0 +1,56 @@
+GAMBIT SYSTEMS — OWNER GUIDE
+
+OPEN YOUR WORKSPACE
+Visit https://gambitsystems.xyz/login/ and sign in as owenosa with the password
+you created. The public homepage contains no private research. Sessions expire;
+signing in again does not restart or resubmit an experiment.
+
+RESEARCH
+After cloud activation, select Feature, Target, Scope and Expected Direction,
+then Submit. The existing backend Research Spec and five scheduled-weekday
+horizons remain in force. An individual instrument uses TS; a universe uses CS.
+Existing compatibility and readiness checks still apply. An enabled cloud
+deployment does not make every possible Feature/Scope combination valid.
+
+The independent server worker executes accepted work. Your browser, laptop and
+Codex chat are not needed while it runs. Queue and Trial Ledger retain progress
+and outcomes. A completed job is not necessarily an admitted/validated signal.
+Closing the laptop does not stop the server. Stopping or losing the cloud VM
+does interrupt computation; persistent records and recovery logic then matter.
+
+ONE AUTHORITATIVE COPY
+Once cloud Submit is enabled, the cloud is the writable research authority.
+The old local copy is retained as a cutover snapshot. Do not start it to perform
+parallel production research or switch back to it after cloud writes without
+reconciling the newer cloud records.
+
+BACKUPS
+Daily encrypted backups use the separate private DigitalOcean Spaces bucket.
+The worker finishes its active submission before copying. The website then
+pauses for the consistent copy, and both services restart before upload.
+Maintenance copying is not instantaneous: this store contains many small files.
+Schedule: 11:00 UTC plus up to ten minutes of jitter; retention7daily/4weekly.
+VM backups supplement this and do not include the attached research volume.
+
+Recovery requires the backup access key AND the separate encryption password.
+Protected outside-server copies are in the task's cloud-foundation/private folder.
+Keep these private. An additional password-manager/offline copy is sensible;
+none has been sent to another service. Full recovery instructions are in the
+research_platform/deploy/BACKUP_RECOVERY.txt file.
+
+ALERTS AND COST
+DigitalOcean account email receives the configured operational/spending alerts.
+Disk threshold75%; memory85%; budget notifications at$40/$60/$80.
+The baseline provisioned services total$46.20/month before tax and overages,
+with domain renewal separate. Spending alerts do not automatically stop charges.
+Monitor boot-disk backup staging space as well as the research volume.
+
+PASSWORD RECOVERY
+There is no email reset service. An administrator with the approved deployment
+SSH key can use the interactive Django changepassword command on the server.
+Never send your password, SSH private key, or backup credentials in chat/email.
+
+VERIFICATION
+See cloud-cutover-verification.txt and linux-evidence for actual acceptance
+results and any remaining gate. This guide describes operations; it is not
+proof that a pending gate has passed.

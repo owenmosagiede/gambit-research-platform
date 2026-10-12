@@ -1,0 +1,19 @@
+[Unit]
+Description=Gambit consistent encrypted off-host backup
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/gambit
+ConditionPathIsMountPoint=/srv/gambit
+ConditionPathExists=/etc/gambit/backup-enabled
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/gambit/backup/restic.env
+ExecStart=/opt/gambit/venv/bin/python /srv/gambit/research_platform/deploy/backup_cloud.py run
+ExecStopPost=/opt/gambit/venv/bin/python /srv/gambit/research_platform/deploy/backup_cloud.py recover-services
+TimeoutStartSec=infinity
+TimeoutStopSec=infinity
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

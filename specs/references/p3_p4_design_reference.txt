@@ -1,0 +1,853 @@
+**Process 3: Validated Signals → Expected Returns**
+
+# **P3 purpose**
+
+P3 has one job:
+
+Turn individually validated predictive relationships into the best point in time expected return estimate for each instrument and validated forecast horizon, while preserving uncertainty, redundancy, decay and attribution.
+
+P3 does not decide positions.
+
+# **What P3 receives**
+
+P3 consumes canonical validated Signal objects from P2.
+
+For every validated Signal × Horizon relationship:
+
+| **Field** | **Meaning** |
+| --- | --- |
+| Signal ID | Permanent Signal identity |
+| Feature ID | Predictor definition |
+| Target ID | Exact future return being predicted |
+| Instrument or universe | Scope of the Signal |
+| Mode | TS or CS |
+| Validated horizon | Horizon that actually survived P2 |
+| Expected direction | Frozen ex ante sign |
+| Historical Signal scores | PIT score history |
+| Historical Target returns | Corresponding future return history |
+| Current Signal score | Latest available predictor value |
+| Validation evidence | P1 and P2 statistics, stability and effect evidence |
+| Availability timestamps | When each observation became known |
+| PIT lineage | Complete upstream scientific lineage |
+
+Important:
+
+A Signal validated at 63 observations enters P3 as a 63 observation forecast relationship.
+
+It does not automatically become a 1, 7, 21 or 252 observation Signal.
+
+If the same Feature independently validates at both 21 and 63 observations, those are two separate SignalHorizon objects.
+
+For CS Signals, the object contains the validated universe and membership history. P3 eventually produces instrument level forecasts for eligible members.
+
+# **P3 Step 1: Signal level calibration**
+
+Every Signal is first converted independently into expected return units.
+
+Conceptually:
+
+Signal score → expected future return
+
+The output of this stage is:
+
+SignalForecast
+
+For example:
+
+Signal A → EURUSD 21D expected return = +1.4%
+
+Signal B → EURUSD 21D expected return = +0.8%
+
+Signal C → EURUSD 21D expected return = +1.1%
+
+This happens before Signal combination.
+
+The calibration estimator can differ according to observation geometry, TS versus CS, but the contract is universal:
+
+every calibrated Signal must ultimately express an expected return in the same canonical economic units as its Target.
+
+The calibration must be estimated only from the permitted historical information set.
+
+# **P3 Step 2: Estimate and apply Signal decay**
+
+P3 estimates how the predictive relationship deteriorates as the information ages.
+
+For every Signal:
+
+d(age)
+
+where:
+
+d(0) = 1
+
+and predictive influence falls as the Signal becomes stale.
+
+Operational forecast:
+
+decayed_signal_forecast = fresh_signal_forecast × d(age)
+
+Therefore a macro Signal based on a newly released observation has full influence initially and progressively less influence until new information arrives.
+
+Decay has one specific job:
+
+determine how much of an otherwise valid forecast remains economically relevant as its underlying information ages.
+
+The same decay rule is replayed historically when estimating forecast errors, so its effectiveness is reflected in subsequent uncertainty estimates.
+
+If no defensible decay model can be estimated, the Signal may operate while fresh but cannot be indefinitely carried forward through an invented decay rule.
+
+# **P3 Step 3: Preserve every Signal individually**
+
+This is the major architectural change.
+
+Current logic:
+
+Signals → Statistical Family → equal weighted Family Score → Family Forecast
+
+New logic:
+
+Signals → individual calibrated forecasts → intelligent forecast combination
+
+No validated Signal disappears merely because it belongs to a family.
+
+Families remain useful for:
+
+redundancy diagnostics
+
+economic interpretation
+
+research organization
+
+attribution
+
+PM reporting
+
+concentration monitoring
+
+But Family Score is no longer the forecasting bottleneck.
+
+A Family ID is therefore a P3 derived metadata object, not a required P3 input.
+
+# **P3 Step 4: Estimate forecast errors and dependence**
+
+For each compatible:
+
+instrument × target basis × horizon
+
+P3 calculates the historical forecast error of every constituent Signal.
+
+For Signal i:
+
+error_i,t = realized_return_t − signal_forecast_i,t
+
+P3 then estimates the covariance matrix of those forecast errors.
+
+This is different from market return covariance.
+
+P3 covariance answers:
+
+Which Signal forecasts tend to make the same mistakes?
+
+A shrinkage estimator is used so the covariance matrix remains stable when histories are limited or many Signals exist.
+
+This naturally identifies redundancy.
+
+If two Signals make nearly identical forecasts and nearly identical errors, P3 recognizes that they contain little independent information.
+
+# **P3 Step 5: Combine Signals using covariance aware precision weighting**
+
+For each:
+
+instrument × horizon × timestamp
+
+P3 combines the eligible individual Signal forecasts using:
+
+**constrained generalized least squares forecast combination with a shrinkage forecast error covariance matrix.**
+
+Weights satisfy:
+
+weight_i ≥ 0
+
+and
+
+Σ weights = 1
+
+Conceptually:
+
+more precise Signal → more influence
+
+less precise Signal → less influence
+
+highly redundant Signal → less incremental influence
+
+distinct useful Signal → more incremental influence
+
+This replaces both:
+
+equal weighting inside families
+
+and
+
+equal weighting across families.
+
+It does not manually assign weights using IC, Sharpe, family labels or subjective preferences.
+
+The combination weights arise from the historical precision and dependence of the forecasts themselves.
+
+# **P3 Step 6: Measure forecast uncertainty and disagreement**
+
+If:
+
+w = Signal combination weights
+
+and
+
+Σe = Signal forecast error covariance
+
+then combined forecast uncertainty comes from the same forecast error system.
+
+Conceptually:
+
+forecast_variance = w' Σe w
+
+P3 also records:
+
+forecast dispersion
+
+effective independent Signal count
+
+largest Signal contribution
+
+largest family contribution
+
+Signal concentration
+
+family concentration
+
+decay contribution
+
+forecast uncertainty
+
+This allows two +1% forecasts to be distinguished.
+
+One may result from five independent agreeing Signals.
+
+Another may result from five noisy disagreeing Signals.
+
+The expected return alone does not contain that information.
+
+# **What P3 outputs**
+
+The canonical output is:
+
+InstrumentHorizonForecast
+
+For every instrument and legitimately validated horizon:
+
+instrument_id
+
+target_id
+
+forecast_timestamp
+
+horizon
+
+expected_return
+
+forecast_uncertainty
+
+effective_signal_count
+
+signal_weights
+
+signal_contributions
+
+family_metadata
+
+family_contributions
+
+decay_contributions
+
+forecast_dispersion
+
+availability
+
+PIT lineage
+
+For example:
+
+EURUSD 21D
+
+Expected return: +1.10%
+
+Forecast uncertainty: 0.38%
+
+and separately:
+
+EURUSD 63D
+
+Expected return: +2.40%
+
+Forecast uncertainty: 0.71%
+
+There is no EURUSD 7D forecast unless actual validated 7D Signal information exists.
+
+P3 ends here.
+
+It has estimated alpha.
+
+It has not allocated capital.
+
+# **Process 4: Expected Returns → Portfolio Positions**
+
+# **P4 purpose**
+
+P4 has one job:
+
+Given P3’s expected returns and uncertainty, market risk, implementation costs and mandate constraints, determine the economically optimal portfolio positions.
+
+P4 does not decide whether the Signals are scientifically valid.
+
+That has already happened upstream.
+
+# **What P4 receives**
+
+From P3:
+
+InstrumentHorizonForecast
+
+including:
+
+expected returns
+
+forecast horizons
+
+forecast uncertainty
+
+Signal attribution
+
+family attribution
+
+lineage
+
+P4 additionally receives:
+
+current positions
+
+current prices
+
+market return histories
+
+market covariance information
+
+transaction cost model
+
+financing and carry model
+
+liquidity information
+
+capital
+
+mandate
+
+venue profile
+
+instrument limits
+
+factor limits
+
+gross and net limits
+
+leverage rules
+
+margin rules
+
+execution restrictions
+
+# **P4 Step 1: Put different forecast horizons onto a comparable economic scale**
+
+A 1% expected 7 observation return and a 1% expected 252 observation return are not economically equivalent.
+
+Convert horizon returns into a common expected return rate.
+
+For example:
+
+alpha_rate_h = log(1 + expected_return_h) / h
+
+Uncertainty must be transformed consistently onto the same scale.
+
+Now:
+
+1D
+
+7D
+
+21D
+
+63D
+
+252D
+
+forecasts can be compared without pretending they represent the same holding period.
+
+# **P4 Step 2: Combine the horizon term structure**
+
+For each instrument, P4 may have several independently validated horizon forecasts:
+
+EURUSD 7D
+
+EURUSD 21D
+
+EURUSD 63D
+
+etc.
+
+These are not equal weighted.
+
+P4 estimates how the horizon forecasts have historically erred relative to one another after putting them on the common economic clock.
+
+It then applies the same general principle as P3:
+
+precision weighting
+
+cross horizon forecast error covariance
+
+shrinkage
+
+nonnegative combination weights
+
+The question is now:
+
+Given several valid estimates of this instrument’s forward alpha operating at different horizons, what is the best current estimate of the instrument’s actionable expected return rate?
+
+If 7D and 21D forecasts carry nearly identical information, they do not receive two independent full votes.
+
+If 252D contributes genuinely distinct information, it can receive incremental influence.
+
+The output is one:
+
+InstrumentAlpha
+
+containing:
+
+expected alpha rate
+
+alpha uncertainty
+
+horizon weights
+
+horizon contributions
+
+# **Critical distinction: P3 uncertainty versus P4 uncertainty use**
+
+There is no second arbitrary adjustment such as:
+
+robust alpha = alpha − λ × uncertainty
+
+Remove that from the prior architecture.
+
+P3 and the horizon combination produce:
+
+Expected Alpha
+
+and separately:
+
+Alpha Uncertainty
+
+P4 then uses both simultaneously in the portfolio optimizer.
+
+That avoids double counting.
+
+# **P4 Step 3: Estimate market risk**
+
+P4 separately estimates the covariance of instrument returns.
+
+Call this:
+
+Σ_market
+
+This answers:
+
+How do the assets themselves move together?
+
+This is completely different from P3’s Signal forecast error covariance.
+
+P3 covariance:
+
+How do forecasts make mistakes together?
+
+P4 market covariance:
+
+How do assets move together?
+
+Both matter, but for different reasons.
+
+# **P4 Step 4: Incorporate forecast estimation risk**
+
+P4 also retains an alpha uncertainty covariance object:
+
+Ω_alpha
+
+This represents uncertainty in the expected return estimates.
+
+Now P4 knows both:
+
+market risk
+
+and
+
+alpha estimation risk.
+
+A portfolio containing highly volatile assets is risky.
+
+A portfolio based on highly uncertain expected returns is also risky.
+
+Those are not the same risk.
+
+# **P4 Step 5: Solve one canonical portfolio optimization**
+
+P4 solves a convex portfolio problem.
+
+Conceptually:
+
+maximize
+
+expected portfolio alpha
+
+minus
+
+market risk penalty
+
+minus
+
+forecast uncertainty penalty
+
+minus
+
+transaction costs
+
+minus
+
+financing costs
+
+subject to the mandate.
+
+A compact representation is:
+
+maximize
+
+x'μ
+
+− γ/2 × x'Σ_market x
+
+− κ/2 × x'Ω_alpha x
+
+− transaction_cost(Δx)
+
+− financing_cost(x)
+
+where:
+
+x = proposed positions
+
+μ = P3 derived expected alpha vector
+
+Σ_market = asset return covariance
+
+Ω_alpha = alpha estimation uncertainty
+
+γ = mandate portfolio risk aversion
+
+κ = mandate forecast uncertainty aversion
+
+These risk preferences belong to the mandate.
+
+They are not fitted retrospectively to maximize the backtest.
+
+# **P4 Step 6: Mandate constraints participate inside the optimization**
+
+The mandate is not applied after positions have already been selected.
+
+It defines the feasible portfolio.
+
+Constraints can include:
+
+gross exposure
+
+net exposure
+
+instrument concentration
+
+sector or country concentration
+
+factor exposure
+
+liquidity
+
+turnover
+
+leverage
+
+margin
+
+shorting restrictions
+
+minimum cash
+
+venue restrictions
+
+regulatory restrictions
+
+prop firm rules
+
+Mandate A and Mandate B can therefore receive exactly the same P3 alpha forecasts and legitimately produce different portfolios.
+
+That is intended.
+
+# **P4 Step 7: Convert continuous targets into executable positions**
+
+Once the economically optimal continuous portfolio is known:
+
+target weights
+
+are converted into:
+
+target notional
+
+contracts
+
+shares
+
+lots
+
+or other executable quantities.
+
+Venue mechanics then apply:
+
+contract size
+
+minimum lot
+
+lot increment
+
+tick size
+
+minimum trade
+
+margin
+
+trading hours
+
+execution restrictions
+
+Rounding must preserve mandate feasibility.
+
+Investment logic remains separate from execution implementation.
+
+Therefore the same P4 engine can support:
+
+institutional FX
+
+futures
+
+equities
+
+credit
+
+crypto
+
+FTMO
+
+The5ers
+
+an SMA
+
+a brokerage account
+
+without rewriting the portfolio mathematics.
+
+# **What P4 outputs**
+
+Two primary objects:
+
+TargetPosition
+
+and
+
+RequiredTrade
+
+For each instrument:
+
+expected alpha
+
+alpha uncertainty
+
+horizon contributions
+
+target weight
+
+target notional
+
+current weight
+
+required position change
+
+market risk contribution
+
+forecast uncertainty contribution
+
+expected alpha contribution
+
+transaction cost estimate
+
+financing estimate
+
+binding constraints
+
+Signal attribution
+
+family attribution
+
+horizon attribution
+
+complete lineage
+
+At portfolio level:
+
+expected alpha
+
+expected volatility
+
+forecast uncertainty exposure
+
+gross exposure
+
+net exposure
+
+factor exposures
+
+transaction cost estimate
+
+financing estimate
+
+turnover
+
+margin usage
+
+constraint usage
+
+mandate ID
+
+venue ID
+
+# **Final permanent architecture**
+
+P2 VALIDATED SIGNAL
+
+↓
+
+SIGNAL × VALIDATED HORIZON
+
+↓
+
+SIGNAL LEVEL RETURN CALIBRATION
+
+↓
+
+INFORMATION DECAY
+
+↓
+
+INDIVIDUAL SIGNAL FORECASTS
+
+↓
+
+FORECAST ERROR COVARIANCE
+
+↓
+
+COVARIANCE AWARE PRECISION COMBINATION
+
+↓
+
+INSTRUMENT × HORIZON EXPECTED RETURN
+
++
+
+FORECAST UNCERTAINTY
+
+↓
+
+COMMON HORIZON SCALE
+
+↓
+
+COVARIANCE AWARE HORIZON COMBINATION
+
+↓
+
+INSTRUMENT ALPHA
+
++
+
+ALPHA UNCERTAINTY
+
+↓
+
+MARKET RISK
+
++
+
+COSTS
+
++
+
+FINANCING
+
++
+
+MANDATE CONSTRAINTS
+
+↓
+
+PORTFOLIO OPTIMIZATION
+
+↓
+
+TARGET POSITIONS
+
+↓
+
+VENUE TRANSLATION
+
+↓
+
+REQUIRED TRADES
+
+The hard architectural rules I would freeze are:
+
+**1. A Signal only forecasts a horizon it actually validated.**
+
+**2. Every validated Signal is calibrated individually before combination.**
+
+**3. Families never destroy or replace individual Signal information.**
+
+**4. Families are redundancy, attribution and interpretation metadata.**
+
+**5. Signal combination is determined by forecast precision and forecast dependence, not equal weights.**
+
+**6. Decay controls the influence of stale information.**
+
+**7. P3 estimates expected returns and uncertainty.**
+
+**8. P4 allocates capital to those uncertain expected returns.**
+
+**9. Forecast uncertainty and market risk remain separate quantities.**
+
+**10. Horizon forecasts are combined intelligently, not equally.**
+
+**11. Mandates constrain portfolio construction rather than alter the research.**
+
+**12. Venue mechanics occur after the economic portfolio decision.**
+
+That is the version I would now use as the design specification for the P3 and P4 rebuild.

@@ -1,0 +1,19 @@
+"""Unix socket only. Caddy is the sole network-facing process."""
+bind = 'unix:/run/gambit-web/http.sock'
+workers = 2
+worker_class = 'gthread'
+threads = 2
+timeout = 120
+graceful_timeout = 120
+keepalive = 5
+umask = 0o007
+accesslog = None
+errorlog = '-'
+loglevel = 'warning'
+no_control_socket = True
+forwarded_allow_ips = ''
+limit_request_line = 4094
+limit_request_fields = 40
+limit_request_field_size = 4094
+max_requests = 1500
+max_requests_jitter = 100

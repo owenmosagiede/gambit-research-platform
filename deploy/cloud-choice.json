@@ -1,0 +1,98 @@
+{
+  "status": "live_cloud_authority_activation_verified",
+  "provider": "DigitalOcean",
+  "monthly_budget_usd": {
+    "minimum": 50,
+    "maximum": 80
+  },
+  "region_preference": "sfo3",
+  "initial_droplet": {
+    "vcpus": 2,
+    "memory_gib": 4,
+    "baseline_usd_month": 24
+  },
+  "research_volume_gib": 100,
+  "research_volume_usd_month": 10,
+  "private_backup_storage_usd_month_base": 5,
+  "daily_vm_backup_usd_month": 7.2,
+  "baseline_usd_month_before_tax_and_overages": 46.2,
+  "upgrade_only_after_measurement": {
+    "vcpus": 4,
+    "memory_gib": 8,
+    "estimated_total_usd_month": 77.4
+  },
+  "domain": "gambitsystems.xyz",
+  "domain_status": "apex_A_configured_https_live",
+  "registrar": "Porkbun",
+  "observed_domain_usd_first_year": 2.04,
+  "observed_domain_usd_annual_renewal": 14.21,
+  "owner_username": "owenosa",
+  "owner_email": "owen.osagiede@gmail.com",
+  "runtime_python": "3.14.8",
+  "production_research_enabled": true,
+  "billing_status": "payment_method_present_confirmed_2026-10-11",
+  "droplet_id": 608233107,
+  "droplet_name": "gambit-research-01",
+  "region": "sfo3",
+  "public_ipv4": "64.23.188.70",
+  "volume_name": "gambit-research-data",
+  "volume_mount": "/srv/gambit",
+  "volume_filesystem_uuid": "609a0a34-e482-4873-9893-6ed1163837ec",
+  "cloud_firewall_id": "ec4d179c-5e60-4b34-8302-dc275c346185",
+  "backup_bucket": "gambitsystems-private-backups",
+  "backup_region": "nyc3",
+  "backup_access_status": "approved_created_installed_root_only",
+  "daily_vm_backup_status": "enabled_confirmed",
+  "registered_ssh_key_id": 60018252,
+  "linux_acceptance": {
+    "tests": 99,
+    "passed": 99,
+    "seconds": 172.637,
+    "python": "3.14.8",
+    "caddy_configuration": "valid",
+    "production_data_migrated": true
+  },
+  "backup_repository_status": "initialized_encrypted_restic_v2",
+  "backup_verification": {
+    "scope": "isolated_synthetic_fixture",
+    "status": "PASS",
+    "snapshot_id": "8529bf53ef19c1c9b088d0dcb62c3279968d5b6664abf2a91eb58d30e274d898",
+    "mac_tests_passed": 10,
+    "linux_tests_passed": 10,
+    "linux_service_recovery": "PASS",
+    "production_store_restore": "PASS",
+    "timer": "enabled_daily_11UTC_plus_jitter",
+    "combined_backup_graph_migration_tests": 19,
+    "combined_linux_tests_seconds": 0.143,
+    "production_snapshot_id": "55d6e5e76aa65529fb745bec098183af95d36c6197542c210cd7299a6929c55b",
+    "production_files_verified": 244526,
+    "production_bytes_verified": 3859534598
+  },
+  "owner_setup_status": "owner_login_workspace_open_confirmed_by_user",
+  "migration_preflight": {
+    "catalog_files": 232051,
+    "unique_references": 230423,
+    "verified_local_payloads": 12224,
+    "expected_legacy_payloads_missing_locally": 38,
+    "other_integrity_errors": 0,
+    "production_migration": "completed_full_cloud_closure_and_readers_passed"
+  },
+  "local_authority": "stopped_retained_cutover_snapshot",
+  "reboot_acceptance": "PASS",
+  "deployment_artifacts_snapshot_id": "00bd11f2f2cfd5cc3f7062a61f322f66a17f70571754575e4e639ec4b1b6eac9",
+  "current_report": "outputs/cloud_cutover_verification.txt",
+  "monitoring": {
+    "disk_threshold_percent": 75,
+    "memory_threshold_percent": 85,
+    "budget_alerts_usd": [
+      40,
+      60,
+      80
+    ],
+    "uptime_endpoint": "https://gambitsystems.xyz/healthz",
+    "uptime_outage_minutes": 30,
+    "regions": 4,
+    "email_delivery_force_tested": false,
+    "observed_status": "UP_in_all_four_regions_after_activation"
+  }
+}

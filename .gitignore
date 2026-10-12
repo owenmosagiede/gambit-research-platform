@@ -1,0 +1,61 @@
+# Secrets and machine-specific mappings
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+secrets*.json
+/config/*.local.*
+/config/local/
+# Local interpreter and editor artifacts
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+# Large data never belongs in source control
+*.parquet
+*.arrow
+*.feather
+*.h5
+*.hdf5
+*.sqlite
+*.sqlite3
+*.db
+*.npy
+*.npz
+*.jsonl
+*.jsonl.gz
+*.log
+/data/
+/datasets/
+/raw/
+/pit/
+# Preserve only purpose notes / placeholders in runtime storage and archive
+/storage/**
+!/storage/**/
+!/storage/**/.gitkeep
+!/storage/**/README.md
+/archive/**
+!/archive/**/
+!/archive/**/.gitkeep
+!/archive/**/README.md
+
+# Isolated deployment environments and private export bundles
+.venv-cloud/
+/deploy/private/
+*.tar.gz
+*.tar.zst
+
+# Production history, build output, and temporary release evidence
+/outputs/
+/dist/
+/release-checks.json
+/release-manifest.json
+/migration-manifest.json
+*.tar.gz.sha256
+*.zip
+/auth/
+/private/
+*.pub

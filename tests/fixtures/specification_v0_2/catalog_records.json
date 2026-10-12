@@ -1,0 +1,1711 @@
+[
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_AVAILABILITY",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_AVAILABILITY",
+    "body": {
+      "kind": "availability",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_AVAILABILITY",
+        "version": "1.0.0",
+        "content_sha256": "98a6d3ea0db53e3c2e3612801a8d1c36210e100b9424f2bd5ba4c31f6f069f9e"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_REVISION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_REVISION",
+    "body": {
+      "kind": "revision",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_REVISION",
+        "version": "1.0.0",
+        "content_sha256": "e148323865236691b283dd6aa696ba93d864a254c85ae74dcd4c0548ae95d09e"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_QUALITY",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_QUALITY",
+    "body": {
+      "kind": "quality",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_QUALITY",
+        "version": "1.0.0",
+        "content_sha256": "644c1db3f74b2778016a75d5086e5702d7dd0721464e4d66d2b38b5f3f8d785b"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_SOURCE_CONTRACT",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_SOURCE_CONTRACT",
+    "body": {
+      "kind": "source_contract",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_SOURCE_CONTRACT",
+        "version": "1.0.0",
+        "content_sha256": "34098edd2d679ace12b0051d26796dcbf270c14fb70d2f1862de37890ca187fa"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_ALIGNMENT",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_ALIGNMENT",
+    "body": {
+      "kind": "alignment",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_ALIGNMENT",
+        "version": "1.0.0",
+        "content_sha256": "67447c4c77af11a57debc39383400071683d95110fdb6d3db7b6054302e0086f"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_SELECTION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_SELECTION",
+    "body": {
+      "kind": "selection",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_SELECTION",
+        "version": "1.0.0",
+        "content_sha256": "f01620e23cc1db894ab2c56dd1999f61fc6c6070b443234c4d7479c7e74f4ac2"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_UNIT",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_UNIT",
+    "body": {
+      "kind": "unit",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_UNIT",
+        "version": "1.0.0",
+        "content_sha256": "50ebb0b4b902070c4e8bf5c5d828205a0aee2a595a43cdd9bf182bbada3b23cc"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_MISSING_DATA",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_MISSING_DATA",
+    "body": {
+      "kind": "missing_data",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_MISSING_DATA",
+        "version": "1.0.0",
+        "content_sha256": "48b3dfe6e052f087cc51f67b25c35227bd38530398d33dc65dd9aac5cafa2048"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_SCOPE_TRANSFORM",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_SCOPE_TRANSFORM",
+    "body": {
+      "kind": "scope_transform",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_SCOPE_TRANSFORM",
+        "version": "1.0.0",
+        "content_sha256": "83a0c57abb06b680f202e074dfe7dc725cad031f7fea36167346a0130e125a9c"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_OUTCOME",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_OUTCOME",
+    "body": {
+      "kind": "outcome",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_OUTCOME",
+        "version": "1.0.0",
+        "content_sha256": "5fa48b1bf4c24fd432963d5a5c35d7631141efbad16eb48e01ca5b3138a0d604"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_ENDPOINT",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_ENDPOINT",
+    "body": {
+      "kind": "endpoint",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_ENDPOINT",
+        "version": "1.0.0",
+        "content_sha256": "f5778eaea9c0094d8d7ab4b27b30eaf8fa6ea2c50e53158609210069ceba33bd"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_ORIENTATION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_ORIENTATION",
+    "body": {
+      "kind": "orientation",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_ORIENTATION",
+        "version": "1.0.0",
+        "content_sha256": "2125fb6af3fc1d7e9378433de8f2cee880cccfcae22694578f48b485b44340f7"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_FINANCING",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_FINANCING",
+    "body": {
+      "kind": "financing",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_FINANCING",
+        "version": "1.0.0",
+        "content_sha256": "171cf1d48fe06c8e8f01cea14f33ed7173f30ed142b9778dfa7e63fdea4ed971"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_REALIZATION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_REALIZATION",
+    "body": {
+      "kind": "realization",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_REALIZATION",
+        "version": "1.0.0",
+        "content_sha256": "57e9d3effb49ce162f42655186a5d28358d69a3c21c9b061f6b48325ced3ee99"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_MEMBERSHIP",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_MEMBERSHIP",
+    "body": {
+      "kind": "membership",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_MEMBERSHIP",
+        "version": "1.0.0",
+        "content_sha256": "fe79a0691f4973ba8c330490870be6b16e5388956434a1bc3a0cd4b45ece1eaa"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_ELIGIBILITY",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_ELIGIBILITY",
+    "body": {
+      "kind": "eligibility",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_ELIGIBILITY",
+        "version": "1.0.0",
+        "content_sha256": "755d152e3c3ec93fe76d25d3fb4577b0593b485f7d4baf694e1e420488be451e"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_EXCLUSION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_EXCLUSION",
+    "body": {
+      "kind": "exclusion",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_EXCLUSION",
+        "version": "1.0.0",
+        "content_sha256": "335d0794566722a61438ba926370983424589729b5fc6ebf984224f42baa1aba"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_RESEARCH_METHOD",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_RESEARCH_METHOD",
+    "body": {
+      "kind": "research_method",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_RESEARCH_METHOD",
+        "version": "1.0.0",
+        "content_sha256": "f88951acef5efe73c95daa7a71e1e7ca998ea1100ffe05d04fb1854470dd4506"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_ADMISSION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_ADMISSION",
+    "body": {
+      "kind": "admission",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_ADMISSION",
+        "version": "1.0.0",
+        "content_sha256": "5531364208073d8eee14d9c2c2015e2e946309b26291eb821f4248132f12fb6d"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_METRIC",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_METRIC",
+    "body": {
+      "kind": "metric",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_METRIC",
+        "version": "1.0.0",
+        "content_sha256": "19b271d39144929738cf6341a248b2976b4a8517946b82e3cb3a56868a969cf7"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_EXPOSURE",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_EXPOSURE",
+    "body": {
+      "kind": "exposure",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_EXPOSURE",
+        "version": "1.0.0",
+        "content_sha256": "36303b9718c97b6b57a0999bf9e79b01e9aa1f629a6730be4a244fdd23fb38b2"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_READINESS",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_READINESS",
+    "body": {
+      "kind": "readiness",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_READINESS",
+        "version": "1.0.0",
+        "content_sha256": "4da25d458e9847d4b13a2aa667fff0570f468be09e5304c9e3caf6e7284e8f04"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "policy_definition",
+    "id": "SYNTHETIC_POLICY_RANDOMNESS",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_POLICY_RANDOMNESS",
+    "body": {
+      "kind": "randomness",
+      "specification": {
+        "id": "SYNTHETIC_CONTRACT_RANDOMNESS",
+        "version": "1.0.0",
+        "content_sha256": "b26acd355754ff3242c952d25c4f0a99843a1c1bc37cb03e3606a5a3e1fb44f5"
+      },
+      "parameters": [],
+      "approval_state": "draft",
+      "compatibility_evidence": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "implementation_manifest",
+    "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+    "version": "1.0.0",
+    "code_artifacts": [
+      {
+        "role": "synthetic_code",
+        "blob_sha256": "523e8860f770aeda5096eb217b1df5ebc3c68e6d4dbe72207071e4ca3e58ad59",
+        "format": "txt",
+        "byte_count": 0,
+        "row_count": null
+      }
+    ],
+    "environment_artifacts": [
+      {
+        "role": "synthetic_environment",
+        "blob_sha256": "4ed3372ed16262ce13c808807b2dc7fdc5d49814a8a2738c94b79150ab143f6c",
+        "format": "txt",
+        "byte_count": 0,
+        "row_count": null
+      }
+    ],
+    "entrypoint_id": "SYNTHETIC_NO_EXECUTOR",
+    "determinism_policy": {
+      "id": "SYNTHETIC_POLICY_RANDOMNESS",
+      "version": "1.0.0",
+      "content_sha256": "621e01e4f0df8976ab4b2bfc00ae40b0e3ca5c73578a8a5ab17b0c0e1a9345f9"
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "lineage_manifest",
+    "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+    "version": "1.0.0",
+    "inputs": [],
+    "operation": {
+      "id": "SYNTHETIC_POLICY_SOURCE_CONTRACT",
+      "version": "1.0.0",
+      "content_sha256": "3cfc5541a10f6b66361953168037a806771fec6242fd5c382d0e3b01a9f2955f"
+    },
+    "implementation": null,
+    "policy_bindings": []
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "dataset_definition",
+    "id": "SYNTHETIC_DATASET",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_DATASET",
+    "body": {
+      "economic_entity_ids": [
+        "ASSET_A",
+        "ASSET_B",
+        "SOURCE_ENTITY_A"
+      ],
+      "fields": [
+        {
+          "name": "event_time",
+          "data_type": "utc_timestamp",
+          "unit": "utc",
+          "nullable": false
+        },
+        {
+          "name": "available_at",
+          "data_type": "utc_timestamp",
+          "unit": "utc",
+          "nullable": false
+        },
+        {
+          "name": "observation",
+          "data_type": "decimal",
+          "unit": "synthetic_unit",
+          "nullable": true
+        }
+      ],
+      "event_time_field": "event_time",
+      "availability_time_field": "available_at",
+      "revision_key_fields": [],
+      "availability_policy": {
+        "id": "SYNTHETIC_POLICY_AVAILABILITY",
+        "version": "1.0.0",
+        "content_sha256": "11bcfeb189b107f870842fcc8aaa889086bd1e35fd39f7b0d45c50cc404a2e1a"
+      },
+      "revision_policy": {
+        "id": "SYNTHETIC_POLICY_REVISION",
+        "version": "1.0.0",
+        "content_sha256": "386dc5949647f882bdc482e38affa7662cefe6434c43d4b66dd6a229388d3ef3"
+      },
+      "quality_policy": {
+        "id": "SYNTHETIC_POLICY_QUALITY",
+        "version": "1.0.0",
+        "content_sha256": "8fffab3861156350205d0ed731a1988c3964e36a63ffdecbc48170f1d44fa319"
+      },
+      "source_contract": {
+        "id": "SYNTHETIC_POLICY_SOURCE_CONTRACT",
+        "version": "1.0.0",
+        "content_sha256": "3cfc5541a10f6b66361953168037a806771fec6242fd5c382d0e3b01a9f2955f"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "source_view_definition",
+    "id": "SYNTHETIC_SOURCE_VIEW",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_SOURCE_VIEW",
+    "body": {
+      "dataset": {
+        "id": "SYNTHETIC_DATASET",
+        "version": "1.0.0",
+        "content_sha256": "96bb1dead127b9aeba83887b85f4efb613855a228a6956a6b7d03ae5f0005531"
+      },
+      "entity_selection": {
+        "kind": "fixed_entities",
+        "entity_ids": [
+          "SOURCE_ENTITY_A"
+        ]
+      },
+      "fields": [
+        "observation"
+      ],
+      "filters": [],
+      "alignment_policy": {
+        "id": "SYNTHETIC_POLICY_ALIGNMENT",
+        "version": "1.0.0",
+        "content_sha256": "a0518b988c5ef8176248228523c65200efe4bb0f4323de4165d5ee669177dc82"
+      },
+      "selection_policy": {
+        "id": "SYNTHETIC_POLICY_SELECTION",
+        "version": "1.0.0",
+        "content_sha256": "2958f1bef054a3ab2fd5aef48e8078c5fc73c37a908552bb094e2221ff0c95cc"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "transformation_definition",
+    "id": "SYNTHETIC_TRANSFORM",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_TRANSFORM",
+    "body": {
+      "input_arity": {
+        "minimum": 1,
+        "maximum": 1
+      },
+      "parameters": [
+        {
+          "name": "window",
+          "unit": "observations",
+          "value_kind": "integer",
+          "required": true,
+          "allowed_values": [],
+          "minimum": "1",
+          "maximum": null
+        }
+      ],
+      "calculation_geometry": "time_series",
+      "output_unit_policy": {
+        "id": "SYNTHETIC_POLICY_UNIT",
+        "version": "1.0.0",
+        "content_sha256": "b1cbd63496f4c5ea48931de02d60cfc0385699fd475b58a3d1d3485940c35573"
+      },
+      "missing_data_policy": {
+        "id": "SYNTHETIC_POLICY_MISSING_DATA",
+        "version": "1.0.0",
+        "content_sha256": "d2ed4507c04d27d5ecca3f9bdf9a96437b8d27722b2550785d3ae42f9acf51da"
+      },
+      "specification": {
+        "id": "SYNTHETIC_TRANSFORM_CONTRACT",
+        "version": "1.0.0",
+        "content_sha256": "e279ee4295460e5a332a0812ca4f3f050cf8c30bc445522c2cb9afa14ffcc52d"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "interaction_definition",
+    "id": "SYNTHETIC_INTERACTION",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_INTERACTION",
+    "body": {
+      "input_arity": {
+        "minimum": 2,
+        "maximum": 2
+      },
+      "parameters": [],
+      "calculation_geometry": "elementwise",
+      "output_unit_policy": {
+        "id": "SYNTHETIC_POLICY_UNIT",
+        "version": "1.0.0",
+        "content_sha256": "b1cbd63496f4c5ea48931de02d60cfc0385699fd475b58a3d1d3485940c35573"
+      },
+      "missing_data_policy": {
+        "id": "SYNTHETIC_POLICY_MISSING_DATA",
+        "version": "1.0.0",
+        "content_sha256": "d2ed4507c04d27d5ecca3f9bdf9a96437b8d27722b2550785d3ae42f9acf51da"
+      },
+      "specification": {
+        "id": "SYNTHETIC_INTERACTION_CONTRACT",
+        "version": "1.0.0",
+        "content_sha256": "8865eb33fdff915e7dd90d9760be588956571d2ba91c1886bb4fea0fbd05cabf"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "feature_definition",
+    "id": "FEATURE_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC_DATASET / SYNTHETIC_TRANSFORM(window=3)",
+    "body": {
+      "signal_id": "SIGNAL_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+      "recipe": {
+        "sources": [
+          {
+            "alias": "source",
+            "source_view": {
+              "id": "SYNTHETIC_SOURCE_VIEW",
+              "version": "1.0.0",
+              "content_sha256": "690fa591903bcde45c26fe5fa1364e07ae3279d49d380b8eceedda60feb58dbd"
+            }
+          }
+        ],
+        "steps": [
+          {
+            "node": "transformed",
+            "phase": "transformation",
+            "operator": {
+              "id": "SYNTHETIC_TRANSFORM",
+              "version": "1.0.0",
+              "content_sha256": "6d76e6c10902ce595b77899dde8af2ec794c67808f93de6a4c6d1a6df2c8ea47"
+            },
+            "inputs": [
+              "source"
+            ],
+            "parameters": [
+              {
+                "name": "window",
+                "unit": "observations",
+                "value": {
+                  "kind": "integer",
+                  "value": "3"
+                }
+              }
+            ]
+          }
+        ],
+        "output_node": "transformed",
+        "output_unit": "synthetic_unit",
+        "calculation_scope_requirement": "none",
+        "scope_policy": null
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "snapshot_manifest",
+    "id": "SNAPSHOT_e1b44a0099f8a6d2dd33b4269bd949f800af7b8c4275329ba6270c2d11ef2a50",
+    "version": "1.0.0",
+    "layer": "pit",
+    "definition": {
+      "id": "SYNTHETIC_DATASET",
+      "version": "1.0.0",
+      "content_sha256": "96bb1dead127b9aeba83887b85f4efb613855a228a6956a6b7d03ae5f0005531"
+    },
+    "period": {
+      "start_inclusive": "2000-01-01T00:00:00.000000Z",
+      "end_exclusive": "2000-02-01T00:00:00.000000Z"
+    },
+    "information_cutoff": "2000-02-01T00:00:00.000000Z",
+    "members": [
+      {
+        "role": "observations",
+        "blob_sha256": "3f70d62b044a4ad5c21cbb9a0b15524035f7b512269895541dc682af95d9e5c5",
+        "format": "jsonl",
+        "byte_count": 0,
+        "row_count": 2
+      }
+    ],
+    "semantic_content_sha256": "84cda76d08734130377b2de7e30e88311d2982537aca9502d46d2da37b189915",
+    "record_count": 2,
+    "upstream_snapshots": [],
+    "policy_bindings": [
+      {
+        "role": "availability",
+        "artifact": {
+          "id": "SYNTHETIC_POLICY_AVAILABILITY",
+          "version": "1.0.0",
+          "content_sha256": "11bcfeb189b107f870842fcc8aaa889086bd1e35fd39f7b0d45c50cc404a2e1a"
+        }
+      }
+    ],
+    "implementation": {
+      "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+      "version": "1.0.0",
+      "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+    },
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ]
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "research_spec_definition",
+    "id": "SYNTHETIC_RESEARCH_SPEC",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_RESEARCH_SPEC",
+    "body": {
+      "mode": "TS",
+      "stages": [
+        {
+          "stage": "P1",
+          "period": {
+            "start_inclusive": "2000-01-01T00:00:00.000000Z",
+            "end_exclusive": "2000-02-01T00:00:00.000000Z"
+          },
+          "method_policy": {
+            "id": "SYNTHETIC_POLICY_RESEARCH_METHOD",
+            "version": "1.0.0",
+            "content_sha256": "be95cd43b48f2bf7a123cdd69daadb57d8f55a2484da31e0954c0ce6174adb4d"
+          },
+          "metric_policies": [
+            {
+              "id": "SYNTHETIC_POLICY_METRIC",
+              "version": "1.0.0",
+              "content_sha256": "d2a9a5eba5c7c9073ff5d6c0a8c5bead5ec2f4ed5a5502ae75bf0388aa190bcf"
+            }
+          ],
+          "admission_policy": {
+            "id": "SYNTHETIC_POLICY_ADMISSION",
+            "version": "1.0.0",
+            "content_sha256": "841be3918f1bafa2c85589de69114b78e70dda44b1a1bf66fbf4e5ffa07eb8b4"
+          },
+          "prior_exposure_policy": {
+            "id": "SYNTHETIC_POLICY_EXPOSURE",
+            "version": "1.0.0",
+            "content_sha256": "880d8a256f8d7598d923e65f2f568cf33659aa42ae6f438c3e858df6e6bfaa02"
+          }
+        },
+        {
+          "stage": "P2",
+          "period": {
+            "start_inclusive": "2000-02-01T00:00:00.000000Z",
+            "end_exclusive": "2000-03-01T00:00:00.000000Z"
+          },
+          "method_policy": {
+            "id": "SYNTHETIC_POLICY_RESEARCH_METHOD",
+            "version": "1.0.0",
+            "content_sha256": "be95cd43b48f2bf7a123cdd69daadb57d8f55a2484da31e0954c0ce6174adb4d"
+          },
+          "metric_policies": [
+            {
+              "id": "SYNTHETIC_POLICY_METRIC",
+              "version": "1.0.0",
+              "content_sha256": "d2a9a5eba5c7c9073ff5d6c0a8c5bead5ec2f4ed5a5502ae75bf0388aa190bcf"
+            }
+          ],
+          "admission_policy": {
+            "id": "SYNTHETIC_POLICY_ADMISSION",
+            "version": "1.0.0",
+            "content_sha256": "841be3918f1bafa2c85589de69114b78e70dda44b1a1bf66fbf4e5ffa07eb8b4"
+          },
+          "prior_exposure_policy": {
+            "id": "SYNTHETIC_POLICY_EXPOSURE",
+            "version": "1.0.0",
+            "content_sha256": "880d8a256f8d7598d923e65f2f568cf33659aa42ae6f438c3e858df6e6bfaa02"
+          }
+        }
+      ],
+      "readiness_policy": {
+        "id": "SYNTHETIC_POLICY_READINESS",
+        "version": "1.0.0",
+        "content_sha256": "1a158c113aa52f07e7bab94d50dff1252e7d44203c7bd54a31083338c0568a05"
+      },
+      "randomness_policy": null,
+      "trial_expansion": "one_relationship_per_request",
+      "parameters": []
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "materialization_manifest",
+    "id": "MATERIALIZATION_03e1fc1726a1a181f3d5af943b0a4ad39c732075221dd8746585285371b5e537",
+    "version": "1.0.0",
+    "dataset_role": "feature",
+    "definition": {
+      "id": "FEATURE_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+      "version": "1.0.0",
+      "content_sha256": "28b7f7828077d1b494d83f176b7393793cc88f252ebbd331073b473ab79120de"
+    },
+    "source_snapshots": [
+      {
+        "id": "SNAPSHOT_e1b44a0099f8a6d2dd33b4269bd949f800af7b8c4275329ba6270c2d11ef2a50",
+        "version": "1.0.0",
+        "content_sha256": "874570520fbe9d28c74c179d819bdffbe764cbdffdcd2136ae111b5323df3f0c"
+      }
+    ],
+    "upstream_materializations": [],
+    "calculation_scope": null,
+    "membership_snapshot": null,
+    "information_cutoff": "2000-02-01T00:00:00.000000Z",
+    "period": {
+      "start_inclusive": "2000-01-01T00:00:00.000000Z",
+      "end_exclusive": "2000-02-01T00:00:00.000000Z"
+    },
+    "observation_schema_version": "0.2.0",
+    "implementation": {
+      "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+      "version": "1.0.0",
+      "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+    },
+    "policy_bindings": [
+      {
+        "role": "availability",
+        "artifact": {
+          "id": "SYNTHETIC_POLICY_AVAILABILITY",
+          "version": "1.0.0",
+          "content_sha256": "11bcfeb189b107f870842fcc8aaa889086bd1e35fd39f7b0d45c50cc404a2e1a"
+        }
+      }
+    ],
+    "partitions": [
+      {
+        "blob_sha256": "f496bf468c227817434c635685b7293c68537198c2ee2ccb55555b55b4ab52db",
+        "format": "parquet",
+        "byte_count": 0,
+        "row_count": 2,
+        "partition_key": "synthetic",
+        "minimum_key": {
+          "entity_id": "SOURCE_ENTITY_A",
+          "observation_time": "2000-01-01T00:00:00.000000Z"
+        },
+        "maximum_key": {
+          "entity_id": "SOURCE_ENTITY_A",
+          "observation_time": "2000-01-02T00:00:00.000000Z"
+        }
+      }
+    ],
+    "row_count": 2,
+    "status_counts": {
+      "valid": 1,
+      "missing": 1,
+      "invalid": 0
+    },
+    "semantic_rows_sha256": "927e7c1b5a7c780481bb4d60b072ddfa9ab9f795aee17f5b837ae1279bb4c4bf",
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ]
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "scope_definition",
+    "id": "SYNTHETIC_SCOPE_ASSET_A",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_SCOPE_ASSET_A",
+    "body": {
+      "kind": "instrument",
+      "entity_ids": [
+        "ASSET_A"
+      ],
+      "membership_policy": {
+        "id": "SYNTHETIC_POLICY_MEMBERSHIP",
+        "version": "1.0.0",
+        "content_sha256": "488ada5237d52b774b64abd5bcfdcd06d631c02973dc4f1554bd2a104a87f150"
+      },
+      "eligibility_policy": {
+        "id": "SYNTHETIC_POLICY_ELIGIBILITY",
+        "version": "1.0.0",
+        "content_sha256": "d6c308690a81c4b15d8c7a546a0ed5897f0258face73640bda4ed943d3b909d7"
+      },
+      "exclusion_policy": {
+        "id": "SYNTHETIC_POLICY_EXCLUSION",
+        "version": "1.0.0",
+        "content_sha256": "f389201074d03fb8c7c3d284290d573e774c632de4b434c6e93e7355d36c291d"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "source_view_definition",
+    "id": "SYNTHETIC_SOURCE_VIEW_ASSET_A",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_SOURCE_VIEW_ASSET_A",
+    "body": {
+      "dataset": {
+        "id": "SYNTHETIC_DATASET",
+        "version": "1.0.0",
+        "content_sha256": "96bb1dead127b9aeba83887b85f4efb613855a228a6956a6b7d03ae5f0005531"
+      },
+      "entity_selection": {
+        "kind": "fixed_entities",
+        "entity_ids": [
+          "ASSET_A"
+        ]
+      },
+      "fields": [
+        "observation"
+      ],
+      "filters": [],
+      "alignment_policy": {
+        "id": "SYNTHETIC_POLICY_ALIGNMENT",
+        "version": "1.0.0",
+        "content_sha256": "a0518b988c5ef8176248228523c65200efe4bb0f4323de4165d5ee669177dc82"
+      },
+      "selection_policy": {
+        "id": "SYNTHETIC_POLICY_SELECTION",
+        "version": "1.0.0",
+        "content_sha256": "2958f1bef054a3ab2fd5aef48e8078c5fc73c37a908552bb094e2221ff0c95cc"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "target_definition",
+    "id": "SYNTHETIC_TARGET_ASSET_A_H1",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_TARGET_ASSET_A_H1",
+    "body": {
+      "source_views": [
+        {
+          "id": "SYNTHETIC_SOURCE_VIEW_ASSET_A",
+          "version": "1.0.0",
+          "content_sha256": "fc07b92c48827b0720286a2829b886c1129e60f79375b6dd38f9c60960b1eeaf"
+        }
+      ],
+      "outcome_policy": {
+        "id": "SYNTHETIC_POLICY_OUTCOME",
+        "version": "1.0.0",
+        "content_sha256": "1c638b9d5eba5676eab0546b8107690756815125fdbad02f4c3e2bb348e29f73"
+      },
+      "horizon": {
+        "count": "1",
+        "clock": "valid_market_observations",
+        "calendar": null,
+        "endpoint_policy": {
+          "id": "SYNTHETIC_POLICY_ENDPOINT",
+          "version": "1.0.0",
+          "content_sha256": "72aca25ed82697cdc58391e02053b430d46b887300b188e6a6e8b4db83f10db2"
+        }
+      },
+      "return_basis": "SYNTHETIC_UNAPPROVED_BASIS",
+      "unit": "synthetic_target_unit",
+      "orientation_policy": {
+        "id": "SYNTHETIC_POLICY_ORIENTATION",
+        "version": "1.0.0",
+        "content_sha256": "f0a2713a4f91f60d7f30c5b80fee584fb770ceb91a4b720efcb719d792b4ccda"
+      },
+      "financing_policy": null,
+      "realization_policy": {
+        "id": "SYNTHETIC_POLICY_REALIZATION",
+        "version": "1.0.0",
+        "content_sha256": "f964ebb452a77e674f2093b731627cf8f7a564dccafe9655b0ef181aa3997a8a"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "materialization_manifest",
+    "id": "MATERIALIZATION_857960a6029ad2ad02e21fd86e9d6abff4b308c6c24a4676b118b8db55bd19d8",
+    "version": "1.0.0",
+    "dataset_role": "target",
+    "definition": {
+      "id": "SYNTHETIC_TARGET_ASSET_A_H1",
+      "version": "1.0.0",
+      "content_sha256": "96d0c246dae1a4102d497bd884d79e7af665c5d4f650062dec15ef33f83a3ed1"
+    },
+    "source_snapshots": [
+      {
+        "id": "SNAPSHOT_e1b44a0099f8a6d2dd33b4269bd949f800af7b8c4275329ba6270c2d11ef2a50",
+        "version": "1.0.0",
+        "content_sha256": "874570520fbe9d28c74c179d819bdffbe764cbdffdcd2136ae111b5323df3f0c"
+      }
+    ],
+    "upstream_materializations": [],
+    "calculation_scope": null,
+    "membership_snapshot": null,
+    "information_cutoff": "2000-02-01T00:00:00.000000Z",
+    "period": {
+      "start_inclusive": "2000-01-01T00:00:00.000000Z",
+      "end_exclusive": "2000-02-01T00:00:00.000000Z"
+    },
+    "observation_schema_version": "0.2.0",
+    "implementation": {
+      "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+      "version": "1.0.0",
+      "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+    },
+    "policy_bindings": [
+      {
+        "role": "availability",
+        "artifact": {
+          "id": "SYNTHETIC_POLICY_AVAILABILITY",
+          "version": "1.0.0",
+          "content_sha256": "11bcfeb189b107f870842fcc8aaa889086bd1e35fd39f7b0d45c50cc404a2e1a"
+        }
+      }
+    ],
+    "partitions": [
+      {
+        "blob_sha256": "e0f43b693331d7f6b5430539c96613873a16d3312ef68003cd0db273a562f56c",
+        "format": "parquet",
+        "byte_count": 0,
+        "row_count": 2,
+        "partition_key": "synthetic",
+        "minimum_key": {
+          "entity_id": "SOURCE_ENTITY_A",
+          "observation_time": "2000-01-01T00:00:00.000000Z"
+        },
+        "maximum_key": {
+          "entity_id": "SOURCE_ENTITY_A",
+          "observation_time": "2000-01-02T00:00:00.000000Z"
+        }
+      }
+    ],
+    "row_count": 2,
+    "status_counts": {
+      "valid": 1,
+      "missing": 1,
+      "invalid": 0
+    },
+    "semantic_rows_sha256": "a5cd81018a60f9885c142f1e42c1009b319978f8ce18cef030b0c219dde99d77",
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ]
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "relationship_record",
+    "id": "RELATIONSHIP_ba58c5dceeccd6ff103dc5d32ceffd6be4bf78cbcd2b397cf5086bc186967e5f",
+    "version": "1.0.0",
+    "signal_id": "SIGNAL_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+    "feature": {
+      "id": "FEATURE_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+      "version": "1.0.0",
+      "content_sha256": "28b7f7828077d1b494d83f176b7393793cc88f252ebbd331073b473ab79120de"
+    },
+    "target": {
+      "id": "SYNTHETIC_TARGET_ASSET_A_H1",
+      "version": "1.0.0",
+      "content_sha256": "96d0c246dae1a4102d497bd884d79e7af665c5d4f650062dec15ef33f83a3ed1"
+    },
+    "evaluation_scope": {
+      "id": "SYNTHETIC_SCOPE_ASSET_A",
+      "version": "1.0.0",
+      "content_sha256": "bcde2d3473fac2585884c8ac0d6f7c927e00bb9c99c213743338dd18ef14d0a3"
+    },
+    "expected_direction": "POSITIVE",
+    "mode": "TS"
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "artifact_manifest",
+    "id": "ARTIFACT_7181a5e6b3aa0a69b4b531a13a7c5ebdaf2578f797adb31d5215e9e3274a734e",
+    "version": "1.0.0",
+    "scientific_key_sha256": "0d3cb21f415c1098291caf32ef0f3ec946d8ddad3f8dc2e07aa8f27eddf879bc",
+    "members": [
+      {
+        "role": "synthetic_detailed_evidence",
+        "blob_sha256": "99f20a46c51c74b1b5db5cd25ecd9d2d51611ae6ddf90c10acffe38a8463ffc5",
+        "format": "parquet",
+        "byte_count": 0,
+        "row_count": 2
+      }
+    ],
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ]
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "trial_record",
+    "id": "TRIAL_1ee31244ab483f6ba8bd76ea1c17cc8dafc21fb1e4afa6daed78c77b61855180",
+    "version": "1.0.0",
+    "scientific_key": {
+      "relationship": {
+        "id": "RELATIONSHIP_ba58c5dceeccd6ff103dc5d32ceffd6be4bf78cbcd2b397cf5086bc186967e5f",
+        "version": "1.0.0",
+        "content_sha256": "faef06f11710990b7a6da1fb9b5364c837156386cf6138e14f09e067bdfc3641"
+      },
+      "research_spec": {
+        "id": "SYNTHETIC_RESEARCH_SPEC",
+        "version": "1.0.0",
+        "content_sha256": "199fb0c46e1f064f6283a0b8a81d8a7f66ddb1a5f0e655bc150594ba587f0817"
+      },
+      "evaluation_period": {
+        "start_inclusive": "2000-01-01T00:00:00.000000Z",
+        "end_exclusive": "2000-02-01T00:00:00.000000Z"
+      },
+      "stage": "P1",
+      "feature_materialization": {
+        "id": "MATERIALIZATION_03e1fc1726a1a181f3d5af943b0a4ad39c732075221dd8746585285371b5e537",
+        "version": "1.0.0",
+        "content_sha256": "b9b40551d32276e42d2b4bb0b20e263509f7105fa14df3e4b08065996ff14884"
+      },
+      "target_materialization": {
+        "id": "MATERIALIZATION_857960a6029ad2ad02e21fd86e9d6abff4b308c6c24a4676b118b8db55bd19d8",
+        "version": "1.0.0",
+        "content_sha256": "143c74944d7aa033ed5b20f322fe98e7d47d11667e36de73bbb8ffc6da28c70e"
+      },
+      "resolved_experiment_id": "resolved_v0_1_sha256_06655477a079997d424e71035931fe5e22198eb1bca4817858be7c0725e5e7f1",
+      "resolved_dependencies": [
+        {
+          "role": "implementation",
+          "artifact": {
+            "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+            "version": "1.0.0",
+            "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "experiment_ids": [
+        "exp_v0_1_sha256_1912121d91699967783c2a4e8e029fca1a8009f820f47943820daab2c090e8ba"
+      ],
+      "resolved_experiment_ids": [
+        "resolved_v0_1_sha256_06655477a079997d424e71035931fe5e22198eb1bca4817858be7c0725e5e7f1"
+      ],
+      "request_ids": [
+        "11111111-1111-4111-8111-111111111111"
+      ],
+      "attempt_id": "22222222-2222-4222-8222-222222222221"
+    },
+    "outcome": "completed",
+    "outcome_reason": null,
+    "metrics": [
+      {
+        "metric_definition": {
+          "id": "SYNTHETIC_POLICY_METRIC",
+          "version": "1.0.0",
+          "content_sha256": "d2a9a5eba5c7c9073ff5d6c0a8c5bead5ec2f4ed5a5502ae75bf0388aa190bcf"
+        },
+        "value": "0.11",
+        "status": "valid",
+        "reason_code": null,
+        "sample_count": 2
+      }
+    ],
+    "artifact_manifests": [
+      {
+        "id": "ARTIFACT_7181a5e6b3aa0a69b4b531a13a7c5ebdaf2578f797adb31d5215e9e3274a734e",
+        "version": "1.0.0",
+        "content_sha256": "5e5dcc1174a2374e865b0711653c055d3a783088c6faa64c56d466b632279391"
+      }
+    ],
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ],
+    "exposure_record": {
+      "id": "SYNTHETIC_EXPOSURE_ASSET_A",
+      "version": "1.0.0",
+      "content_sha256": "459df9cf0d2c87f8e3793a623ca154e2ef155ef0fc88c05a2452df4de7a23aed"
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "admission_record",
+    "id": "ADMISSION_904c271d18852ff609f3e1cc0e7e81698d8c5fa890062265ca41772bb74a67ec",
+    "version": "1.0.0",
+    "trial": {
+      "id": "TRIAL_1ee31244ab483f6ba8bd76ea1c17cc8dafc21fb1e4afa6daed78c77b61855180",
+      "version": "1.0.0",
+      "content_sha256": "9ef6632171a299d436ccad10a3b8c0702a5fa4c30c330edd117cd7511e215afe"
+    },
+    "relationship": {
+      "id": "RELATIONSHIP_ba58c5dceeccd6ff103dc5d32ceffd6be4bf78cbcd2b397cf5086bc186967e5f",
+      "version": "1.0.0",
+      "content_sha256": "faef06f11710990b7a6da1fb9b5364c837156386cf6138e14f09e067bdfc3641"
+    },
+    "policy": {
+      "id": "SYNTHETIC_POLICY_ADMISSION",
+      "version": "1.0.0",
+      "content_sha256": "841be3918f1bafa2c85589de69114b78e70dda44b1a1bf66fbf4e5ffa07eb8b4"
+    },
+    "evidence": [
+      {
+        "id": "TRIAL_1ee31244ab483f6ba8bd76ea1c17cc8dafc21fb1e4afa6daed78c77b61855180",
+        "version": "1.0.0",
+        "content_sha256": "9ef6632171a299d436ccad10a3b8c0702a5fa4c30c330edd117cd7511e215afe"
+      }
+    ],
+    "decision": "admitted",
+    "reason_codes": [
+      "SYNTHETIC_ILLUSTRATION_ONLY"
+    ],
+    "metrics": [],
+    "supersedes": null
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "scope_definition",
+    "id": "SYNTHETIC_SCOPE_ASSET_B",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_SCOPE_ASSET_B",
+    "body": {
+      "kind": "instrument",
+      "entity_ids": [
+        "ASSET_B"
+      ],
+      "membership_policy": {
+        "id": "SYNTHETIC_POLICY_MEMBERSHIP",
+        "version": "1.0.0",
+        "content_sha256": "488ada5237d52b774b64abd5bcfdcd06d631c02973dc4f1554bd2a104a87f150"
+      },
+      "eligibility_policy": {
+        "id": "SYNTHETIC_POLICY_ELIGIBILITY",
+        "version": "1.0.0",
+        "content_sha256": "d6c308690a81c4b15d8c7a546a0ed5897f0258face73640bda4ed943d3b909d7"
+      },
+      "exclusion_policy": {
+        "id": "SYNTHETIC_POLICY_EXCLUSION",
+        "version": "1.0.0",
+        "content_sha256": "f389201074d03fb8c7c3d284290d573e774c632de4b434c6e93e7355d36c291d"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "source_view_definition",
+    "id": "SYNTHETIC_SOURCE_VIEW_ASSET_B",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_SOURCE_VIEW_ASSET_B",
+    "body": {
+      "dataset": {
+        "id": "SYNTHETIC_DATASET",
+        "version": "1.0.0",
+        "content_sha256": "96bb1dead127b9aeba83887b85f4efb613855a228a6956a6b7d03ae5f0005531"
+      },
+      "entity_selection": {
+        "kind": "fixed_entities",
+        "entity_ids": [
+          "ASSET_B"
+        ]
+      },
+      "fields": [
+        "observation"
+      ],
+      "filters": [],
+      "alignment_policy": {
+        "id": "SYNTHETIC_POLICY_ALIGNMENT",
+        "version": "1.0.0",
+        "content_sha256": "a0518b988c5ef8176248228523c65200efe4bb0f4323de4165d5ee669177dc82"
+      },
+      "selection_policy": {
+        "id": "SYNTHETIC_POLICY_SELECTION",
+        "version": "1.0.0",
+        "content_sha256": "2958f1bef054a3ab2fd5aef48e8078c5fc73c37a908552bb094e2221ff0c95cc"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "target_definition",
+    "id": "SYNTHETIC_TARGET_ASSET_B_H5",
+    "version": "1.0.0",
+    "display_name": "SYNTHETIC SYNTHETIC_TARGET_ASSET_B_H5",
+    "body": {
+      "source_views": [
+        {
+          "id": "SYNTHETIC_SOURCE_VIEW_ASSET_B",
+          "version": "1.0.0",
+          "content_sha256": "2a02e65689078777b19b11e10946892583fa8c9a871b4fb773244885c5cee895"
+        }
+      ],
+      "outcome_policy": {
+        "id": "SYNTHETIC_POLICY_OUTCOME",
+        "version": "1.0.0",
+        "content_sha256": "1c638b9d5eba5676eab0546b8107690756815125fdbad02f4c3e2bb348e29f73"
+      },
+      "horizon": {
+        "count": "5",
+        "clock": "valid_market_observations",
+        "calendar": null,
+        "endpoint_policy": {
+          "id": "SYNTHETIC_POLICY_ENDPOINT",
+          "version": "1.0.0",
+          "content_sha256": "72aca25ed82697cdc58391e02053b430d46b887300b188e6a6e8b4db83f10db2"
+        }
+      },
+      "return_basis": "SYNTHETIC_UNAPPROVED_BASIS",
+      "unit": "synthetic_target_unit",
+      "orientation_policy": {
+        "id": "SYNTHETIC_POLICY_ORIENTATION",
+        "version": "1.0.0",
+        "content_sha256": "f0a2713a4f91f60d7f30c5b80fee584fb770ceb91a4b720efcb719d792b4ccda"
+      },
+      "financing_policy": null,
+      "realization_policy": {
+        "id": "SYNTHETIC_POLICY_REALIZATION",
+        "version": "1.0.0",
+        "content_sha256": "f964ebb452a77e674f2093b731627cf8f7a564dccafe9655b0ef181aa3997a8a"
+      }
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "materialization_manifest",
+    "id": "MATERIALIZATION_1c0a2594233fadd035f1a0f2ca357d7a445248980648f43128b22620afe1d703",
+    "version": "1.0.0",
+    "dataset_role": "target",
+    "definition": {
+      "id": "SYNTHETIC_TARGET_ASSET_B_H5",
+      "version": "1.0.0",
+      "content_sha256": "b976e4b60e46fad8dcd6ad053ed736ad8d5156ad71ea03d4ef5bfb9750b8bfb6"
+    },
+    "source_snapshots": [
+      {
+        "id": "SNAPSHOT_e1b44a0099f8a6d2dd33b4269bd949f800af7b8c4275329ba6270c2d11ef2a50",
+        "version": "1.0.0",
+        "content_sha256": "874570520fbe9d28c74c179d819bdffbe764cbdffdcd2136ae111b5323df3f0c"
+      }
+    ],
+    "upstream_materializations": [],
+    "calculation_scope": null,
+    "membership_snapshot": null,
+    "information_cutoff": "2000-02-01T00:00:00.000000Z",
+    "period": {
+      "start_inclusive": "2000-01-01T00:00:00.000000Z",
+      "end_exclusive": "2000-02-01T00:00:00.000000Z"
+    },
+    "observation_schema_version": "0.2.0",
+    "implementation": {
+      "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+      "version": "1.0.0",
+      "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+    },
+    "policy_bindings": [
+      {
+        "role": "availability",
+        "artifact": {
+          "id": "SYNTHETIC_POLICY_AVAILABILITY",
+          "version": "1.0.0",
+          "content_sha256": "11bcfeb189b107f870842fcc8aaa889086bd1e35fd39f7b0d45c50cc404a2e1a"
+        }
+      }
+    ],
+    "partitions": [
+      {
+        "blob_sha256": "410e033569ef883608862397d00377ffe90caf52ed7a5398f1b8607c6859689a",
+        "format": "parquet",
+        "byte_count": 0,
+        "row_count": 2,
+        "partition_key": "synthetic",
+        "minimum_key": {
+          "entity_id": "SOURCE_ENTITY_A",
+          "observation_time": "2000-01-01T00:00:00.000000Z"
+        },
+        "maximum_key": {
+          "entity_id": "SOURCE_ENTITY_A",
+          "observation_time": "2000-01-02T00:00:00.000000Z"
+        }
+      }
+    ],
+    "row_count": 2,
+    "status_counts": {
+      "valid": 1,
+      "missing": 1,
+      "invalid": 0
+    },
+    "semantic_rows_sha256": "7c443e7ef6b1c9ff5d7aa462a27d9f36770b1f3ad174d325d9101a3dfb935c90",
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ]
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "relationship_record",
+    "id": "RELATIONSHIP_42a13f291583c3abfe278ffab1bf3332dd4857697addf744929a6be986af55b3",
+    "version": "1.0.0",
+    "signal_id": "SIGNAL_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+    "feature": {
+      "id": "FEATURE_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+      "version": "1.0.0",
+      "content_sha256": "28b7f7828077d1b494d83f176b7393793cc88f252ebbd331073b473ab79120de"
+    },
+    "target": {
+      "id": "SYNTHETIC_TARGET_ASSET_B_H5",
+      "version": "1.0.0",
+      "content_sha256": "b976e4b60e46fad8dcd6ad053ed736ad8d5156ad71ea03d4ef5bfb9750b8bfb6"
+    },
+    "evaluation_scope": {
+      "id": "SYNTHETIC_SCOPE_ASSET_B",
+      "version": "1.0.0",
+      "content_sha256": "17ca29f8d43fab499b64a5d8f0be414cbdc076cd0db5ffd60f3947dadb503728"
+    },
+    "expected_direction": "POSITIVE",
+    "mode": "TS"
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "artifact_manifest",
+    "id": "ARTIFACT_a21e732fed40b57a23d55f7d8ec928c7dc53db533bf4a1f294e79a766a9755f0",
+    "version": "1.0.0",
+    "scientific_key_sha256": "1a547740ce26afd9f4cd7e4f1252b81f1c6729f1cb37e83af57e29ac93011359",
+    "members": [
+      {
+        "role": "synthetic_detailed_evidence",
+        "blob_sha256": "5dbb29191538a08b70a83416628a00edf49c531103eb3a807c41a5ac04631e09",
+        "format": "parquet",
+        "byte_count": 0,
+        "row_count": 2
+      }
+    ],
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ]
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "trial_record",
+    "id": "TRIAL_faad24de122ae08c655791f2a5433791496db7e15cc8b0ee246a2763916d1da4",
+    "version": "1.0.0",
+    "scientific_key": {
+      "relationship": {
+        "id": "RELATIONSHIP_42a13f291583c3abfe278ffab1bf3332dd4857697addf744929a6be986af55b3",
+        "version": "1.0.0",
+        "content_sha256": "2ef0bc4a6223f1d89f0ad7d4110c9bb03db78d282f1890f0378e90a316deb66c"
+      },
+      "research_spec": {
+        "id": "SYNTHETIC_RESEARCH_SPEC",
+        "version": "1.0.0",
+        "content_sha256": "199fb0c46e1f064f6283a0b8a81d8a7f66ddb1a5f0e655bc150594ba587f0817"
+      },
+      "evaluation_period": {
+        "start_inclusive": "2000-01-01T00:00:00.000000Z",
+        "end_exclusive": "2000-02-01T00:00:00.000000Z"
+      },
+      "stage": "P1",
+      "feature_materialization": {
+        "id": "MATERIALIZATION_03e1fc1726a1a181f3d5af943b0a4ad39c732075221dd8746585285371b5e537",
+        "version": "1.0.0",
+        "content_sha256": "b9b40551d32276e42d2b4bb0b20e263509f7105fa14df3e4b08065996ff14884"
+      },
+      "target_materialization": {
+        "id": "MATERIALIZATION_1c0a2594233fadd035f1a0f2ca357d7a445248980648f43128b22620afe1d703",
+        "version": "1.0.0",
+        "content_sha256": "62129122760d9a85c0ee08bbf0361d4349894d957fd3108dfb776ed5c0e595cd"
+      },
+      "resolved_experiment_id": "resolved_v0_1_sha256_d98834b2e028a1cf44349528c3e2d16b64172985ec546a0a5dea3567f1edb34a",
+      "resolved_dependencies": [
+        {
+          "role": "implementation",
+          "artifact": {
+            "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+            "version": "1.0.0",
+            "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "experiment_ids": [
+        "exp_v0_1_sha256_78711859b842473d47abe2f7005abbc2175eb858ddf0cb7e4f5c216d120fc120"
+      ],
+      "resolved_experiment_ids": [
+        "resolved_v0_1_sha256_d98834b2e028a1cf44349528c3e2d16b64172985ec546a0a5dea3567f1edb34a"
+      ],
+      "request_ids": [
+        "11111111-1111-4111-8111-111111111112"
+      ],
+      "attempt_id": "22222222-2222-4222-8222-222222222222"
+    },
+    "outcome": "completed",
+    "outcome_reason": null,
+    "metrics": [
+      {
+        "metric_definition": {
+          "id": "SYNTHETIC_POLICY_METRIC",
+          "version": "1.0.0",
+          "content_sha256": "d2a9a5eba5c7c9073ff5d6c0a8c5bead5ec2f4ed5a5502ae75bf0388aa190bcf"
+        },
+        "value": "-0.05",
+        "status": "valid",
+        "reason_code": null,
+        "sample_count": 2
+      }
+    ],
+    "artifact_manifests": [
+      {
+        "id": "ARTIFACT_a21e732fed40b57a23d55f7d8ec928c7dc53db533bf4a1f294e79a766a9755f0",
+        "version": "1.0.0",
+        "content_sha256": "c479363e98557cf0e763ec626ad5fb700cdd1d64c62a49b3b33e253a41ed4c4f"
+      }
+    ],
+    "lineage": [
+      {
+        "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+        "version": "1.0.0",
+        "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+      }
+    ],
+    "exposure_record": {
+      "id": "SYNTHETIC_EXPOSURE_ASSET_B",
+      "version": "1.0.0",
+      "content_sha256": "c5bf26e18dd33203274b335403b5d80d63894bd6b94a8ac9ed7f55c695f72fce"
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "admission_record",
+    "id": "ADMISSION_8d291176a9d7686eca54647506278a96b51c98f8dba7063eccf2b55f667e5053",
+    "version": "1.0.0",
+    "trial": {
+      "id": "TRIAL_faad24de122ae08c655791f2a5433791496db7e15cc8b0ee246a2763916d1da4",
+      "version": "1.0.0",
+      "content_sha256": "de2a194f331e7c76b522966f10ba6fdf560e85b38e43a2a858802843d916ab63"
+    },
+    "relationship": {
+      "id": "RELATIONSHIP_42a13f291583c3abfe278ffab1bf3332dd4857697addf744929a6be986af55b3",
+      "version": "1.0.0",
+      "content_sha256": "2ef0bc4a6223f1d89f0ad7d4110c9bb03db78d282f1890f0378e90a316deb66c"
+    },
+    "policy": {
+      "id": "SYNTHETIC_POLICY_ADMISSION",
+      "version": "1.0.0",
+      "content_sha256": "841be3918f1bafa2c85589de69114b78e70dda44b1a1bf66fbf4e5ffa07eb8b4"
+    },
+    "evidence": [
+      {
+        "id": "TRIAL_faad24de122ae08c655791f2a5433791496db7e15cc8b0ee246a2763916d1da4",
+        "version": "1.0.0",
+        "content_sha256": "de2a194f331e7c76b522966f10ba6fdf560e85b38e43a2a858802843d916ab63"
+      }
+    ],
+    "decision": "rejected",
+    "reason_codes": [
+      "SYNTHETIC_ILLUSTRATION_ONLY"
+    ],
+    "metrics": [],
+    "supersedes": null
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "validation_record",
+    "id": "VALIDATION_164d56e9ec4a57c85f599de83e0408d73b32c2d7f84f60d0fc504db239e53b46",
+    "version": "1.0.0",
+    "trial": {
+      "id": "TRIAL_faad24de122ae08c655791f2a5433791496db7e15cc8b0ee246a2763916d1da4",
+      "version": "1.0.0",
+      "content_sha256": "de2a194f331e7c76b522966f10ba6fdf560e85b38e43a2a858802843d916ab63"
+    },
+    "relationship": {
+      "id": "RELATIONSHIP_42a13f291583c3abfe278ffab1bf3332dd4857697addf744929a6be986af55b3",
+      "version": "1.0.0",
+      "content_sha256": "2ef0bc4a6223f1d89f0ad7d4110c9bb03db78d282f1890f0378e90a316deb66c"
+    },
+    "policy": {
+      "id": "SYNTHETIC_POLICY_ADMISSION",
+      "version": "1.0.0",
+      "content_sha256": "841be3918f1bafa2c85589de69114b78e70dda44b1a1bf66fbf4e5ffa07eb8b4"
+    },
+    "evidence": [
+      {
+        "id": "TRIAL_faad24de122ae08c655791f2a5433791496db7e15cc8b0ee246a2763916d1da4",
+        "version": "1.0.0",
+        "content_sha256": "de2a194f331e7c76b522966f10ba6fdf560e85b38e43a2a858802843d916ab63"
+      },
+      {
+        "id": "ADMISSION_8d291176a9d7686eca54647506278a96b51c98f8dba7063eccf2b55f667e5053",
+        "version": "1.0.0",
+        "content_sha256": "27e36dd5b2ba4b2098e973993c9cfdfb590bce44453d9cdc451d2b6bd68012e7"
+      }
+    ],
+    "decision": "failed",
+    "reason_codes": [
+      "SYNTHETIC_PRECHECK_FAILED"
+    ],
+    "metrics": [],
+    "supersedes": null,
+    "evaluation_trial": null,
+    "research_spec": {
+      "id": "SYNTHETIC_RESEARCH_SPEC",
+      "version": "1.0.0",
+      "content_sha256": "199fb0c46e1f064f6283a0b8a81d8a7f66ddb1a5f0e655bc150594ba587f0817"
+    },
+    "evaluation_period": {
+      "start_inclusive": "2000-02-01T00:00:00.000000Z",
+      "end_exclusive": "2000-03-01T00:00:00.000000Z"
+    },
+    "implementation": {
+      "id": "IMPLEMENTATION_2a36ea4d0dd06873e11cc206fd333d6265d53ccfea3032bdd36e687e258488dc",
+      "version": "1.0.0",
+      "content_sha256": "9a3260656de4a9b1f6cadb1c5da08f4ead7a2a1d3bf7a8c6d2fc719714fc0f64"
+    }
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "signal_library_entry",
+    "id": "LIBRARYENTRY_3f090f2cb6a50c547a13bc139792f4038dde05cc720296de0432e10cba47508f",
+    "version": "1.0.0",
+    "signal_id": "SIGNAL_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+    "feature": {
+      "id": "FEATURE_312256156ff94c269d7f8aa60c8b31c23a6a145160fa80cb7155cceac9b1dcf1",
+      "version": "1.0.0",
+      "content_sha256": "28b7f7828077d1b494d83f176b7393793cc88f252ebbd331073b473ab79120de"
+    },
+    "relationship_results": [
+      {
+        "relationship": {
+          "id": "RELATIONSHIP_ba58c5dceeccd6ff103dc5d32ceffd6be4bf78cbcd2b397cf5086bc186967e5f",
+          "version": "1.0.0",
+          "content_sha256": "faef06f11710990b7a6da1fb9b5364c837156386cf6138e14f09e067bdfc3641"
+        },
+        "trial_results": [
+          {
+            "id": "TRIAL_1ee31244ab483f6ba8bd76ea1c17cc8dafc21fb1e4afa6daed78c77b61855180",
+            "version": "1.0.0",
+            "content_sha256": "9ef6632171a299d436ccad10a3b8c0702a5fa4c30c330edd117cd7511e215afe"
+          }
+        ],
+        "admission_results": [
+          {
+            "id": "ADMISSION_904c271d18852ff609f3e1cc0e7e81698d8c5fa890062265ca41772bb74a67ec",
+            "version": "1.0.0",
+            "content_sha256": "82dda33a4fc36d6eb287a64aa5098144f4e7298e1859cc411c1268990e7bd5c8"
+          }
+        ],
+        "validation_results": [],
+        "attempt_ids": [
+          "22222222-2222-4222-8222-222222222221"
+        ]
+      },
+      {
+        "relationship": {
+          "id": "RELATIONSHIP_42a13f291583c3abfe278ffab1bf3332dd4857697addf744929a6be986af55b3",
+          "version": "1.0.0",
+          "content_sha256": "2ef0bc4a6223f1d89f0ad7d4110c9bb03db78d282f1890f0378e90a316deb66c"
+        },
+        "trial_results": [
+          {
+            "id": "TRIAL_faad24de122ae08c655791f2a5433791496db7e15cc8b0ee246a2763916d1da4",
+            "version": "1.0.0",
+            "content_sha256": "de2a194f331e7c76b522966f10ba6fdf560e85b38e43a2a858802843d916ab63"
+          }
+        ],
+        "admission_results": [
+          {
+            "id": "ADMISSION_8d291176a9d7686eca54647506278a96b51c98f8dba7063eccf2b55f667e5053",
+            "version": "1.0.0",
+            "content_sha256": "27e36dd5b2ba4b2098e973993c9cfdfb590bce44453d9cdc451d2b6bd68012e7"
+          }
+        ],
+        "validation_results": [
+          {
+            "id": "VALIDATION_164d56e9ec4a57c85f599de83e0408d73b32c2d7f84f60d0fc504db239e53b46",
+            "version": "1.0.0",
+            "content_sha256": "77f41210a977309f23f5c7fa11fdd6174c6bd26389166bd5898904b9e24bb050"
+          }
+        ],
+        "attempt_ids": [
+          "22222222-2222-4222-8222-222222222222"
+        ]
+      }
+    ],
+    "supersedes": null
+  },
+  {
+    "schema_version": "0.2.0",
+    "record_type": "payload_locator_record",
+    "blob_sha256": "3f70d62b044a4ad5c21cbb9a0b15524035f7b512269895541dc682af95d9e5c5",
+    "store_id": "SYNTHETIC_LEGACY_READ_ONLY",
+    "relative_path": "synthetic/observations.jsonl",
+    "access": "read_only_legacy",
+    "verified_byte_count": 0,
+    "verified_at": "2000-01-01T00:00:00.000000Z"
+  }
+]

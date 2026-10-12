@@ -1,0 +1,116 @@
+{
+  "contract_version": "0.1.0",
+  "experiment": {
+    "feature": {
+      "id": "SYNTHETIC_FEATURE",
+      "version": "1.0.0"
+    },
+    "target": {
+      "id": "SYNTHETIC_TARGET",
+      "version": "1.0.0"
+    },
+    "scope": {
+      "id": "SYNTHETIC_SCOPE",
+      "version": "1.0.0"
+    },
+    "expected_direction": "POSITIVE",
+    "research_spec": {
+      "id": "SYNTHETIC_RESEARCH_SPEC",
+      "version": "1.0.0"
+    }
+  },
+  "definition_bindings": {
+    "feature": {
+      "id": "SYNTHETIC_FEATURE",
+      "version": "1.0.0",
+      "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "target": {
+      "id": "SYNTHETIC_TARGET",
+      "version": "1.0.0",
+      "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "scope": {
+      "id": "SYNTHETIC_SCOPE",
+      "version": "1.0.0",
+      "content_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "research_spec": {
+      "id": "SYNTHETIC_RESEARCH_SPEC",
+      "version": "1.0.0",
+      "content_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "dependencies": {
+    "data_snapshots": {
+      "requirement": "required",
+      "bindings": [
+        {
+          "role": "observations",
+          "artifact": {
+            "id": "SYNTHETIC_SNAPSHOT",
+            "version": "1.0.0",
+            "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ]
+    },
+    "availability_policy": {
+      "requirement": "required",
+      "bindings": [
+        {
+          "role": "policy",
+          "artifact": {
+            "id": "SYNTHETIC_AVAILABILITY",
+            "version": "1.0.0",
+            "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      ]
+    },
+    "implementation_manifest": {
+      "requirement": "required",
+      "bindings": [
+        {
+          "role": "implementation",
+          "artifact": {
+            "id": "SYNTHETIC_IMPLEMENTATION",
+            "version": "1.0.0",
+            "content_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
+      ]
+    },
+    "scope_membership_and_eligibility": {
+      "requirement": "required",
+      "bindings": [
+        {
+          "role": "membership",
+          "artifact": {
+            "id": "SYNTHETIC_MEMBERSHIP",
+            "version": "1.0.0",
+            "content_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        }
+      ]
+    },
+    "readiness_evidence": {
+      "requirement": "required",
+      "bindings": [
+        {
+          "role": "historical_reproduction",
+          "artifact": {
+            "id": "SYNTHETIC_EVIDENCE",
+            "version": "1.0.0",
+            "content_sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        }
+      ]
+    },
+    "randomness_settings": {
+      "requirement": "inapplicable",
+      "bindings": [],
+      "reason_code": "SYNTHETIC_DETERMINISTIC_CALCULATION"
+    }
+  }
+}

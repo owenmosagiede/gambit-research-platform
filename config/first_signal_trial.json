@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "name": "First stored PIT fractional-change feature request",
+  "source": {
+    "profile": "alfred_full_history_vintage_date",
+    "native_series_id": "CES0500000003",
+    "dataset": {
+      "id": "DS_FRED_ALFRED_CES0500000003",
+      "version": "2.0.0",
+      "content_sha256": "c1de4cc4ae8a6a9bcbd84dca0d7f4cbdcd486e969d7096d1967536db0e5d2b0b"
+    },
+    "source_view": {
+      "id": "SVIEW_ALFRED_CES0500000003_VINTAGE_DATE",
+      "version": "2.0.0",
+      "content_sha256": "3965a126c7a924da3a569dd008e7130e1aebc030575ef1645b572c1aac8a5f16"
+    },
+    "pit_snapshot": {
+      "content_sha256": "c321ab16a9fb280a4a91844b55b992dcdb9cebbb19fed01d6b33055cd7a9a896",
+      "id": "SNAPSHOT_0ad3598870753cc4bba55777aaf087d057b5d967a7333f7d530b664f366f9892",
+      "version": "1.0.0"
+    }
+  },
+  "selection": {
+    "measure": "value",
+    "entity_id": "US",
+    "dimensions": []
+  },
+  "operator": {
+    "id": "TR_BASE_change_pct",
+    "version": "2.0.0",
+    "content_sha256": "92d702eb69814f0b20fa19efe31fa02e66a38e7b82a7a1db88a36e75f1db40c8"
+  },
+  "parameters": {
+    "k": 1
+  },
+  "history_mode": "resolved_state",
+  "evaluation_policy": {
+    "id": "POL_TRANSFORM_EVALUATION_NATIVE_VINTAGES",
+    "version": "2.0.0",
+    "content_sha256": "8c9bbe3bcd596de987cdf91d1ef5ff74c582393567bf45b4a51b9bcf49ab86d4"
+  },
+  "output_unit": "dimensionless"
+}

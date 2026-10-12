@@ -1,0 +1,124 @@
+FEATURE–SCOPE ALIGNMENT REVIEW
+2026-10-10 | Documentation only | No new policy approval or implementation
+
+Purpose
+Define the supported combinations and rejection boundaries before extending Submit beyond its FX-native input adapter. CES-to-FX-universe research is excluded from this scope, per the user. No common-series broadcasting, new CS track, multi-country model, currency-specific Feature cloning, or UI fields are proposed.
+
+Evidence labels
+VERIFIED means inspected executable code or stored metadata. PROPOSED means a design recommendation, not installed behavior. DECISION means a scientific choice not established by the inspected approvals. Historical design documents are supporting context, not proof that a runtime path exists.
+
+1. Supported combinations
+
+VERIFIED — instrument-native reusable FX recipe + one FX instrument + Price Return:
+Currently supported by research.inputs.resolve_plan. Resolve the recipe's binding to that instrument's own source snapshot, prepare its observations, and run TS across five scheduled-weekday horizons. Required source/Target pins, full binding compatibility and policy checks still apply. A registered recipe alone does not certify readiness.
+
+VERIFIED — instrument-native reusable FX recipe + fixed FX universe + Price Return:
+Currently supported as CS only. Calculate the recipe separately for each frozen member, then evaluate the within-date relationship across members. Preserve existing complete-membership, comparable-input and sample rules; do not create separate TS trials for each member. This review does not certify every economic interpretation of every registered recipe.
+
+VERIFIED — existing source-bound CES Feature + one FX instrument + Price Return:
+The Feature and its materialization exist, but Submit rejects the combination before research. The failure is an adapter capability boundary, not a statistical rejection or proof of an invalid hypothesis. Proposed first extension: one explicitly selected external Feature series aligned to one target instrument for TS, using a versioned alignment policy. CES is the concrete initial case, not a hard-coded data-category exception. Other sources need their own verified availability and input contracts before they qualify.
+
+OUT OF SCOPE — CES + universe: no implementation or research proposed.
+UNSUPPORTED — Total Return or Excess Return without implemented/populated contracts; automatic universe-to-TS expansion; unknown or mixed entity/measure/dimension series; implicit source or vintage selection; uncertified live/release-time claims.
+
+2. What actually exists
+
+src/research/inputs.py:
+- resolve_plan explicitly requires FEATURE_RECIPE_ IDs, loads the reusable FX registry, and constructs members with a Feature bound to each member's FX price source.
+- _feature_metadata and _check_output enforce that Feature source snapshots match the member price snapshot. That constraint is correct for the existing FX-native path, but cannot describe CES whose source is different from the Target's source.
+- prepare_phase generates/reuses FX observations by phase on the weekday schedule. load_phase joins Feature.reference_time to Target.prediction_anchor by equality. It does not call the generic availability-aware Feature selector.
+- _phase and _phase_target_rows enforce P2 admission and phase boundaries, including Target entry/exit. These protections must remain.
+
+src/data/feature_evaluation.py: resolve_native_schedule and execute_scheduled_recipe implement the approved CES calculation. POL_TRANSFORM_EVALUATION_NATIVE_VINTAGES@2.0.0 selects the latest available reference month and immediately preceding calendar month from the same PIT state, then applies fractional change. Missing operands remain null. This is a Feature evaluation policy, not a downstream market-alignment policy.
+
+The stored CES materialization MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636 contains 187 evaluation cutoffs, 2011-03-04 through 2026-10-02. The first output index pairs evaluation_cutoff=2011-03-04 with reference_time=2011-02-01. Joining that Feature on reference_time would backdate it. The earlier monthly source history does not establish Feature availability before the first stored evaluation cutoff. The count is a materialization boundary, not a permanent limit on Feature identity.
+
+src/data/feature_store_contracts.py: normalize_observation retains entity, measure, dimensions, reference_time, available_at, evaluation_cutoff, vintage, null reason and lineage; the stored profile enforces available_at == evaluation_cutoff. CES entity remains US, not USDJPY. In this profile the availability date means archive-date replay, not verified real-time dissemination before a particular market close.
+
+src/data/targets/scheduling.py already contains executable reusable helpers:
+- temporal_eligible: exact timestamps permit <=; date-only evidence requires a strictly earlier date. Unknown availability fails. Mixed precision requires explicit conservative_next_day and timezone evidence.
+- align_feature: checks availability, evaluation cutoff, reference time and validity against a canonical Target prediction anchor.
+- select_feature_at_anchor: selects the latest eligible valid row of a single entity/measure/dimension series; rejects duplicate eligible temporal keys and mixed series.
+IMPORTANT LIMITATION: select_feature_at_anchor has no maximum-age check and filters invalid rows before choosing the latest valid row. Used naively, it can fall back to an older valid observation after a newer invalid update. It is a reusable primitive, not the complete policy needed for this extension.
+
+3. Existing policies: retain, adapt, do not assume
+
+RETAIN: RSPEC_FX_SCOPE_ROUTED_SUBMIT@2.0.0's approved discovery end (2021-12-31), validation interval (2022-01-01 through 2026-08-31), positive/negative relationship hypothesis, five horizons (1,7,21,63,252), scheduled_weekday_hac_v2 and unresolved_required_v1. Reusing these rules in an external-series branch requires an explicitly versioned compatible binding; the current FX-only profile does not itself approve that branch.
+
+RETAIN: approved FX simple-price-return definitions, exact scheduled endpoints and pinned snapshots. Feature timing never changes a Target horizon into a count of subsequent valid observations. Missing endpoint prices remain missing, not shifted or interpolated.
+
+RETAIN WITH THEIR EXISTING SCOPE: POL_ALFRED_DATE_AVAILABILITY, POL_ALFRED_DATE_ALIGNMENT and POL_ALFRED_DATE_REVISION@2.0.0, plus native-vintage evaluation. Their approved status does not establish alignment to an FX decision time. They preserve the source's archive-date precision and revision semantics.
+
+REUSE AFTER COMPATIBILITY TESTS: current temporal_eligible/align_feature helpers, immutable reference and lineage validation, feature materialization reader, Target reader, scheduled-distance statistics, worker/queue and authoritative trial/result storage. Do not weaken source checks simply to accept FEATURE_ IDs.
+
+LEGACY CANDIDATE, NOT DROP-IN CODE:
+Data/src/point_in_time_data/predictor_alignment.py defines PALIGN_FIRST_VALID_MARKET_OBSERVATION_AT_OR_AFTER@1.0.0. It maps each predictor event to one target-market observation, uses <= availability ordering, no filling/interpolation, rejects event collisions, and omits events beyond the supplied market grid. The generic TS registry permits predictor and target entities to differ. Its inherited policies use valid_observations horizons and an older inference clock (Data/src/research_specification_registry/registry.py). Those semantics are not the currently approved scheduled-weekday research semantics. Retain the event-to-market mapping concept and lineage fields; do not import first-valid fallback, date equality or row omission silently. Do not infer daily carry-forward approval from a legacy maximum_age=None setting.
+
+4. Proposed contract boundary
+
+Classify by application semantics, not labels such as macro, FX or monthly:
+(a) per-member calculation from each instrument's own compatible input;
+(b) an explicitly selected external series mapped to one target instrument.
+
+Freeze these in the research plan:
+- Exact Feature/recipe, materialization, source snapshot and semantic-policy references.
+- Exact selected source entity/measure/dimensions and target instrument/Scope reference; preserve their distinct identities.
+- Alignment policy ID/version/hash: sampling mode, eligibility rule, precision/timezone if applicable, freshness rule and invalid-update behavior.
+- Target definitions/materializations, canonical weekday anchors, all five horizons, phase windows and implementation fingerprint.
+- Prespecified Expected Direction. For CES → USDJPY it means the sign of the Feature/quoted-return relationship; no automatic USD-strength interpretation, reciprocal-price operation or sign flip.
+
+Aligned rows should reference the original Feature observation rather than duplicate/relabel it. Preserve source reference month, archive/evaluation date, chosen market anchor, Feature age, null/exclusion reason, Target interval and both sides' lineage. Include alignment semantics in plan/preparation/trial identity. A policy change creates new evidence and never rewrites a Feature or an old trial.
+
+The earliest eligible research anchor depends on both the external Feature's eligible history and the Target schedule; an old FX price start cannot create pre-2011 CES Feature values. Freeze a deterministic coverage boundary and report exclusions instead of choosing dates based on observed performance.
+
+Keep historical/live certification false where evidence remains unverified. Choosing a later date is a conservative research convention, not proof of precise historical market availability.
+
+Phase-aware preparation is required. The existing CES materialization spans discovery and validation; the generic full reader decodes/revalidates its entire payload. Do not hand that full observation set to P1 and filter afterward. Add a verified phase-scoped selection/read pathway with safe pre-period Feature context where the approved policy requires it. Preserve P2 admission, prevent validation Target access during P1, and retain the scheduled grid even when only some anchors contribute observations.
+
+No new UI fields are required: a registered compatible backend policy can resolve the selection. The UI should show the resolved policy and reasons for incompatibility before Submit. The backend must recheck and freeze those same conditions when recording work.
+
+5. Proposed rejection and missing-data rules
+
+Block the specification before research if the application type has no implemented adapter, source/Target mapping is ambiguous, alignment policy is missing/unapproved, availability evidence is absent, selected precision cannot be ordered under that policy, dependencies conflict, or a source requires an unimplemented orientation/construction. Keep unrelated supported FX combinations enabled.
+
+Reject ambiguous duplicate candidates rather than selecting by file order or hash. If several source events map to one anchor in event mode, block unless a separately approved collision rule exists.
+
+Represent ordinary unavailable observations as explicit null/excluded rows: no eligible Feature yet, invalid latest update, stale Feature, non-selected event-only anchor, unavailable Target endpoint, or endpoint outside phase. These are proposed diagnostic categories, not newly installed wire codes. Missing observations do not renumber scheduled dates. No interpolation, backward filling, zero substitution or silent next-valid-price search.
+
+Statistical insufficiency remains the responsibility of existing scientific gates: do not invent lower sample thresholds for sparse data, label a blocked specification as P1 failure, or label completed preparation as validation. P2 unavailable required evidence stays Unresolved; available failed criteria stay Failed.
+
+6. Genuinely missing decisions
+
+D1 — Sampling question (required):
+Event-only: associate each stored Feature update with one eligible scheduled FX anchor; other weekday anchors remain not sampled. This asks about returns following updates and preserves one event's contribution per anchor.
+Daily state: at each scheduled FX anchor use the latest eligible Feature state, subject to explicit freshness/null rules. This asks about daily returns conditional on the prevailing state. Repetition does not create new independent releases; retain weekday HAC and disclose both anchor count and distinct source-update count. Their statistical behavior needs compatibility tests; no threshold change is implied.
+The stored 187-date Feature schedule does not choose between these downstream research questions.
+
+D2 — Earliest eligible FX anchor (required):
+Recommendation for this initial date-only external Feature: use the existing strictly-prior-date helper. A Friday archive date is first eligible on Monday under the existing weekday calendar. A same-day retrospective option would require an explicit additional research approval. Neither option certifies live timing. Choose canonical scheduled anchors even when a price is absent; do not silently advance to the next valid price.
+
+D3 — Persistence/freshness semantics (required if daily-state is chosen):
+Define maximum permitted age, its unit and whether age is measured from the Feature evaluation/availability date or reference period; alternatively explicitly approve persistence until superseded. Do not invent a numerical age limit.
+Recommendation: a newer eligible null/invalid update must supersede an older valid state with a null, rather than silently revive the older value. Any fallback exception requires an explicit policy. Event-only sampling removes the need to carry a Feature across daily anchors, but still requires deterministic handling of missing scheduled anchors and event collisions.
+
+These are not additional unresolved decisions: Scope already determines TS versus CS; the existing five horizons, period endpoints, direction semantics, immutable identities, no live certification and no CES-universe extension remain fixed. Retain existing numerical methods, subject to compatibility checks for the chosen sampling mode. Install a new exact policy/profile binding only after D1–D3 are resolved; do not mutate the approved historical profile in place.
+
+7. Verification required before enabling the external-series branch
+
+- Existing FX-native TS/CS fixtures produce identical inputs, lineage and outcomes.
+- CES reference month cannot leak before its archive/evaluation date; same-day exclusion and weekend mapping follow the chosen policy.
+- Adding a future revision cannot change an earlier aligned row; revised outputs supersede only when eligible.
+- Event-only versus daily-state counts and repeated-source lineage are independently checked.
+- Missing anchor/endpoint prices do not shift horizons; scheduled-distance HAC preserves gaps.
+- Explicit tests for staleness, newer null invalidation, collisions, mixed entities, duplicate rows and precision mismatch.
+- Scope mapping preserves source entity US and target instrument USDJPY; the original Feature ID remains unchanged when selecting another individual instrument.
+- Phase boundaries, necessary earlier Feature context and P2 admission prevent leakage; full materialization decoding is not a shortcut around phase isolation.
+- Policy/source/implementation changes invalidate reuse appropriately; exact matches reuse stored references.
+- Positive and negative direction remain frozen in trials/results; UI preflight and backend compatibility agree.
+- Queue selection alone performs no materialization or research. No production research is needed to implement and certify this pathway with isolated fixtures.
+
+Checks performed for this review
+Inspected current executable modules, installed policy definitions, CES materialization metadata, historical specifications and the named legacy source files read-only. Ran existing test_target_scheduling and test_feature_evaluation suites: 50 tests passed in 1.875 seconds. These establish the tested helper behavior, not an implemented CES-to-FX research path. No new tests, policies, scientific data, code changes or research executions were created by this documentation task.
+
+Next bounded task
+Resolve D1–D3, then implement only external stored-series → individual FX TS preparation using a versioned alignment policy, phase-scoped reads and compatibility checks. Reuse existing Targets, kernels, queue and result storage. Enable only verified compatible selections; test with isolated fixtures before any production research request.

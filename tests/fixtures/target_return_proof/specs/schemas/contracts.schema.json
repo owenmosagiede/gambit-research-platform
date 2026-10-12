@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:research-platform:foundation-contract:0.1.0",
+  "title": "Proposed foundation experiment contracts v0.1.0",
+  "description": "Structural forms only; registry resolution, readiness, and execution are not implemented. Python additionally checks binding reference equality and unique dependency roles.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/experiment_definition"
+    },
+    {
+      "$ref": "#/$defs/submission_request"
+    },
+    {
+      "$ref": "#/$defs/resolved_experiment"
+    }
+  ],
+  "$defs": {
+    "versioned_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?![\\s\\S])"
+        }
+      }
+    },
+    "immutable_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "content_sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        }
+      }
+    },
+    "dependency_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "artifact"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+        },
+        "artifact": {
+          "$ref": "#/$defs/immutable_reference"
+        }
+      }
+    },
+    "experiment_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature",
+        "target",
+        "scope",
+        "research_spec",
+        "expected_direction"
+      ],
+      "properties": {
+        "feature": {
+          "$ref": "#/$defs/versioned_reference"
+        },
+        "target": {
+          "$ref": "#/$defs/versioned_reference"
+        },
+        "scope": {
+          "$ref": "#/$defs/versioned_reference"
+        },
+        "research_spec": {
+          "$ref": "#/$defs/versioned_reference"
+        },
+        "expected_direction": {
+          "enum": [
+            "POSITIVE",
+            "NEGATIVE"
+          ]
+        }
+      }
+    },
+    "submission_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "request_id",
+        "experiment"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "0.1.0"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])"
+        },
+        "experiment": {
+          "$ref": "#/$defs/experiment_definition"
+        }
+      }
+    },
+    "resolved_experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "experiment",
+        "definition_bindings",
+        "dependencies"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "0.1.0"
+        },
+        "experiment": {
+          "$ref": "#/$defs/experiment_definition"
+        },
+        "definition_bindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "feature",
+            "target",
+            "scope",
+            "research_spec"
+          ],
+          "properties": {
+            "feature": {
+              "$ref": "#/$defs/immutable_reference"
+            },
+            "target": {
+              "$ref": "#/$defs/immutable_reference"
+            },
+            "scope": {
+              "$ref": "#/$defs/immutable_reference"
+            },
+            "research_spec": {
+              "$ref": "#/$defs/immutable_reference"
+            }
+          }
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "data_snapshots",
+            "availability_policy",
+            "implementation_manifest",
+            "scope_membership_and_eligibility",
+            "readiness_evidence",
+            "randomness_settings"
+          ],
+          "properties": {
+            "data_snapshots": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "required"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "availability_policy": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "required"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      },
+                      "maxItems": 1
+                    }
+                  }
+                }
+              ]
+            },
+            "implementation_manifest": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "required"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      },
+                      "maxItems": 1
+                    }
+                  }
+                }
+              ]
+            },
+            "scope_membership_and_eligibility": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "required"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings",
+                    "reason_code"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "inapplicable"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "maxItems": 0
+                    },
+                    "reason_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+                    }
+                  }
+                }
+              ]
+            },
+            "readiness_evidence": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "required"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "optional"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings",
+                    "reason_code"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "optional"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "maxItems": 0
+                    },
+                    "reason_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings",
+                    "reason_code"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "inapplicable"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "maxItems": 0
+                    },
+                    "reason_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+                    }
+                  }
+                }
+              ]
+            },
+            "randomness_settings": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "required"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "$ref": "#/$defs/dependency_binding"
+                      },
+                      "maxItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "requirement",
+                    "bindings",
+                    "reason_code"
+                  ],
+                  "properties": {
+                    "requirement": {
+                      "const": "inapplicable"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "maxItems": 0
+                    },
+                    "reason_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

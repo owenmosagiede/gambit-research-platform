@@ -1,0 +1,9 @@
+[Unit]
+Description=Gambit daily encrypted backup
+[Timer]
+OnCalendar=*-*-* 11:00:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+Unit=gambit-backup.service
+[Install]
+WantedBy=timers.target

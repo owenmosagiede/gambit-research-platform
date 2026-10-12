@@ -1,0 +1,19 @@
+{
+  "feature": {
+    "id": "SYNTHETIC_FEATURE",
+    "version": "1.0.0"
+  },
+  "target": {
+    "id": "SYNTHETIC_TARGET",
+    "version": "1.0.0"
+  },
+  "scope": {
+    "id": "SYNTHETIC_SCOPE",
+    "version": "1.0.0"
+  },
+  "expected_direction": "POSITIVE",
+  "research_spec": {
+    "id": "SYNTHETIC_RESEARCH_SPEC",
+    "version": "1.0.0"
+  }
+}

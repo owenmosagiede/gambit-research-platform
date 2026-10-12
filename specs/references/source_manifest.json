@@ -1,0 +1,22 @@
+{
+  "recorded_at_utc": "2026-10-08T03:23:44.891836+00:00",
+  "scope": "Small supplied text references only; no historical payloads hashed.",
+  "entries": [
+    {
+      "source_path": "/Users/owenmckinleyosagiede/Desktop/Multi-Asset Model/codex_foundation_prompt.txt",
+      "preserved_path": "specs/references/codex_foundation_prompt.txt",
+      "bytes": 16529,
+      "sha256": "ca7f91fb680a0144af1c9d791a312126b8c7d075e386727bf41c662ff387f8f3",
+      "copy_verified_byte_equal": true,
+      "source_role": "Foundation task reference bounded by direct user request"
+    },
+    {
+      "source_path": "/Users/owenmckinleyosagiede/Desktop/Multi-Asset Model/p3_p4_design_reference.txt",
+      "preserved_path": "specs/references/p3_p4_design_reference.txt",
+      "bytes": 15080,
+      "sha256": "9870a45af54ecf840bcc800ccc4f629d1d2edc866ce692a1c01d87254eac77a3",
+      "copy_verified_byte_equal": true,
+      "source_role": "Intended P3/P4 design source, with unresolved implementation details"
+    }
+  ]
+}

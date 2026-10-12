@@ -1,0 +1,1 @@
+{"body":{"arithmetic":"decimal_50_then_binary64_guard","fallback":"none","kind":"fx_price_determinism","missing":"retain_null","version":"1.0.0"},"id":"POLICY_9fc253ccd63965bc28a4ea7b244548122838b9950684ba1cc0a544141185cef7","record_type":"policy_definition","schema_version":"0.5.0","version":"1.0.0"}

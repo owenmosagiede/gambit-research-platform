@@ -1,0 +1,1656 @@
+{
+  "exact_evaluation_cutoffs": [
+    "2011-03-04",
+    "2011-04-01",
+    "2011-05-06",
+    "2011-06-03",
+    "2011-07-08",
+    "2011-08-05",
+    "2011-09-02",
+    "2011-10-07",
+    "2011-11-04",
+    "2011-12-02",
+    "2012-01-06",
+    "2012-02-03",
+    "2012-03-09",
+    "2012-04-06",
+    "2012-05-04",
+    "2012-06-01",
+    "2012-07-06",
+    "2012-08-03",
+    "2012-09-07",
+    "2012-10-05",
+    "2012-11-02",
+    "2012-12-07",
+    "2013-01-04",
+    "2013-02-01",
+    "2013-03-08",
+    "2013-04-05",
+    "2013-05-03",
+    "2013-06-07",
+    "2013-07-05",
+    "2013-08-02",
+    "2013-09-06",
+    "2013-10-22",
+    "2013-11-08",
+    "2013-12-06",
+    "2014-01-10",
+    "2014-02-07",
+    "2014-03-07",
+    "2014-04-04",
+    "2014-05-02",
+    "2014-06-06",
+    "2014-07-03",
+    "2014-08-01",
+    "2014-09-05",
+    "2014-10-03",
+    "2014-11-07",
+    "2014-12-05",
+    "2015-01-09",
+    "2015-02-06",
+    "2015-03-06",
+    "2015-04-03",
+    "2015-05-08",
+    "2015-06-05",
+    "2015-07-02",
+    "2015-08-07",
+    "2015-09-04",
+    "2015-10-02",
+    "2015-11-06",
+    "2015-12-04",
+    "2016-01-08",
+    "2016-02-05",
+    "2016-03-04",
+    "2016-04-01",
+    "2016-05-06",
+    "2016-06-03",
+    "2016-07-08",
+    "2016-08-05",
+    "2016-09-02",
+    "2016-10-07",
+    "2016-11-04",
+    "2016-12-02",
+    "2017-01-06",
+    "2017-02-03",
+    "2017-03-10",
+    "2017-04-07",
+    "2017-05-05",
+    "2017-06-02",
+    "2017-07-07",
+    "2017-08-04",
+    "2017-09-01",
+    "2017-10-06",
+    "2017-11-03",
+    "2017-12-08",
+    "2018-01-05",
+    "2018-02-02",
+    "2018-03-09",
+    "2018-04-06",
+    "2018-05-04",
+    "2018-06-01",
+    "2018-07-06",
+    "2018-08-03",
+    "2018-09-07",
+    "2018-10-05",
+    "2018-11-02",
+    "2018-12-07",
+    "2019-01-04",
+    "2019-02-01",
+    "2019-03-08",
+    "2019-04-05",
+    "2019-05-03",
+    "2019-06-07",
+    "2019-07-05",
+    "2019-08-02",
+    "2019-09-06",
+    "2019-10-04",
+    "2019-11-01",
+    "2019-12-06",
+    "2020-01-10",
+    "2020-02-07",
+    "2020-03-06",
+    "2020-04-03",
+    "2020-05-08",
+    "2020-06-05",
+    "2020-07-02",
+    "2020-08-07",
+    "2020-09-04",
+    "2020-10-02",
+    "2020-11-06",
+    "2020-12-04",
+    "2021-01-08",
+    "2021-02-05",
+    "2021-03-05",
+    "2021-04-02",
+    "2021-05-07",
+    "2021-06-04",
+    "2021-07-02",
+    "2021-08-06",
+    "2021-09-03",
+    "2021-10-08",
+    "2021-11-05",
+    "2021-12-03",
+    "2022-01-07",
+    "2022-02-04",
+    "2022-03-04",
+    "2022-04-01",
+    "2022-05-06",
+    "2022-06-03",
+    "2022-07-08",
+    "2022-08-05",
+    "2022-09-02",
+    "2022-10-07",
+    "2022-11-04",
+    "2022-12-02",
+    "2023-01-06",
+    "2023-02-03",
+    "2023-03-10",
+    "2023-04-07",
+    "2023-05-05",
+    "2023-06-02",
+    "2023-07-07",
+    "2023-08-04",
+    "2023-09-01",
+    "2023-10-06",
+    "2023-11-03",
+    "2023-12-08",
+    "2024-01-05",
+    "2024-02-02",
+    "2024-03-08",
+    "2024-04-05",
+    "2024-05-03",
+    "2024-06-07",
+    "2024-07-05",
+    "2024-08-02",
+    "2024-09-06",
+    "2024-10-04",
+    "2024-11-01",
+    "2024-12-06",
+    "2025-01-10",
+    "2025-02-07",
+    "2025-03-07",
+    "2025-04-04",
+    "2025-05-02",
+    "2025-06-06",
+    "2025-07-03",
+    "2025-08-01",
+    "2025-09-05",
+    "2025-11-20",
+    "2025-12-16",
+    "2026-01-09",
+    "2026-02-11",
+    "2026-03-06",
+    "2026-04-03",
+    "2026-05-08",
+    "2026-06-05",
+    "2026-07-02",
+    "2026-08-07",
+    "2026-09-04",
+    "2026-10-02"
+  ],
+  "implementation": {
+    "content_sha256": "bd07e53bf53bdf9612e39df2e69f2a649bb639fe66356f8db6061a28c3c3d9ee",
+    "id": "IMPLEMENTATION_e850d6df66b3a22a4f34591a0a72e4af1c0f503f7f8c8d6e7cf825944a2be570",
+    "version": "1.0.0"
+  },
+  "manifest_reference": {
+    "content_sha256": "00c8403a73ca277af7046053689df82f24baa0573304f1402cd83a42947bf621",
+    "id": "MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636",
+    "version": "1.0.0"
+  },
+  "metadata": {
+    "dataset": {
+      "body": {
+        "availability_policy": {
+          "content_sha256": "f9e5dcd34d332936541a412e43f24b79da9e19379fb0b71768c2f43cafe7f20b",
+          "id": "POL_ALFRED_DATE_AVAILABILITY",
+          "version": "2.0.0"
+        },
+        "availability_time_field": "vintage_date",
+        "economic_entity_ids": [
+          "US"
+        ],
+        "event_time_field": "observation_date",
+        "fields": [
+          {
+            "data_type": "token",
+            "name": "observation_date",
+            "nullable": false,
+            "unit": "source_calendar_date"
+          },
+          {
+            "data_type": "token",
+            "name": "vintage_date",
+            "nullable": false,
+            "unit": "source_calendar_date"
+          },
+          {
+            "data_type": "decimal",
+            "name": "value",
+            "nullable": true,
+            "unit": "USD_per_hour"
+          }
+        ],
+        "quality_policy": {
+          "content_sha256": "5bb1f88c8a9edd9b7d880100cf0527191beae21dbdd72b5e025edc60faa1e3ef",
+          "id": "POL_ALFRED_DATE_QUALITY",
+          "version": "2.0.0"
+        },
+        "revision_key_fields": [
+          "observation_date",
+          "vintage_date"
+        ],
+        "revision_policy": {
+          "content_sha256": "77f2912174ea169761dd887fad44841f2c308554cc83e69885dc3a20657d07d4",
+          "id": "POL_ALFRED_DATE_REVISION",
+          "version": "2.0.0"
+        },
+        "source_contract": {
+          "content_sha256": "169ea468cedf913c6a5897097a148f6188d23bf6d0d5ae0ed77e9f0b54d9b53b",
+          "id": "PROVIDER_6992c9eddab52d2b59d85de622b6ca48a8a69d39b4ddbe84b1d84e8dab8c14a4",
+          "version": "1.0.0"
+        }
+      },
+      "display_name": "Average Hourly Earnings of All Employees, Total Private",
+      "id": "DS_FRED_ALFRED_CES0500000003",
+      "record_type": "dataset_definition",
+      "schema_version": "0.2.0",
+      "version": "2.0.0"
+    },
+    "source_view": {
+      "body": {
+        "alignment_policy": {
+          "content_sha256": "03b9cb1218ddf6c7ab18cfa15703186ea5b7450eb7c30ae56dc8b6d914335de1",
+          "id": "POL_ALFRED_DATE_ALIGNMENT",
+          "version": "2.0.0"
+        },
+        "dataset": {
+          "content_sha256": "c1de4cc4ae8a6a9bcbd84dca0d7f4cbdcd486e969d7096d1967536db0e5d2b0b",
+          "id": "DS_FRED_ALFRED_CES0500000003",
+          "version": "2.0.0"
+        },
+        "entity_selection": {
+          "entity_ids": [
+            "US"
+          ],
+          "kind": "fixed_entities"
+        },
+        "fields": [
+          "observation_date",
+          "vintage_date",
+          "value"
+        ],
+        "filters": [],
+        "selection_policy": {
+          "content_sha256": "d5d6c91c08d7993733b7fc372bce9293ec92c43642fa13704dc730e8e76fd128",
+          "id": "POL_ALFRED_DATE_SELECTION",
+          "version": "2.0.0"
+        }
+      },
+      "display_name": "Full-history native ALFRED vintage-date view",
+      "id": "SVIEW_ALFRED_CES0500000003_VINTAGE_DATE",
+      "record_type": "source_view_definition",
+      "schema_version": "0.2.0",
+      "version": "2.0.0"
+    }
+  },
+  "operand_count": 339,
+  "output_index": [
+    {
+      "evaluation_cutoff": "2011-03-04",
+      "reference_time": "2011-02-01"
+    },
+    {
+      "evaluation_cutoff": "2011-04-01",
+      "reference_time": "2011-03-01"
+    },
+    {
+      "evaluation_cutoff": "2011-05-06",
+      "reference_time": "2011-04-01"
+    },
+    {
+      "evaluation_cutoff": "2011-06-03",
+      "reference_time": "2011-05-01"
+    },
+    {
+      "evaluation_cutoff": "2011-07-08",
+      "reference_time": "2011-06-01"
+    },
+    {
+      "evaluation_cutoff": "2011-08-05",
+      "reference_time": "2011-07-01"
+    },
+    {
+      "evaluation_cutoff": "2011-09-02",
+      "reference_time": "2011-08-01"
+    },
+    {
+      "evaluation_cutoff": "2011-10-07",
+      "reference_time": "2011-09-01"
+    },
+    {
+      "evaluation_cutoff": "2011-11-04",
+      "reference_time": "2011-10-01"
+    },
+    {
+      "evaluation_cutoff": "2011-12-02",
+      "reference_time": "2011-11-01"
+    },
+    {
+      "evaluation_cutoff": "2012-01-06",
+      "reference_time": "2011-12-01"
+    },
+    {
+      "evaluation_cutoff": "2012-02-03",
+      "reference_time": "2012-01-01"
+    },
+    {
+      "evaluation_cutoff": "2012-03-09",
+      "reference_time": "2012-02-01"
+    },
+    {
+      "evaluation_cutoff": "2012-04-06",
+      "reference_time": "2012-03-01"
+    },
+    {
+      "evaluation_cutoff": "2012-05-04",
+      "reference_time": "2012-04-01"
+    },
+    {
+      "evaluation_cutoff": "2012-06-01",
+      "reference_time": "2012-05-01"
+    },
+    {
+      "evaluation_cutoff": "2012-07-06",
+      "reference_time": "2012-06-01"
+    },
+    {
+      "evaluation_cutoff": "2012-08-03",
+      "reference_time": "2012-07-01"
+    },
+    {
+      "evaluation_cutoff": "2012-09-07",
+      "reference_time": "2012-08-01"
+    },
+    {
+      "evaluation_cutoff": "2012-10-05",
+      "reference_time": "2012-09-01"
+    },
+    {
+      "evaluation_cutoff": "2012-11-02",
+      "reference_time": "2012-10-01"
+    },
+    {
+      "evaluation_cutoff": "2012-12-07",
+      "reference_time": "2012-11-01"
+    },
+    {
+      "evaluation_cutoff": "2013-01-04",
+      "reference_time": "2012-12-01"
+    },
+    {
+      "evaluation_cutoff": "2013-02-01",
+      "reference_time": "2013-01-01"
+    },
+    {
+      "evaluation_cutoff": "2013-03-08",
+      "reference_time": "2013-02-01"
+    },
+    {
+      "evaluation_cutoff": "2013-04-05",
+      "reference_time": "2013-03-01"
+    },
+    {
+      "evaluation_cutoff": "2013-05-03",
+      "reference_time": "2013-04-01"
+    },
+    {
+      "evaluation_cutoff": "2013-06-07",
+      "reference_time": "2013-05-01"
+    },
+    {
+      "evaluation_cutoff": "2013-07-05",
+      "reference_time": "2013-06-01"
+    },
+    {
+      "evaluation_cutoff": "2013-08-02",
+      "reference_time": "2013-07-01"
+    },
+    {
+      "evaluation_cutoff": "2013-09-06",
+      "reference_time": "2013-08-01"
+    },
+    {
+      "evaluation_cutoff": "2013-10-22",
+      "reference_time": "2013-09-01"
+    },
+    {
+      "evaluation_cutoff": "2013-11-08",
+      "reference_time": "2013-10-01"
+    },
+    {
+      "evaluation_cutoff": "2013-12-06",
+      "reference_time": "2013-11-01"
+    },
+    {
+      "evaluation_cutoff": "2014-01-10",
+      "reference_time": "2013-12-01"
+    },
+    {
+      "evaluation_cutoff": "2014-02-07",
+      "reference_time": "2014-01-01"
+    },
+    {
+      "evaluation_cutoff": "2014-03-07",
+      "reference_time": "2014-02-01"
+    },
+    {
+      "evaluation_cutoff": "2014-04-04",
+      "reference_time": "2014-03-01"
+    },
+    {
+      "evaluation_cutoff": "2014-05-02",
+      "reference_time": "2014-04-01"
+    },
+    {
+      "evaluation_cutoff": "2014-06-06",
+      "reference_time": "2014-05-01"
+    },
+    {
+      "evaluation_cutoff": "2014-07-03",
+      "reference_time": "2014-06-01"
+    },
+    {
+      "evaluation_cutoff": "2014-08-01",
+      "reference_time": "2014-07-01"
+    },
+    {
+      "evaluation_cutoff": "2014-09-05",
+      "reference_time": "2014-08-01"
+    },
+    {
+      "evaluation_cutoff": "2014-10-03",
+      "reference_time": "2014-09-01"
+    },
+    {
+      "evaluation_cutoff": "2014-11-07",
+      "reference_time": "2014-10-01"
+    },
+    {
+      "evaluation_cutoff": "2014-12-05",
+      "reference_time": "2014-11-01"
+    },
+    {
+      "evaluation_cutoff": "2015-01-09",
+      "reference_time": "2014-12-01"
+    },
+    {
+      "evaluation_cutoff": "2015-02-06",
+      "reference_time": "2015-01-01"
+    },
+    {
+      "evaluation_cutoff": "2015-03-06",
+      "reference_time": "2015-02-01"
+    },
+    {
+      "evaluation_cutoff": "2015-04-03",
+      "reference_time": "2015-03-01"
+    },
+    {
+      "evaluation_cutoff": "2015-05-08",
+      "reference_time": "2015-04-01"
+    },
+    {
+      "evaluation_cutoff": "2015-06-05",
+      "reference_time": "2015-05-01"
+    },
+    {
+      "evaluation_cutoff": "2015-07-02",
+      "reference_time": "2015-06-01"
+    },
+    {
+      "evaluation_cutoff": "2015-08-07",
+      "reference_time": "2015-07-01"
+    },
+    {
+      "evaluation_cutoff": "2015-09-04",
+      "reference_time": "2015-08-01"
+    },
+    {
+      "evaluation_cutoff": "2015-10-02",
+      "reference_time": "2015-09-01"
+    },
+    {
+      "evaluation_cutoff": "2015-11-06",
+      "reference_time": "2015-10-01"
+    },
+    {
+      "evaluation_cutoff": "2015-12-04",
+      "reference_time": "2015-11-01"
+    },
+    {
+      "evaluation_cutoff": "2016-01-08",
+      "reference_time": "2015-12-01"
+    },
+    {
+      "evaluation_cutoff": "2016-02-05",
+      "reference_time": "2016-01-01"
+    },
+    {
+      "evaluation_cutoff": "2016-03-04",
+      "reference_time": "2016-02-01"
+    },
+    {
+      "evaluation_cutoff": "2016-04-01",
+      "reference_time": "2016-03-01"
+    },
+    {
+      "evaluation_cutoff": "2016-05-06",
+      "reference_time": "2016-04-01"
+    },
+    {
+      "evaluation_cutoff": "2016-06-03",
+      "reference_time": "2016-05-01"
+    },
+    {
+      "evaluation_cutoff": "2016-07-08",
+      "reference_time": "2016-06-01"
+    },
+    {
+      "evaluation_cutoff": "2016-08-05",
+      "reference_time": "2016-07-01"
+    },
+    {
+      "evaluation_cutoff": "2016-09-02",
+      "reference_time": "2016-08-01"
+    },
+    {
+      "evaluation_cutoff": "2016-10-07",
+      "reference_time": "2016-09-01"
+    },
+    {
+      "evaluation_cutoff": "2016-11-04",
+      "reference_time": "2016-10-01"
+    },
+    {
+      "evaluation_cutoff": "2016-12-02",
+      "reference_time": "2016-11-01"
+    },
+    {
+      "evaluation_cutoff": "2017-01-06",
+      "reference_time": "2016-12-01"
+    },
+    {
+      "evaluation_cutoff": "2017-02-03",
+      "reference_time": "2017-01-01"
+    },
+    {
+      "evaluation_cutoff": "2017-03-10",
+      "reference_time": "2017-02-01"
+    },
+    {
+      "evaluation_cutoff": "2017-04-07",
+      "reference_time": "2017-03-01"
+    },
+    {
+      "evaluation_cutoff": "2017-05-05",
+      "reference_time": "2017-04-01"
+    },
+    {
+      "evaluation_cutoff": "2017-06-02",
+      "reference_time": "2017-05-01"
+    },
+    {
+      "evaluation_cutoff": "2017-07-07",
+      "reference_time": "2017-06-01"
+    },
+    {
+      "evaluation_cutoff": "2017-08-04",
+      "reference_time": "2017-07-01"
+    },
+    {
+      "evaluation_cutoff": "2017-09-01",
+      "reference_time": "2017-08-01"
+    },
+    {
+      "evaluation_cutoff": "2017-10-06",
+      "reference_time": "2017-09-01"
+    },
+    {
+      "evaluation_cutoff": "2017-11-03",
+      "reference_time": "2017-10-01"
+    },
+    {
+      "evaluation_cutoff": "2017-12-08",
+      "reference_time": "2017-11-01"
+    },
+    {
+      "evaluation_cutoff": "2018-01-05",
+      "reference_time": "2017-12-01"
+    },
+    {
+      "evaluation_cutoff": "2018-02-02",
+      "reference_time": "2018-01-01"
+    },
+    {
+      "evaluation_cutoff": "2018-03-09",
+      "reference_time": "2018-02-01"
+    },
+    {
+      "evaluation_cutoff": "2018-04-06",
+      "reference_time": "2018-03-01"
+    },
+    {
+      "evaluation_cutoff": "2018-05-04",
+      "reference_time": "2018-04-01"
+    },
+    {
+      "evaluation_cutoff": "2018-06-01",
+      "reference_time": "2018-05-01"
+    },
+    {
+      "evaluation_cutoff": "2018-07-06",
+      "reference_time": "2018-06-01"
+    },
+    {
+      "evaluation_cutoff": "2018-08-03",
+      "reference_time": "2018-07-01"
+    },
+    {
+      "evaluation_cutoff": "2018-09-07",
+      "reference_time": "2018-08-01"
+    },
+    {
+      "evaluation_cutoff": "2018-10-05",
+      "reference_time": "2018-09-01"
+    },
+    {
+      "evaluation_cutoff": "2018-11-02",
+      "reference_time": "2018-10-01"
+    },
+    {
+      "evaluation_cutoff": "2018-12-07",
+      "reference_time": "2018-11-01"
+    },
+    {
+      "evaluation_cutoff": "2019-01-04",
+      "reference_time": "2018-12-01"
+    },
+    {
+      "evaluation_cutoff": "2019-02-01",
+      "reference_time": "2019-01-01"
+    },
+    {
+      "evaluation_cutoff": "2019-03-08",
+      "reference_time": "2019-02-01"
+    },
+    {
+      "evaluation_cutoff": "2019-04-05",
+      "reference_time": "2019-03-01"
+    },
+    {
+      "evaluation_cutoff": "2019-05-03",
+      "reference_time": "2019-04-01"
+    },
+    {
+      "evaluation_cutoff": "2019-06-07",
+      "reference_time": "2019-05-01"
+    },
+    {
+      "evaluation_cutoff": "2019-07-05",
+      "reference_time": "2019-06-01"
+    },
+    {
+      "evaluation_cutoff": "2019-08-02",
+      "reference_time": "2019-07-01"
+    },
+    {
+      "evaluation_cutoff": "2019-09-06",
+      "reference_time": "2019-08-01"
+    },
+    {
+      "evaluation_cutoff": "2019-10-04",
+      "reference_time": "2019-09-01"
+    },
+    {
+      "evaluation_cutoff": "2019-11-01",
+      "reference_time": "2019-10-01"
+    },
+    {
+      "evaluation_cutoff": "2019-12-06",
+      "reference_time": "2019-11-01"
+    },
+    {
+      "evaluation_cutoff": "2020-01-10",
+      "reference_time": "2019-12-01"
+    },
+    {
+      "evaluation_cutoff": "2020-02-07",
+      "reference_time": "2020-01-01"
+    },
+    {
+      "evaluation_cutoff": "2020-03-06",
+      "reference_time": "2020-02-01"
+    },
+    {
+      "evaluation_cutoff": "2020-04-03",
+      "reference_time": "2020-03-01"
+    },
+    {
+      "evaluation_cutoff": "2020-05-08",
+      "reference_time": "2020-04-01"
+    },
+    {
+      "evaluation_cutoff": "2020-06-05",
+      "reference_time": "2020-05-01"
+    },
+    {
+      "evaluation_cutoff": "2020-07-02",
+      "reference_time": "2020-06-01"
+    },
+    {
+      "evaluation_cutoff": "2020-08-07",
+      "reference_time": "2020-07-01"
+    },
+    {
+      "evaluation_cutoff": "2020-09-04",
+      "reference_time": "2020-08-01"
+    },
+    {
+      "evaluation_cutoff": "2020-10-02",
+      "reference_time": "2020-09-01"
+    },
+    {
+      "evaluation_cutoff": "2020-11-06",
+      "reference_time": "2020-10-01"
+    },
+    {
+      "evaluation_cutoff": "2020-12-04",
+      "reference_time": "2020-11-01"
+    },
+    {
+      "evaluation_cutoff": "2021-01-08",
+      "reference_time": "2020-12-01"
+    },
+    {
+      "evaluation_cutoff": "2021-02-05",
+      "reference_time": "2021-01-01"
+    },
+    {
+      "evaluation_cutoff": "2021-03-05",
+      "reference_time": "2021-02-01"
+    },
+    {
+      "evaluation_cutoff": "2021-04-02",
+      "reference_time": "2021-03-01"
+    },
+    {
+      "evaluation_cutoff": "2021-05-07",
+      "reference_time": "2021-04-01"
+    },
+    {
+      "evaluation_cutoff": "2021-06-04",
+      "reference_time": "2021-05-01"
+    },
+    {
+      "evaluation_cutoff": "2021-07-02",
+      "reference_time": "2021-06-01"
+    },
+    {
+      "evaluation_cutoff": "2021-08-06",
+      "reference_time": "2021-07-01"
+    },
+    {
+      "evaluation_cutoff": "2021-09-03",
+      "reference_time": "2021-08-01"
+    },
+    {
+      "evaluation_cutoff": "2021-10-08",
+      "reference_time": "2021-09-01"
+    },
+    {
+      "evaluation_cutoff": "2021-11-05",
+      "reference_time": "2021-10-01"
+    },
+    {
+      "evaluation_cutoff": "2021-12-03",
+      "reference_time": "2021-11-01"
+    },
+    {
+      "evaluation_cutoff": "2022-01-07",
+      "reference_time": "2021-12-01"
+    },
+    {
+      "evaluation_cutoff": "2022-02-04",
+      "reference_time": "2022-01-01"
+    },
+    {
+      "evaluation_cutoff": "2022-03-04",
+      "reference_time": "2022-02-01"
+    },
+    {
+      "evaluation_cutoff": "2022-04-01",
+      "reference_time": "2022-03-01"
+    },
+    {
+      "evaluation_cutoff": "2022-05-06",
+      "reference_time": "2022-04-01"
+    },
+    {
+      "evaluation_cutoff": "2022-06-03",
+      "reference_time": "2022-05-01"
+    },
+    {
+      "evaluation_cutoff": "2022-07-08",
+      "reference_time": "2022-06-01"
+    },
+    {
+      "evaluation_cutoff": "2022-08-05",
+      "reference_time": "2022-07-01"
+    },
+    {
+      "evaluation_cutoff": "2022-09-02",
+      "reference_time": "2022-08-01"
+    },
+    {
+      "evaluation_cutoff": "2022-10-07",
+      "reference_time": "2022-09-01"
+    },
+    {
+      "evaluation_cutoff": "2022-11-04",
+      "reference_time": "2022-10-01"
+    },
+    {
+      "evaluation_cutoff": "2022-12-02",
+      "reference_time": "2022-11-01"
+    },
+    {
+      "evaluation_cutoff": "2023-01-06",
+      "reference_time": "2022-12-01"
+    },
+    {
+      "evaluation_cutoff": "2023-02-03",
+      "reference_time": "2023-01-01"
+    },
+    {
+      "evaluation_cutoff": "2023-03-10",
+      "reference_time": "2023-02-01"
+    },
+    {
+      "evaluation_cutoff": "2023-04-07",
+      "reference_time": "2023-03-01"
+    },
+    {
+      "evaluation_cutoff": "2023-05-05",
+      "reference_time": "2023-04-01"
+    },
+    {
+      "evaluation_cutoff": "2023-06-02",
+      "reference_time": "2023-05-01"
+    },
+    {
+      "evaluation_cutoff": "2023-07-07",
+      "reference_time": "2023-06-01"
+    },
+    {
+      "evaluation_cutoff": "2023-08-04",
+      "reference_time": "2023-07-01"
+    },
+    {
+      "evaluation_cutoff": "2023-09-01",
+      "reference_time": "2023-08-01"
+    },
+    {
+      "evaluation_cutoff": "2023-10-06",
+      "reference_time": "2023-09-01"
+    },
+    {
+      "evaluation_cutoff": "2023-11-03",
+      "reference_time": "2023-10-01"
+    },
+    {
+      "evaluation_cutoff": "2023-12-08",
+      "reference_time": "2023-11-01"
+    },
+    {
+      "evaluation_cutoff": "2024-01-05",
+      "reference_time": "2023-12-01"
+    },
+    {
+      "evaluation_cutoff": "2024-02-02",
+      "reference_time": "2024-01-01"
+    },
+    {
+      "evaluation_cutoff": "2024-03-08",
+      "reference_time": "2024-02-01"
+    },
+    {
+      "evaluation_cutoff": "2024-04-05",
+      "reference_time": "2024-03-01"
+    },
+    {
+      "evaluation_cutoff": "2024-05-03",
+      "reference_time": "2024-04-01"
+    },
+    {
+      "evaluation_cutoff": "2024-06-07",
+      "reference_time": "2024-05-01"
+    },
+    {
+      "evaluation_cutoff": "2024-07-05",
+      "reference_time": "2024-06-01"
+    },
+    {
+      "evaluation_cutoff": "2024-08-02",
+      "reference_time": "2024-07-01"
+    },
+    {
+      "evaluation_cutoff": "2024-09-06",
+      "reference_time": "2024-08-01"
+    },
+    {
+      "evaluation_cutoff": "2024-10-04",
+      "reference_time": "2024-09-01"
+    },
+    {
+      "evaluation_cutoff": "2024-11-01",
+      "reference_time": "2024-10-01"
+    },
+    {
+      "evaluation_cutoff": "2024-12-06",
+      "reference_time": "2024-11-01"
+    },
+    {
+      "evaluation_cutoff": "2025-01-10",
+      "reference_time": "2024-12-01"
+    },
+    {
+      "evaluation_cutoff": "2025-02-07",
+      "reference_time": "2025-01-01"
+    },
+    {
+      "evaluation_cutoff": "2025-03-07",
+      "reference_time": "2025-02-01"
+    },
+    {
+      "evaluation_cutoff": "2025-04-04",
+      "reference_time": "2025-03-01"
+    },
+    {
+      "evaluation_cutoff": "2025-05-02",
+      "reference_time": "2025-04-01"
+    },
+    {
+      "evaluation_cutoff": "2025-06-06",
+      "reference_time": "2025-05-01"
+    },
+    {
+      "evaluation_cutoff": "2025-07-03",
+      "reference_time": "2025-06-01"
+    },
+    {
+      "evaluation_cutoff": "2025-08-01",
+      "reference_time": "2025-07-01"
+    },
+    {
+      "evaluation_cutoff": "2025-09-05",
+      "reference_time": "2025-08-01"
+    },
+    {
+      "evaluation_cutoff": "2025-11-20",
+      "reference_time": "2025-09-01"
+    },
+    {
+      "evaluation_cutoff": "2025-12-16",
+      "reference_time": "2025-11-01"
+    },
+    {
+      "evaluation_cutoff": "2026-01-09",
+      "reference_time": "2025-12-01"
+    },
+    {
+      "evaluation_cutoff": "2026-02-11",
+      "reference_time": "2026-01-01"
+    },
+    {
+      "evaluation_cutoff": "2026-03-06",
+      "reference_time": "2026-02-01"
+    },
+    {
+      "evaluation_cutoff": "2026-04-03",
+      "reference_time": "2026-03-01"
+    },
+    {
+      "evaluation_cutoff": "2026-05-08",
+      "reference_time": "2026-04-01"
+    },
+    {
+      "evaluation_cutoff": "2026-06-05",
+      "reference_time": "2026-05-01"
+    },
+    {
+      "evaluation_cutoff": "2026-07-02",
+      "reference_time": "2026-06-01"
+    },
+    {
+      "evaluation_cutoff": "2026-08-07",
+      "reference_time": "2026-07-01"
+    },
+    {
+      "evaluation_cutoff": "2026-09-04",
+      "reference_time": "2026-08-01"
+    },
+    {
+      "evaluation_cutoff": "2026-10-02",
+      "reference_time": "2026-09-01"
+    }
+  ],
+  "output_lineage_count": 187,
+  "partition": {
+    "blob_sha256": "ca2f34fe790a8766148f42f871782f62a4d88eee8dc2918183f2e286849a3927",
+    "byte_count": 100186,
+    "entity_id": "US",
+    "format": "jsonl",
+    "maximum_key": {
+      "entity_id": "US",
+      "evaluation_cutoff": "2026-10-02",
+      "reference_time": "2026-09-01"
+    },
+    "minimum_key": {
+      "entity_id": "US",
+      "evaluation_cutoff": "2011-03-04",
+      "reference_time": "2011-02-01"
+    },
+    "partition_key": "P_21d440e63be6ee8ea067e5737f1a97bacb85c0ee80885a042b7b1f300cf4a1e3",
+    "role": "feature_observations",
+    "row_count": 187
+  },
+  "paths": {
+    "evaluation_policy": "definitions/policies/POL_TRANSFORM_EVALUATION_NATIVE_VINTAGES/2.0.0.json",
+    "feature": "definitions/features/FEATURE_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a/1.0.0.json",
+    "first_execution_audit": "storage/catalog/attempts/8487edf3-776e-46d2-a6a1-9abe9928cf35/events/f45cbc127f63b899fc8c4bde33f7e85449e767b3d74ce344ceeeab1ec8ca12c4.json",
+    "implementation": "storage/catalog/implementations/IMPLEMENTATION_e850d6df66b3a22a4f34591a0a72e4af1c0f503f7f8c8d6e7cf825944a2be570/manifest.json",
+    "materialization": "storage/catalog/feature_store/MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636/manifest.json",
+    "observations": "storage/payloads/sha256/ca/ca2f34fe790a8766148f42f871782f62a4d88eee8dc2918183f2e286849a3927.jsonl",
+    "rerun_execution_audit": "storage/catalog/attempts/b0f0709e-4953-4b09-98df-4838c8548c10/events/e7f63e48217da23fdb2c31627d3c47c514b8f7d7a77cdc5bdf030bf545b062a7.json",
+    "signal_entry": "storage/catalog/signal_library/entries/SIGNAL_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a/514377e745cb085ed75dde533bcd6c943440b3c022483ae4dccd0dd8bc46a5d1.json"
+  },
+  "production_first": {
+    "audit_path": "storage/catalog/attempts/8487edf3-776e-46d2-a6a1-9abe9928cf35/events/f45cbc127f63b899fc8c4bde33f7e85449e767b3d74ce344ceeeab1ec8ca12c4.json",
+    "availability_precision": "date",
+    "coverage": {
+      "first_cutoff": "2011-03-04",
+      "last_cutoff": "2026-10-02",
+      "scheduled_rows": 187
+    },
+    "entry": {
+      "content_sha256": "514377e745cb085ed75dde533bcd6c943440b3c022483ae4dccd0dd8bc46a5d1",
+      "id": "LIBRARYENTRY_a9afb3e0026fab66bb49669dfee0e630df6583cf1c78ce84e2985f20b01f2f71",
+      "version": "1.0.0"
+    },
+    "feature": {
+      "content_sha256": "8e2f97c66770c70e7154fbdeb01c1598da85e488ac7cac1f56fe21e045c37a77",
+      "id": "FEATURE_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+      "version": "1.0.0"
+    },
+    "materialization": {
+      "content_sha256": "00c8403a73ca277af7046053689df82f24baa0573304f1402cd83a42947bf621",
+      "id": "MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636",
+      "version": "1.0.0"
+    },
+    "materialization_state": "materialized",
+    "reused": false,
+    "scientific_state": "untested",
+    "signal_id": "SIGNAL_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+    "status_counts": {
+      "invalid": 0,
+      "missing": 0,
+      "valid": 187
+    },
+    "unit": "dimensionless"
+  },
+  "production_rerun": {
+    "audit_path": "storage/catalog/attempts/b0f0709e-4953-4b09-98df-4838c8548c10/events/e7f63e48217da23fdb2c31627d3c47c514b8f7d7a77cdc5bdf030bf545b062a7.json",
+    "availability_precision": "date",
+    "coverage": {
+      "first_cutoff": "2011-03-04",
+      "last_cutoff": "2026-10-02",
+      "scheduled_rows": 187
+    },
+    "entry": {
+      "content_sha256": "514377e745cb085ed75dde533bcd6c943440b3c022483ae4dccd0dd8bc46a5d1",
+      "id": "LIBRARYENTRY_a9afb3e0026fab66bb49669dfee0e630df6583cf1c78ce84e2985f20b01f2f71",
+      "version": "1.0.0"
+    },
+    "feature": {
+      "content_sha256": "8e2f97c66770c70e7154fbdeb01c1598da85e488ac7cac1f56fe21e045c37a77",
+      "id": "FEATURE_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+      "version": "1.0.0"
+    },
+    "materialization": {
+      "content_sha256": "00c8403a73ca277af7046053689df82f24baa0573304f1402cd83a42947bf621",
+      "id": "MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636",
+      "version": "1.0.0"
+    },
+    "materialization_state": "materialized",
+    "reused": true,
+    "scientific_state": "untested",
+    "signal_id": "SIGNAL_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+    "status_counts": {
+      "invalid": 0,
+      "missing": 0,
+      "valid": 187
+    },
+    "unit": "dimensionless"
+  },
+  "request": {
+    "evaluation_policy": {
+      "content_sha256": "8c9bbe3bcd596de987cdf91d1ef5ff74c582393567bf45b4a51b9bcf49ab86d4",
+      "id": "POL_TRANSFORM_EVALUATION_NATIVE_VINTAGES",
+      "version": "2.0.0"
+    },
+    "history_mode": "resolved_state",
+    "name": "First stored PIT fractional-change feature request",
+    "operator": {
+      "content_sha256": "92d702eb69814f0b20fa19efe31fa02e66a38e7b82a7a1db88a36e75f1db40c8",
+      "id": "TR_BASE_change_pct",
+      "version": "2.0.0"
+    },
+    "output_unit": "dimensionless",
+    "parameters": {
+      "k": 1
+    },
+    "schema_version": "1.0.0",
+    "selection": {
+      "dimensions": [],
+      "entity_id": "US",
+      "measure": "value"
+    },
+    "source": {
+      "dataset": {
+        "content_sha256": "c1de4cc4ae8a6a9bcbd84dca0d7f4cbdcd486e969d7096d1967536db0e5d2b0b",
+        "id": "DS_FRED_ALFRED_CES0500000003",
+        "version": "2.0.0"
+      },
+      "native_series_id": "CES0500000003",
+      "pit_snapshot": {
+        "content_sha256": "c321ab16a9fb280a4a91844b55b992dcdb9cebbb19fed01d6b33055cd7a9a896",
+        "id": "SNAPSHOT_0ad3598870753cc4bba55777aaf087d057b5d967a7333f7d530b664f366f9892",
+        "version": "1.0.0"
+      },
+      "profile": "alfred_full_history_vintage_date",
+      "source_view": {
+        "content_sha256": "3965a126c7a924da3a569dd008e7130e1aebc030575ef1645b572c1aac8a5f16",
+        "id": "SVIEW_ALFRED_CES0500000003_VINTAGE_DATE",
+        "version": "2.0.0"
+      }
+    }
+  },
+  "semantic_rows_sha256": "9846049fb82094d46929b34f557087a1ddd371390ad981be06bea21fd06cdd57",
+  "source_policy_bindings": [
+    {
+      "artifact": {
+        "content_sha256": "03b9cb1218ddf6c7ab18cfa15703186ea5b7450eb7c30ae56dc8b6d914335de1",
+        "id": "POL_ALFRED_DATE_ALIGNMENT",
+        "version": "2.0.0"
+      },
+      "role": "alignment"
+    },
+    {
+      "artifact": {
+        "content_sha256": "f9e5dcd34d332936541a412e43f24b79da9e19379fb0b71768c2f43cafe7f20b",
+        "id": "POL_ALFRED_DATE_AVAILABILITY",
+        "version": "2.0.0"
+      },
+      "role": "availability"
+    },
+    {
+      "artifact": {
+        "content_sha256": "5bb1f88c8a9edd9b7d880100cf0527191beae21dbdd72b5e025edc60faa1e3ef",
+        "id": "POL_ALFRED_DATE_QUALITY",
+        "version": "2.0.0"
+      },
+      "role": "quality"
+    },
+    {
+      "artifact": {
+        "content_sha256": "654676fbd15396bacd63639826d825a92f54e3f7117b5a26aa3fc3f9fc4917ca",
+        "id": "POL_ALFRED_DATE_READINESS",
+        "version": "2.0.0"
+      },
+      "role": "readiness"
+    },
+    {
+      "artifact": {
+        "content_sha256": "77f2912174ea169761dd887fad44841f2c308554cc83e69885dc3a20657d07d4",
+        "id": "POL_ALFRED_DATE_REVISION",
+        "version": "2.0.0"
+      },
+      "role": "revision"
+    },
+    {
+      "artifact": {
+        "content_sha256": "d5d6c91c08d7993733b7fc372bce9293ec92c43642fa13704dc730e8e76fd128",
+        "id": "POL_ALFRED_DATE_SELECTION",
+        "version": "2.0.0"
+      },
+      "role": "selection"
+    }
+  ],
+  "test_runs": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v",
+      "count": 268,
+      "result": "passed",
+      "seconds": "28.410",
+      "skips": 0
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests/specifications -v",
+      "count": 24,
+      "result": "passed",
+      "seconds": "0.181",
+      "skips": 0
+    }
+  ],
+  "verification": {
+    "absolute_tolerance": "1e-15",
+    "actual_revision": {
+      "earlier_cutoff": "2018-02-02",
+      "earlier_value": "26.74",
+      "later_cutoff": "2018-03-09",
+      "later_value": "26.71",
+      "reference_time": "2018-01-01"
+    },
+    "audits": [
+      {
+        "attempt_id": "8487edf3-776e-46d2-a6a1-9abe9928cf35",
+        "completed_at": "2026-10-09T06:40:43.793359Z",
+        "executed_at": "2026-10-09T06:40:30.998778Z",
+        "feature": {
+          "content_sha256": "8e2f97c66770c70e7154fbdeb01c1598da85e488ac7cac1f56fe21e045c37a77",
+          "id": "FEATURE_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+          "version": "1.0.0"
+        },
+        "materialization": {
+          "content_sha256": "00c8403a73ca277af7046053689df82f24baa0573304f1402cd83a42947bf621",
+          "id": "MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636",
+          "version": "1.0.0"
+        },
+        "record_type": "feature_execution_audit",
+        "reused": false,
+        "row_count": 187,
+        "schema_version": "0.3.0",
+        "signal_id": "SIGNAL_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+        "state": "succeeded"
+      },
+      {
+        "attempt_id": "b0f0709e-4953-4b09-98df-4838c8548c10",
+        "completed_at": "2026-10-09T06:41:12.359751Z",
+        "executed_at": "2026-10-09T06:41:01.370141Z",
+        "feature": {
+          "content_sha256": "8e2f97c66770c70e7154fbdeb01c1598da85e488ac7cac1f56fe21e045c37a77",
+          "id": "FEATURE_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+          "version": "1.0.0"
+        },
+        "materialization": {
+          "content_sha256": "00c8403a73ca277af7046053689df82f24baa0573304f1402cd83a42947bf621",
+          "id": "MATERIALIZATION_efe8c807ec15ba0f162c0e109c9a2ae147bbcc60d372b8e82bfdd15d75a3d636",
+          "version": "1.0.0"
+        },
+        "record_type": "feature_execution_audit",
+        "reused": true,
+        "row_count": 187,
+        "schema_version": "0.3.0",
+        "signal_id": "SIGNAL_6d5467959a5e3f4a51d50e202d8ff6f15449f994ce8f08418de41b21ce2dcb0a",
+        "state": "succeeded"
+      }
+    ],
+    "counts": {
+      "valid": 187
+    },
+    "maximum_absolute_decimal_error": "2.691946072684642438452520515826495E-16",
+    "method": "Independent Decimal(precision=50) division from stored PIT states; no transformation engine import",
+    "null_reasons": {},
+    "preservation": {
+      "changed": [],
+      "files_checked": 226
+    },
+    "rerun": {
+      "reused": true,
+      "same_feature": true,
+      "same_library_entry": true,
+      "same_materialization": true,
+      "same_signal": true
+    },
+    "samples": [
+      {
+        "absolute_decimal_error": "1.225853893263342082239720034995626E-16",
+        "check": "first",
+        "denominator": {
+          "available_at": "2011-03-04",
+          "lineage": {
+            "content_sha256": "00b3711675ff26ad316c3b8e793c3fab6a28be836dcc97b137162d19c2ac5809",
+            "id": "PIT_OPERAND_3103c83c9a8991a0e012cae36f88b8ab5b8019d5b0f8ebfd3d167dbe606d2d15",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "83e923c174a74b62a60b3d9459d43456fc0f03e5cb26edc88c12d6d083cd759f",
+          "raw_cell": {
+            "blob_sha256": "7eb1df9b06fd8ce732fd3fa919624d62ba01a5f1e832218cca575f597ce342ba",
+            "field": "CES0500000003_20110304",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2011-01-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2011-01-01",
+          "value": "22.86"
+        },
+        "evaluation_cutoff": "2011-03-04",
+        "expected_decimal": "0.0004374453193350831146106736657917760279965004374",
+        "numerator": {
+          "available_at": "2011-03-04",
+          "lineage": {
+            "content_sha256": "4bd732c0311556e078f5966c4ff935bc6bd2699aeb12cf0265db1ba6cbb8fd4d",
+            "id": "PIT_OPERAND_f9c50f9edb3da46cab1803bca36a70cc5635465287852483510b00b05bda6592",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "80a8e594c0f01ded853a071f0b4f42ead9910d233a838631ab8a9f8c7d7149a9",
+          "raw_cell": {
+            "blob_sha256": "7eb1df9b06fd8ce732fd3fa919624d62ba01a5f1e832218cca575f597ce342ba",
+            "field": "CES0500000003_20110304",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2011-02-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2011-02-01",
+          "value": "22.87"
+        },
+        "output_lineage": {
+          "content_sha256": "c0da16ba2e297c2c7f854879216a8350f84bcc9cc85b29fe235f7000d2e68d3f",
+          "id": "LINEAGE_ca5e0b51f22824b5fb5ca7493575f2c7956c8602db3f70584110ff7453d0ac42",
+          "version": "1.0.0"
+        },
+        "stored_fraction": "0.0004374453193352057"
+      },
+      {
+        "absolute_decimal_error": "4.02442156495694496443279670535380E-17",
+        "check": "revised denominator",
+        "denominator": {
+          "available_at": "2018-03-09",
+          "lineage": {
+            "content_sha256": "ccc595f5a218a4294dbcd75af0a282729d10fdeeb42d2d87d23f07cb985c932f",
+            "id": "PIT_OPERAND_72cd9fef739ae2bfbeba816c73939e572b4c58b35c110f381f1c218e5bca255b",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "2ecc39b98303b210105e288c1ad03b8a74eb8cc82fd79741a6b3a7f4864faf72",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20180309",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2018-01-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2018-01-01",
+          "value": "26.71"
+        },
+        "evaluation_cutoff": "2018-03-09",
+        "expected_decimal": "0.0014975664545114189442156495694496443279670535380",
+        "numerator": {
+          "available_at": "2018-03-09",
+          "lineage": {
+            "content_sha256": "84d9f703784932af2b0ebac9eb6b879f6d9bbf48d590378a12d3257ef42674fa",
+            "id": "PIT_OPERAND_d98a9a23cdce43dabe512ca6c3e8bde10da8bd0b05c4fa1166985f65caf2b1e6",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "63f292cbca527b5f7515a5680ffa336ae75fb47717717bfcc8cfe303ffb5703a",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20180309",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2018-02-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2018-02-01",
+          "value": "26.75"
+        },
+        "output_lineage": {
+          "content_sha256": "5fdfb22b978e35aeafa0aa2b1fb6275af937289026bc73dc7dbd2c5abb93c410",
+          "id": "LINEAGE_04e539044514964fbe34ff5c0180b647f8d1748260967a9a30bc2318d1f47330",
+          "version": "1.0.0"
+        },
+        "stored_fraction": "0.0014975664545113787"
+      },
+      {
+        "absolute_decimal_error": "1.389361304507145474532795895932576E-16",
+        "check": "middle",
+        "denominator": {
+          "available_at": "2018-12-07",
+          "lineage": {
+            "content_sha256": "49c3f57be0768ef0741a80844f64a8b57678f827224e5c05706a11b4dce88f16",
+            "id": "PIT_OPERAND_a574290b47ffdeb2317eabb4af5e5356d456684e682c68e56592be52f8ea9da1",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "0892630ad43cb2ae59dc19d2e7ef7cd8246060c2dd56ac626a44f6cd007bdc0e",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20181207",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2018-10-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2018-10-01",
+          "value": "27.29"
+        },
+        "evaluation_cutoff": "2018-12-07",
+        "expected_decimal": "0.0021986075485525833638695492854525467204104067424",
+        "numerator": {
+          "available_at": "2018-12-07",
+          "lineage": {
+            "content_sha256": "b19b585cb2fa414cfb0719cbc9bc48d4db66118c5cec9b76a81cd176a50eb958",
+            "id": "PIT_OPERAND_5ba7780af2941ce00112cdeaa022acd4194d0e38b41c8a129401f96c5f349628",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "553bf1cf99b88af6c2d9178f3a05d6da72d01b7cc086266d44fba350a8b61456",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20181207",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2018-11-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2018-11-01",
+          "value": "27.35"
+        },
+        "output_lineage": {
+          "content_sha256": "2bc6a33bed6ee39fc490323fc9ae176676b60aebdefc10f89d70138e7c9ee583",
+          "id": "LINEAGE_4c3001cf77fb33a45a7f9a7f12305cd68e26591c6aa9dbccd0df33d43668fcb0",
+          "version": "1.0.0"
+        },
+        "stored_fraction": "0.0021986075485527223"
+      },
+      {
+        "absolute_decimal_error": "8.62302091822874218962238522140723E-17",
+        "check": "previous calendar month, not previous emitted row",
+        "denominator": {
+          "available_at": "2025-12-16",
+          "lineage": {
+            "content_sha256": "338692bdf83e24318453615476a66a8ff52f26b7be848ee20ed27ae251d50303",
+            "id": "PIT_OPERAND_93f6a6650837645402e0f53aa6952a43444742feabe008398966eac6c61eb437",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "529a3aea0f9136b6b0ec66e18a80c2914e13479c0fd000d5cef42d28677c766e",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20251216",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2025-10-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2025-10-01",
+          "value": "36.81"
+        },
+        "evaluation_cutoff": "2025-12-16",
+        "expected_decimal": "0.0013583265417006248302091822874218962238522140723",
+        "numerator": {
+          "available_at": "2025-12-16",
+          "lineage": {
+            "content_sha256": "26f610f4158e4a0ece1d4a41ccb9bbe7701dc4a528399d3d616d29d50c5ab5c9",
+            "id": "PIT_OPERAND_0d0215e7d92b2beceb9ddd128bea4e619ac1d4d2777a38957c3c6dca7bd27c09",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "72ce45defd7cdd43bd675cc9eb81cb48be2365f82702c123bc192de9ad645816",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20251216",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2025-11-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2025-11-01",
+          "value": "36.86"
+        },
+        "output_lineage": {
+          "content_sha256": "7f887b97c7a532dec920a9de34e1790d25012cea4865f91ac937d632968c7271",
+          "id": "LINEAGE_36120921a5ea00d83522e82ab47a6389b4dc257827c99087a17d4bb92cc2848b",
+          "version": "1.0.0"
+        },
+        "stored_fraction": "0.0013583265417005386"
+      },
+      {
+        "absolute_decimal_error": "1.768440677966101694915254237288136E-16",
+        "check": "latest",
+        "denominator": {
+          "available_at": "2026-10-02",
+          "lineage": {
+            "content_sha256": "2cbb294e6c966132dfe819450cd802ab979b253a043e2c9235066421b337f091",
+            "id": "PIT_OPERAND_1f3edd72f58456b886234ae571b1a85c2743cfaa5e30d0861b600028a53a9d64",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "f10213fc5d06e265bdef9bb8f66b78c2b2d6a54562af79f81fd8da6fafefe172",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20261002",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2026-08-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2026-08-01",
+          "value": "37.76"
+        },
+        "evaluation_cutoff": "2026-10-02",
+        "expected_decimal": "0.0013241525423728813559322033898305084745762711864",
+        "numerator": {
+          "available_at": "2026-10-02",
+          "lineage": {
+            "content_sha256": "a89f54167994e443ab8807fac894090d805fea2e5ac53069e125e1e661406ad5",
+            "id": "PIT_OPERAND_a4ad513baa112bb32576b4a775086613245c14a433ceb4b993e6beae72f4e2ca",
+            "version": "1.0.0"
+          },
+          "pit_row_sha256": "585c32b56dc3084e928c519e9c3f294b45ec00fcf18f37bc450906ddb015f5cf",
+          "raw_cell": {
+            "blob_sha256": "54c5afd416a6c7ffa43e1c75df0dae01ccebef74741ac9293813cbf7c3a6bde8",
+            "field": "CES0500000003_20261002",
+            "row_key": [
+              {
+                "field": "date",
+                "value": "2026-09-01"
+              }
+            ]
+          },
+          "raw_snapshot": {
+            "content_sha256": "75a764d3e9b850e57ec63685361fac6ab3bc4bc02d46db4d1b2ee52877671c79",
+            "id": "SNAPSHOT_0fc2d1ab5d72a9830a9b5af5a99ec5d40753468f7706db88538ab0fad9c369e7",
+            "version": "1.0.0"
+          },
+          "reference_time": "2026-09-01",
+          "value": "37.81"
+        },
+        "output_lineage": {
+          "content_sha256": "67e538a78426846600511b1912f2319f069d73276e33b83dcc8b526a773ba332",
+          "id": "LINEAGE_ff0adfb73bd906198e6816805d3ffa432c480de1690bcab8b46aa99e47c3f67b",
+          "version": "1.0.0"
+        },
+        "stored_fraction": "0.0013241525423730582"
+      }
+    ],
+    "stored_counts": {
+      "feature_definitions": 1,
+      "materializations": 1,
+      "signal_entries": 1
+    },
+    "verification": "passed",
+    "verified_output_count": 187
+  }
+}

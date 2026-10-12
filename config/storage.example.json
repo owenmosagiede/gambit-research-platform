@@ -1,0 +1,26 @@
+{
+  "format_version": "0.1.0",
+  "status": "LOCATION_EXAMPLE_ONLY_NOT_READINESS",
+  "stores": {
+    "legacy_raw": {
+      "path": "/absolute/path/to/Multi-Asset Model/Data/raw/v1",
+      "read_only": true
+    },
+    "legacy_alfred_pit": {
+      "path": "/absolute/path/to/Multi-Asset Model/Data/derived/alfred-macro-pit/v1.0.0",
+      "read_only": true
+    },
+    "legacy_eia_pit": {
+      "path": "/absolute/path/to/Multi-Asset Model/Data/derived/eia-pit/v1.1.0",
+      "read_only": true
+    },
+    "legacy_bis_historical_pit": {
+      "path": "/absolute/path/to/Multi-Asset Model/Data/derived/bis-historical-pit-reconstruction/v1.0.0",
+      "read_only": true
+    },
+    "legacy_pit_coverage_evidence": {
+      "path": "/absolute/path/to/Multi-Asset Model/Data/derived/verified-pit-coverage/v1.2.0",
+      "read_only": true
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+    email owen.osagiede@gmail.com
+    admin off
+}
+gambitsystems.xyz {
+    request_body {
+        max_size 16KB
+    }
+    reverse_proxy unix//run/gambit-web/http.sock {
+        header_up Host gambitsystems.xyz
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+        header_up -X-Forwarded-Host
+        header_up -Forwarded
+    }
+    # No file_server: private UI, APIs, and all assets pass through access control.
+}

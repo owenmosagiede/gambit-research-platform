@@ -1,0 +1,311 @@
+"""Production Target creation, preflight, immutable publication and historical reads."""
+from collections import Counter
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
+import platform
+import sys
+from zoneinfo import TZPATH
+
+from data.alfred_onboarding import stable_read, strict_json
+from data.transformations.contracts import object_fields, normalize_reference, normalize_time
+from data.transformations.identity import canonical_bytes, digest, reference
+from .store import (TargetStore, TargetStoreError, TargetNotFound, InterruptedTargetPublication,
+                    TARGET_ID, target_path, materialization_path, validate_manifest)
+from .adapter import load_sources
+from .contracts import create_definition, validate_definition, validate_observation
+from .scheduling import temporal_eligible
+
+
+def get_definition(root, target_id, version='1.0.0'):
+    store=TargetStore(root)
+    path=store.path(target_path(target_id,version))
+    if not path.is_file():
+        raise TargetNotFound('Target definition is not registered')
+    record=strict_json(stable_read(path))
+    validate_definition(record)
+    if record['id']!=target_id or record['version']!=version:
+        raise TargetStoreError('Target definition path mismatch')
+    store.verify_closure([record])
+    return record
+
+
+def create_target(root, body, display_name='Return Target'):
+    """Register a resolved definition; registration alone grants no readiness."""
+    store=TargetStore(root)
+    definition=create_definition(body,display_name)
+    store.verify_closure([definition['body']])
+    with store.writer():
+        store.install_record(definition)
+    return get_definition(root,definition['id'])
+
+
+def _prepare(root, request):
+    object_fields(request, {'definition','sources','schedule','anchors','knowledge_cutoff'},path='Target request')
+    store=TargetStore(root)
+    definition=store.resolve(request['definition'])
+    validate_definition(definition)
+    store.verify_closure([definition])
+    loaded=load_sources(root,definition,request['sources'])
+    policies={name:store.resolve(definition['body'][name]) for name in
+              ('outcome_policy','validity_policy','schedule_policy','calculation')}
+    store.verify_closure([request['schedule']['evidence'],*policies.values()])
+    _verify_schedule_evidence(store,request['schedule'])
+    from .engine import preflight
+    context=preflight(definition,loaded['sources'],request['schedule'],request['anchors'],
+                      request['knowledge_cutoff'],**policies)
+    return store,definition,loaded,policies,context
+
+
+def preflight_request(root, request):
+    _,definition,_,_,context=_prepare(root,request)
+    return {'definition':reference(definition),'state':'valid','source_eligibility':'eligible',
+            'context':context}
+
+
+def _verify_schedule_evidence(store, schedule):
+    evidence=store.resolve(schedule['evidence'])
+    if evidence.get('record_type')!='onboarding_evidence' or evidence['body']['kind']!='canonical_market_schedule':
+        raise TargetStoreError('A certified canonical expected-market schedule evidence record is required')
+    payload=evidence['body']['payload']
+    documented=strict_json(store.payload({'blob_sha256':payload['sha256'],'format':'json','byte_count':payload['byte_count']}))
+    expected={'kind':'canonical_market_schedule','schedule':{k:v for k,v in schedule.items() if k!='evidence'}}
+    if documented!=expected:
+        raise TargetStoreError('Resolved expected-market schedule differs from its admitted evidence')
+
+
+def _implementation(store, calculation, schedule):
+    """Pin actual code/schema/environment bytes using the shared payload store."""
+    package=Path(__file__).resolve().parent
+    project=package.parents[2]
+    files=[*sorted(package.glob('*.py')),
+        project/'src/data/pit_selection.py',project/'src/data/transformations/contracts.py',
+        project/'src/data/transformations/identity.py',project/'src/contracts/experiment.py',
+        project/'src/data/alfred_onboarding.py',project/'src/data/feature_store.py',
+        project/'src/data/feature_store_contracts.py',
+        project/'specs/schemas/target_store.schema.json',
+        project/'specs/schemas/target_materialization.schema.json']
+    artifacts=[]
+    for file in files:
+        artifacts.append(store.io.blob(stable_read(file),'txt',str(file.relative_to(project)).replace('/','_'),None))
+    zone=schedule['timezone']
+    zone_file=next((Path(folder)/zone for folder in TZPATH if (Path(folder)/zone).is_file()),None)
+    if zone_file is None:
+        # No unpinned timezone fallback: admit its actual database before execution.
+        raise TargetStoreError('The timezone database bytes cannot be pinned on this host')
+    artifacts.append(store.io.blob(stable_read(zone_file),'bin','iana_timezone_'+zone.replace('/','_'),None))
+    environment={'python':sys.version,'implementation':platform.python_implementation(),
+                 'platform':platform.platform(),'decimal_precision':50,'calculation':'return_calculation.1.0.0'}
+    env=store.io.blob(canonical_bytes(environment),'json','target_runtime',1)
+    record={'schema_version':'0.2.0','record_type':'implementation_manifest','version':'1.0.0',
+            'code_artifacts':artifacts,'environment_artifacts':[env],
+            'entrypoint_id':'targets_service_materialize','determinism_policy':reference(calculation)}
+    record['id']='IMPLEMENTATION_'+digest(record)
+    store.install_record(record)
+    return reference(record)
+
+
+def _lineage_evidence(result, loaded):
+    evidence=[]
+    for row in result['observations']:
+        locators=[]
+        for source in row['selected_sources']:
+            for operand in source['operands']:
+                locator=deepcopy(loaded['locators'][source['role']][operand['lineage']['id']])
+                if any(locator[name]!=operand[name] for name in ('reference_time','available_at','vintage_id','lineage')):
+                    raise TargetStoreError('Selected operand differs from its canonical record')
+                locator['operand_role']=operand['role']
+                locators.append(locator)
+        evidence.append({'observation_id':row['id'],'anchor_id':row['anchor_id'],'operands':locators})
+    return evidence
+
+
+def _readiness(rows):
+    valid=[row for row in rows if row['status']=='valid']
+    if not valid:
+        return 'no_valid_labels'
+    return 'historically_certified' if all(row['historical_eligibility_certified'] for row in valid) else 'uncertified'
+
+
+def materialize(root, request, *, fail_at=None):
+    """Run one Target request; ready manifest is the last scientific publication."""
+    store,definition,loaded,policies,_=_prepare(root,request)
+    from .engine import construct
+    result=construct(definition,loaded['sources'],request['schedule'],request['anchors'],
+                     request['knowledge_cutoff'],**policies)
+    rows=[validate_observation(row) for row in result['observations']]
+    evidence=_lineage_evidence(result,loaded)
+    with store.writer():
+        implementation=_implementation(store,policies['calculation'],request['schedule'])
+        if fail_at=='dependencies':
+            raise InterruptedTargetPublication('Interrupted before payload publication')
+        key={'identity_profile':'target_return.1.0.0','definition':reference(definition),
+             'sources':request['sources'],'schedule_sha256':digest(request['schedule']),
+             'anchors_sha256':digest(request['anchors']),'knowledge_cutoff':request['knowledge_cutoff'],
+             'temporal_precision':result['temporal_precision'],'implementation':implementation,
+             'output_sha256':digest(rows)}
+        identifier='MATERIALIZATION_'+digest(key)
+        reused=store.path(materialization_path(identifier)).is_file()
+        observations=store.io.blob(b''.join(canonical_bytes(row)+b'\n' for row in rows),'jsonl','target_observations',len(rows))
+        schedule=store.io.blob(canonical_bytes({'schedule':request['schedule'],'anchors':request['anchors'],
+                              'resolved_intervals':result['schedule_evidence']}),'json','target_schedule',len(rows))
+        lineage=store.io.blob(canonical_bytes(evidence),'json','target_operand_lineage',len(evidence))
+        if fail_at=='payloads':
+            raise InterruptedTargetPublication('Interrupted before ready manifest')
+        available=[row['label_available_at'] for row in rows if row['label_available_at'] is not None]
+        manifest={'schema_version':'0.4.0','record_type':'target_materialization_manifest',
+            'id':identifier,'version':'1.0.0','definition':reference(definition),'state':'ready','input_key':key,
+            'observations':observations,'schedule':schedule,'operand_lineage':lineage,
+            'semantic_content_sha256':digest(rows),'row_count':len(rows),
+            'status_counts':dict(sorted(Counter(row['status'] for row in rows).items())),
+            'research_readiness':_readiness(rows),
+            'availability_coverage':{'start':min(available) if available else None,'end':max(available) if available else None}}
+        validate_manifest(manifest)
+        store.verify_closure([manifest])
+        store.install_record(manifest)
+        # Operational execution time is deliberately outside scientific identities.
+        if not reused:
+            audit={'schema_version':'0.4.0','record_type':'target_execution_audit',
+                   'materialization':reference(manifest),'executed_at':datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                   'status':'complete'}
+            store.io.install(f"storage/catalog/attempts/target-{identifier}/events/{digest(audit)}.json",canonical_bytes(audit)+b'\n')
+    return {'target_id':definition['id'],'definition':reference(definition),
+            'materialization':reference(manifest),'reused':reused,'row_count':len(rows),
+            'research_readiness':manifest['research_readiness']}
+
+
+refresh_target=materialize
+
+
+def read_materialization(root, materialization_id):
+    store=TargetStore(root)
+    path=store.path(materialization_path(materialization_id))
+    if not path.is_file():
+        raise TargetNotFound('Target materialization is not published')
+    manifest=validate_manifest(strict_json(stable_read(path)))
+    if manifest['id']!=materialization_id:
+        raise TargetStoreError('Target materialization path mismatch')
+    store.verify_closure([manifest])
+    definition=store.resolve(manifest['definition'])
+    rows=[validate_observation(strict_json(line)) for line in store.payload(manifest['observations']).splitlines()]
+    if len(rows)!=manifest['row_count'] or digest(rows)!=manifest['semantic_content_sha256']:
+        raise TargetStoreError('Target observation integrity mismatch')
+    if dict(sorted(Counter(row['status'] for row in rows).items()))!=manifest['status_counts'] or _readiness(rows)!=manifest['research_readiness']:
+        raise TargetStoreError('Target manifest summary mismatch')
+    available=[row['label_available_at'] for row in rows if row['label_available_at'] is not None]
+    coverage={'start':min(available) if available else None,'end':max(available) if available else None}
+    if coverage!=manifest['availability_coverage']:
+        raise TargetStoreError('Target availability coverage mismatch')
+    if any(row['target']!=reference(definition) for row in rows):
+        raise TargetStoreError('Target observation definition mismatch')
+    schedule=strict_json(store.payload(manifest['schedule']))
+    _verify_schedule_evidence(store,schedule['schedule'])
+    if digest(schedule['schedule'])!=manifest['input_key']['schedule_sha256'] or digest(schedule['anchors'])!=manifest['input_key']['anchors_sha256']:
+        raise TargetStoreError('Target schedule integrity mismatch')
+    from .scheduling import resolve_intervals
+    body=definition['body']
+    expected=resolve_intervals(schedule['schedule'],schedule['anchors'],body['entry'],body['horizon'],body['endpoint'])
+    if expected!=schedule['resolved_intervals'] or len(expected)!=len(rows):
+        raise TargetStoreError('Target resolved schedule mismatch')
+    for interval,row in zip(expected,rows):
+        if any(interval[key]!=row[key] for key in ('anchor_id','prediction_anchor','entry_time','intended_end','exit_time')):
+            raise TargetStoreError('Target observation interval mismatch')
+    loaded=load_sources(root,definition,manifest['input_key']['sources'])
+    outcome=store.resolve(body['outcome_policy'])['body']
+    for row in rows:
+        expected_fields={'horizon':body['horizon'],'unit':body['unit'],'currency':body['currency'],
+            'economic_coverage':body['economic_coverage'],'outcome_selection_cutoff':manifest['input_key']['knowledge_cutoff'],
+            'temporal_precision':manifest['input_key']['temporal_precision'],
+            'label_precision_policy':outcome['label_precision_policy'],'availability_basis':outcome['availability_basis']}
+        if any(row[key]!=value for key,value in expected_fields.items()):
+            raise TargetStoreError('Target observation semantics differ from pinned definition/request')
+        if sorted(source['role'] for source in row['selected_sources'])!=sorted(loaded['sources']):
+            raise TargetStoreError('Target observation source roles differ from definition')
+        for source in row['selected_sources']:
+            canonical=loaded['sources'][source['role']]
+            if (source['source_view']!=canonical['series']['source_view'] or
+                    source['source_snapshots']!=canonical['series']['source_snapshots'] or
+                    source['economic_policy']!=reference(canonical['economics']) or
+                    source['provenance']!=canonical['series']['provenance']):
+                raise TargetStoreError('Target source metadata differs from upstream evidence')
+    evidence=strict_json(store.payload(manifest['operand_lineage']))
+    if evidence!=_lineage_evidence({'observations':rows},loaded):
+        raise TargetStoreError('Exact Target operand lineage mismatch')
+    return {'definition':definition,'manifest':manifest,'observations':rows,
+            'schedule':schedule,'operand_lineage':evidence,'source_metadata':loaded['metadata']}
+
+
+def retrieve_target(root, target_id, materialization_id, *, training_cutoff=None, cutoff_precision=None):
+    """No moving latest. Optional training view excludes unavailable/null labels."""
+    if materialization_id is None:
+        raise TargetStoreError('An explicit materialization ID is required')
+    result=read_materialization(root,materialization_id)
+    if result['definition']['id']!=target_id:
+        raise TargetNotFound('Materialization belongs to another Target')
+    if (training_cutoff is None)!=(cutoff_precision is None):
+        raise TargetStoreError('Training cutoff and precision must be supplied together')
+    if training_cutoff is not None:
+        normalize_time(training_cutoff,cutoff_precision)
+        selected=[]; exclusions=Counter()
+        for row in result['observations']:
+            if row['status']!='valid' or not row['historical_eligibility_certified']:
+                exclusions['NOT_CERTIFIED_VALID']+=1
+                continue
+            ordering=temporal_eligible(row['label_available_at'],row['temporal_precision'],training_cutoff,cutoff_precision)
+            if ordering['eligible']:
+                selected.append(row)
+            else:
+                exclusions[ordering['reason']]+=1
+        result['observations']=selected
+        result['training_selection']={'cutoff':training_cutoff,'temporal_precision':cutoff_precision,
+            'policy':'strict','excluded_counts':dict(exclusions),'selected_count':len(selected)}
+    return result
+
+
+def list_materializations(root, target_id):
+    get_definition(root,target_id)
+    store=TargetStore(root); entries=[]
+    for path in sorted(store.path('storage/catalog/target_store').glob('*/manifest.json')):
+        try:
+            manifest=strict_json(stable_read(path))
+        except (ValueError,OSError):
+            continue  # An unassignable damaged catalog entry cannot poison other Targets.
+        if type(manifest) is dict and type(manifest.get('definition')) is dict and manifest['definition'].get('id')==target_id:
+            validate_manifest(manifest)
+            item=read_materialization(root,manifest['id'])
+            entries.append(item['manifest'])
+    return entries
+
+
+def list_targets(root):
+    store=TargetStore(root); targets=[]; issues=[]
+    for path in sorted(store.path('storage/catalog/target_store').glob('*/manifest.json')):
+        try:
+            validate_manifest(strict_json(stable_read(path)))
+        except Exception:
+            issues.append({'target_id':None,'code':'INVALID_CATALOG_ENTRY',
+                           'message':'A Target materialization catalog entry could not be verified.'})
+    for path in sorted(store.path('definitions/targets').glob('*/*.json')):
+        identifier=path.parent.name
+        try:
+            definition=get_definition(root,identifier,path.stem)
+            body=definition['body']
+            econ=store.resolve(next(source for source in body['sources'] if source['role']=='instrument')['economic_policy'])['body']
+            manifests=list_materializations(root,identifier)
+            mats=[{'id':item['id'],'state':item['state'],'research_readiness':item['research_readiness'],
+                   'valid_count':item['status_counts'].get('valid',0),'row_count':item['row_count'],
+                   'reason':None if item['research_readiness']=='historically_certified' else 'Historical label availability is uncertified or no valid labels exist.'}
+                  for item in manifests]
+            readiness=('historically_certified' if any(m['research_readiness']=='historically_certified' for m in mats)
+                       else mats[0]['research_readiness'] if mats else 'unmaterialized')
+            targets.append({'target_id':identifier,'name':definition['display_name'],
+                'investment_series':econ['investment_series_id'],'return_basis':body['construction']['basis'],
+                'representation':body['construction']['representation'],'comparison':body['construction']['comparison'],
+                'horizon':body['horizon'],'definition_version':definition['version'],
+                'source_eligibility':'eligible' if mats else 'unverified','definition_state':'valid',
+                'materializations':mats,'readiness':readiness,
+                'reason':None if readiness=='historically_certified' else 'Admit compatible source evidence and materialize this Target before research.'})
+        except Exception:
+            issues.append({'target_id':identifier if TARGET_ID.fullmatch(identifier) else None,
+                           'code':'UNAVAILABLE_TARGET','message':'A Target could not be verified and was excluded.'})
+    return {'schema_version':'1.0.0','target_count':len(targets),'targets':targets,'issues':issues}

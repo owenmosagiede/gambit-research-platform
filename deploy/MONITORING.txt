@@ -1,0 +1,29 @@
+GAMBIT OPERATIONAL MONITORING
+
+The cloud deployment has a root-owned minute timer which checks worker heartbeat
+and lock ownership, the mounted data volume, at least 5 GiB free on boot/data
+filesystems, and a successful backup within 36 hours. A running backup has at most
+six hours' grace; a failed backup fails health immediately. Worker health remains
+independent, so maintenance downtime can trigger an availability warning.
+
+The root-owned status file is readable by the application group. The public
+/healthz endpoint returns only {"status":"ok"} or {"status":"unavailable"}, with
+HTTP200/503 and no caching. Missing, malformed, future-dated or older-than-150s
+status fails closed. Paths, worker details, backup identifiers, research metadata
+and credentials are never returned. This is ordinary application/systemd code.
+
+DigitalOcean uptime monitoring checks that endpoint externally. Resource alerts
+cover disk utilization above75% and memory above85% for five minutes. Spend
+notifications at $40/$60/$80 are alerts, not a spending limit or automatic shutdown.
+
+Installation: run deploy/install_health.sh after the initial verified import and
+with the web service stopped. At activation enable/start gambit-health.timer;
+run gambit-health.service immediately to establish the first check. Configure
+the public HTTPS uptime alert after the site and certificate are verified.
+
+The migration manifest is the immutable receipt for the original imported bytes.
+Later web/deployment-only releases are separate changes, recorded by a release
+file/hash list under /var/log/gambit-acceptance; they do not rewrite that receipt.
+Backup manifests cover the current release and the complete current data together.
+No research source, scientific definitions, policies or historical IDs are changed
+by this health release.

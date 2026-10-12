@@ -1,0 +1,100 @@
+GAMBIT CLOUD BACKUP AND RECOVERY
+
+STATUS (11 OCTOBER 2026)
+Dedicated read/write/delete key is restricted to gambitsystems-private-backups.
+Encrypted restic v2 repository initialized under the research prefix at the NYC3
+Spaces endpoint. The application service account cannot read the backup key.
+Credentials are root-only under /etc/gambit/backup; recovery copies remain in the
+Mac task's cloud-foundation/private directory, outside the application source.
+Never print, commit, email, or include those files in an ordinary release bundle.
+
+Full production backup and isolated restoration passed on12October2026UTC:
+244,526files /3,859,534,598bytes; both authentication and PIT SQLite integrity;
+complete record/reference/payload closure and existing authoritative readers.
+Production snapshot55d6e5e76aa65529fb745bec098183af95d36c6197542c210cd7299a6929c55b.
+Daily backup timer is enabled. Initial consistent-copy downtime was about14min;
+the complete first backup took17min37s, including encrypted upload after restart.
+
+The exact runtime and deployment archives were separately backed up/restored:
+snapshot00bd11f2f2cfd5cc3f7062a61f322f66a17f70571754575e4e639ec4b1b6eac9,
+tag gambit-deployment-artifacts. Its restored path contains
+var/lib/gambit-backup/releases/cloud-20261012/manifest.json and archive checksums.
+The exact-runtime.tar.gz restores opt/gambit (runtime and venv). Extract only into
+an isolated directory first; then install at /opt/gambit on a replacement host
+with matching OS prerequisites. Check the full Python build string and source
+release before allowing frozen work to execute. Operations/UI release archives
+are present in that same encrypted snapshot. See outputs/cloud_cutover_verification.txt.
+
+CONSISTENCY
+Daily backup first drains the worker through its existing SIGTERM behavior. The
+web application can serve and queue new work during that drain. Next it stops
+the web service, takes all research ownership/writer locks and copies the store,
+authentication database and Gambit configuration into a protected staging area.
+Queued submissions and historical results are preserved. Stale worker ownership
+and lock files are excluded. No research method or frozen job identity is changed.
+
+All copied bytes are checked against their source. SQLite integrity is checked
+on temporary database/WAL clones so verification cannot mutate the saved copy.
+Only services that were running before the backup are restarted, including on
+ordinary failure. ExecStopPost uses a durable journal to recover stopped services
+if the backup process dies. Root/admin changes must not be made during a backup.
+No new onboarding/other write services may be installed without adding them to
+this quiescence contract. The current deployed design has only web and worker.
+
+The application restarts BEFORE encrypted upload. Upload failure therefore does
+not leave research offline. The timer runs daily at 11:00 UTC with up to ten
+minutes of jitter; missed schedules run after reboot. Retention keeps seven daily
+and four weekly production snapshots, filtered by tag and the stable backup path.
+Old acceptance fixtures are not affected by production retention. These are
+encrypted backups, not immutable/WORM copies; a stolen backup key could delete
+them. This key grants no general DigitalOcean infrastructure administration.
+
+STAGING CAPACITY
+Staging is /var/lib/gambit-backup/staging/current on the boot disk. Required free
+space is estimated before stopping services: current source bytes plus 10% and
+1 GiB headroom. The 100 GiB data volume does not imply 100 GiB staging capacity.
+Monitor both filesystems. Increase/rework staging before research growth exceeds
+that capacity; do not silently skip failed backup status. The latest durable
+status is /var/lib/gambit-backup/status.json and systemd records unit failures.
+
+ACTIVATION PROCEDURE (COMPLETED ON THIS HOST; USE FOR A REPLACEMENT)
+Install the prepared service/timer through deploy/install_services.sh. Keep the
+timer disabled until a full backup and restore check have passed. Create the
+root-owned /etc/gambit/backup-enabled marker, run the service once, inspect its
+status and snapshot ID, then enable/start gambit-backup.timer. This is ordinary
+server scheduling and does not depend on an AI agent or an open browser/laptop.
+
+RESTORE REHEARSAL
+Load the root-only /etc/gambit/backup/restic.env into the administrative environment.
+Run deploy/backup_cloud.py restore-check --snapshot EXACT_HEX_SNAPSHOT_ID using
+the cloud Python. It restores to a NEW directory under /var/lib/gambit-backup/
+restores, runs restic's content verification, compares every manifest byte hash
+and repeats SQLite checks. It never overwrites live data or starts research.
+Then run tools/verify_cloud_store.py and the existing authoritative readers
+against the restored research root with all Mac/legacy paths unavailable.
+Keep the resulting acceptance reports outside the restored scientific store.
+
+DISASTER RECOVERY
+Provision/mount a replacement owned server and volume; install the same patched
+runtime and hash-locked dependencies. Restore the chosen exact snapshot into an
+isolated directory first. Verify bytes, record references and SQLite; compare
+saved counts, periods and research outcomes before selecting it as the authority.
+Install the restored research_platform at /srv/gambit/research_platform, auth at
+/srv/gambit/auth and configuration under /etc/gambit. Restore deployment units,
+Caddy configuration and the documented permissions: root-owned code/config,
+gambit-owned storage and auth, root-only backup keys. Never make auth/public data
+accessible to Caddy. Revoke sessions/change the session secret after an incident.
+
+The exact full sys.version participates in scientific implementation identity.
+A rebuild can legitimately differ even at the same Python version. Do not rewrite
+old IDs or force pending jobs through an incompatible implementation. Restore the
+matching runtime or leave incompatible pending work explicitly blocked for review.
+Do not reactivate a stale Mac copy after cloud writes without reconciliation.
+
+RECOVERY CREDENTIALS
+Both the Spaces access key and the separate restic encryption password are needed.
+Losing the encryption password makes backups unrecoverable. The Mac has the
+outside-server recovery copies; move an additional copy into the owner's chosen
+password manager/offline safe. No additional third-party secret storage has been
+configured or authorized. Provider VM backups supplement these backups; they do
+not cover the attached research volume.

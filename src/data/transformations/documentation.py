@@ -1,0 +1,76 @@
+"""Render the factual active-library catalogue from authoritative definitions."""
+from collections import Counter
+import json
+
+
+def _j(value):
+    return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=True)
+
+
+def render_documentation(registry):
+    entries=registry.all_operators()
+    active=sum(e['body']['execution_contract']['certification']['status']=='approved' for e in entries)
+    counts=Counter(e['id'].split('_')[1].lower() for e in entries)
+    kernels={e['body']['execution_contract']['kernel'] for e in entries}
+    families=Counter(e['body']['execution_contract']['family'] for e in entries)
+    lines=['# Transformation library and feature engineering foundation','',
+        f'This is the executable version 2 library: **{len(entries)} registrations, {active} approved**, with **{len(kernels)-1} numerical kernels and 1 generic release-event-history operation**. Registrations, mathematical operations and parameterized recipes are different counts. No production Features or Signals are created by these definitions.','',
+        'The [historical legacy audit](transformation_library_catalogue.md) is preserved unchanged. This document is generated from authoritative `definitions/transformations/<id>/2.0.0.json` records by `src/data/transformations/documentation.py`; the registry test rejects documentation drift.','',
+        'The authoritative execution specification is [Specification16](../specs/16_transformation_execution.md).','',
+        '## Scope and location','',
+        f'The registrations comprise {counts["base"]} base aliases across the original 15 families, {counts["price"]} distinct price aliases, {counts["release"]} generic release aliases and {counts["core"]} new direct-input primitives. Repeated price names retain separate identities and parameter policies. The release aliases describe capabilities and temporal behavior rather than provider names.','',
+        '- Definitions: `definitions/transformations/`; approved execution, history, units, missing-data and grid policies: `definitions/policies/`.','- Code: `src/data/transformations/{numeric,registry,contracts,identity,engine}.py`.','- Recipes will use the existing `predictor_recipe` inside Feature definitions. Calculated observations belong in the existing Feature catalog and payload store, not this definition directory.','- Interactions, targets, research, UI changes, downloads, production transformations and production Signal registration are excluded. `combine.difference` is deliberately not registered.','',
+        '## Shared execution contract','',
+        'Each recipe consumes one explicitly selected SourceView, measure, entity and dimension partition. Reference time, native historical availability, evaluation cutoff and execution time remain distinct. Provider identity is provenance; it does not choose formulas. A source must separately satisfy the declared capabilities and history policy. Successful mathematical tests do not certify any particular real dataset for release timing or live use.','',
+        'All windows and lags count observations. Regular cadence uses the declared gap policy; missing periods are never silently dropped. Irregular/event inputs require explicit observation ordering. Required windows are complete, with no filling or adaptive shortening. The documented seasonal filtering and capped-streak exceptions are explicit. Output preserves requested indexes, controlled null reasons, semantics, units and lineage. An all-null result is not reported as a successful scientific calculation. Unexpected implementation failures remain exceptions.','',
+        'Reference-state recipes resolve only information known at each evaluation cutoff. Emitted-history recipes compose values emitted at their own earlier cutoffs. A release shock is special: each past change is computed from its own anchored release state, then the current change is standardized against those earlier emitted changes. Recomputing old changes using the latest revisions is prohibited. Undeclared temporal switches are rejected.','',
+        'Units are explicit: `preserve` retains input units; `per_observation` divides them by one observation index; `change_basis` retains units for differences and produces dimensionless values for fractional/log changes; `dimensionless` produces unit1; `observation_count` counts observations; `log_input` labels natural-log input units. Fractional changes are not multiplied by 100. Output semantics are declared separately from units.','',
+        '## Numerical conventions and deliberate version 2 changes','',
+        '`W_w` contains the last w values including the current one; `W^-_w` contains the w preceding values. `delta_k x_t=x_t-x_(t-k)`. `sd` is sample deviation with denominator n-1. Descriptive SD may equal zero in version 2; division by zero SD remains undefined. This deliberately differs from legacy descriptive volatility. Price aliases now enforce their explicitly declared positive-price domain. Invalid parameter sizes and relationships reject the request before execution. These changes never redefine an old version.','',
+        'Type 7 quantiles interpolate linearly at index `(n-1)q`. Ranks use `(count_less+0.5*count_equal)/n`. Adjusted sample skewness is `n/((n-1)(n-2))*sum(((x-mean)/s)^3)`. Bias-adjusted excess kurtosis is `n(n+1)/((n-1)(n-2)(n-3))*sum(((x-mean)/s)^4)-3(n-1)^2/((n-2)(n-3))`, where s uses n-1. Skewness needs n>=3 and kurtosis n>=4. Distribution operators retain the documented distinction between differences and direct supplied values.','',
+        'Exponential weights use `alpha=1-exp(log(0.5)/h)`, seed with the first valid value of a run, reset on missing/invalid input and emit after h consecutive valid inputs. EW z-score uses h prior valid observations and pre-current exponential mean/variance. Version2 computes variance through a stable centered recurrence, algebraically equivalent to the uncorrected second moment minus squared mean; it avoids cancellation in the old raw-moment subtraction. EW volatility is root mean square of changes, not centered SD.','',
+        'Seasonal buckets are weekday for daily, ISO week for weekly, month for monthly, quarter for quarterly, half-year for semiannual, and weekday/hour/minute/second for tick/intraday. Intraday buckets require timestamp precision. Annual, irregular and event seasonal configurations reject. Only strictly earlier calendar dates within `current_year-history_years` through the current year enter the same bucket; both seasonal methods require at least 2 nonmissing prior bucket observations.','',
+        '## Parameter validation and finite grids','',
+        'Mathematical domains and optional grid permission are separate. `Registry.validate_parameters` validates exact names, types, minimum sizes and relationships. Supplying an explicit grid policy additionally checks membership. `Registry.enumerate_grid(entry,frequency,policy,max_combinations=...)` requires a finite bound; no default candidate generation occurs. Invalid legacy-axis configurations are excluded rather than repaired. Finite coverage tests do not exhaust arbitrary parameter values.','',
+        'Base/Core horizon aliases use the frequency horizon policy. H1...H5 resolve as follows:','',
+        '| Frequency | H1...H5 |','| --- | --- |']
+    policy=registry.get_policy('POL_TRANSFORM_GRID_BASE')
+    ps={p['name']:p['value']['value'] for p in policy['body']['parameters']}
+    for freq in ['tick','intraday','daily','weekly','monthly','quarterly','semiannual','annual','irregular','event']:
+        lines.append(f'| {freq} | '+', '.join(ps[f'{freq}_H{i}'] for i in range(1,6))+' |')
+    lines+=['','Aliases: `K=unique(1,H1...H5)`, `W=H1...H5`, `W_STAT=H2...H5`, `HALF_LIFE=H1...H4`, `K_SHORT=unique(1,H1,H2)`, `K_SKIP=H2...H5`, `S_SKIP=unique(1,H1)`, `K_ACCEL=unique(1,H1,H2,H3)`, `SLOPE_W=VOL_W=H2,H3,H4`, `TREND_W=H1,H2,H3`, `K_SLOPE_CHANGE=AUTOCORR_LAG=unique(1,H1)`, `VARIANCE_RATIO_K=H1,H2`, `VARIANCE_RATIO_W=H3,H4,H5`.','',
+        'Base crossovers and volatility ratios retain horizon-position pairs (H1,H2),(H2,H3),(H3,H4),(H4,H5),(H1,H3),(H2,H4),(H3,H5). Finite quantile-range grids retain only (0.10,0.90) or (0.05,0.95). Price grids preserve the audited Technical+Momentum lookback profile; release grids retain their fixed audited choices. Metadata axes and numerical parameter relationships are both enforced.','',
+        '`POL_TRANSFORM_GRID_WEEKLY_156` is a separate versioned parameter permission for the base weekly z-score. It extends, rather than replaces, the base profile; it is not a 99th transformation. Its full immutable reference is bound to the recipe step, preserving the extension fingerprint in recipe identity.','',
+        'Legacy weekly156 extension fingerprint: `'+{p['name']:p['value']['value'] for p in registry.get_policy('POL_TRANSFORM_GRID_WEEKLY_156')['body']['parameters']}['legacy_extension_fingerprint']+'`. It is retained inside the new grid-policy reference.','',
+        '## Family index','',
+        '| Family | Registrations | Meaning |','| --- | ---: | --- |']
+    meanings={'level':'Raw/log levels and causal lag.','change':'Lagged arithmetic, fractional and log changes.','standardization':'Prior-window standardized positions.','smoothing':'Moving averages and rolling sums.','trend':'Within-series direction, slopes and moving-average comparisons.','momentum':'Skipped recent changes and direction balance.','shock':'Changes compared with preceding change histories.','acceleration':'Changes of changes or slopes.','volatility':'Change-based or direct-input dispersion.','volatility_scaling':'Differences or trends scaled by change volatility.','distribution':'Shape and quantiles of one-observation differences.','input_distribution':'New direct-input shape and quantiles, without differencing.','extremes':'Ranges, breakouts, recency and drawdown.','persistence':'Serial dependence, streaks and variance ratios within one series.','threshold':'Strict indicators against levels or prior thresholds.','seasonality':'Comparisons with earlier calendar buckets.','price':'Additional explicitly price-semantic operations.'}
+    for family,count in sorted(families.items()):lines.append(f'| {family} | {count} | {meanings[family]} |')
+    lines+=['','## Registration, implementation and coverage index','','Every row below has a separately pinned operator identity. The numerical tests independently specify defined expected outputs, and cover boundaries, missingness, constant/extreme inputs and causal future-appending behavior. Engine acceptance tests supply full input schemas, selection, composition, historical revisions and generic release-state certification fixtures.','','| Registration | Legacy ID/version or new primitive | Kernel | Temporal mode | Grid policy |','| --- | --- | --- | --- | --- |']
+    for e in entries:
+        c=e['body']['execution_contract'];old=c['legacy_mapping'];oldtext=f"{old['library']}:{old['id']}@{old['version']}" if old else 'New direct-input primitive'
+        lines.append(f"| [{e['id']}](#{e['id'].lower()}) | `{oldtext}` | `{c['kernel']}` | `{c['temporal_mode']}` | `{c['grid_profile']['id']}` |")
+    lines+=['','## Exhaustive operator definitions','']
+    for e in entries:
+        c=e['body']['execution_contract'];ex=c['example'];old=c['legacy_mapping']
+        lines += [f"### {e['id']}",'',f"**{e['display_name']}** — version `{e['version']}`, family `{c['family']}`, certification `{c['certification']['status']}`.",'',c['description'],'',f"Formula: `{c['formula']}`.",'',f"Input treatment: `{c['input_mode']}`. Accepted value semantics: "+', '.join('`'+x+'`' for x in c['input_semantics'])+'.',f"Input domain requirements: "+(', '.join('`'+x+'`' for x in c['input_requirements']) or 'none')+'.',f"Temporal mode: `{c['temporal_mode']}`; required capabilities: "+(', '.join(c['capabilities']) or 'canonical single-series history')+'.',f"Window: `{c['window_boundary']}`. {c['history_rule']}",'','Parameters:']
+        if not e['body']['parameters']:lines.append('- None.')
+        for p in e['body']['parameters']:
+            domain=f"{p['value_kind']}; minimum {p['minimum']}; maximum {p['maximum']}"
+            if p['allowed_values']:domain+='; values '+','.join(str(v['value']) for v in p['allowed_values'])
+            lines.append(f"- `{p['name']}` ({p['unit']}): {domain}; grid axis `{_j(c['parameter_grid'][p['name']])}`.")
+        if c['parameter_constraints']:lines.append('- Relationships: '+'; '.join(c['parameter_constraints'])+'.')
+        lines += ['',f"Approved finite grid policy: `{c['grid_profile']['id']}@{c['grid_profile']['version']}`. Frequencies: "+', '.join(c['supported_frequencies'])+'.',f"Output: `{c['output_semantics']}`; units rule `{c['output_unit_rule']}`; type `{c['output_type']}`; range {c['output_range']}.",'',
+            'Failure behavior: request/domain incompatibility rejects; expected pointwise failures preserve the index with null and a controlled reason; unexpected failures remain exceptions. Controlled vocabulary: '+', '.join('`'+r+'`' for r in c['failure_codes'])+'.',
+            '',f"Example: values `{_j(ex['values'])}`, parameters `{_j(ex['parameters'])}`, frequency `{ex['frequency']}` give final value **{float(ex['expected_last']):.12g}**. {ex['interpretation']}"]
+        if ex['reference_times']:lines.append('Example reference times: `'+_j(ex['reference_times'])+'`.')
+        if old:
+            lines+=['',f"Legacy mapping: `{old['library']}:{old['id']}@{old['version']}`, status `{old['compatibility_status']}`."]
+            if old['definition_fingerprint']:lines.append('Legacy definition fingerprint: `'+old['definition_fingerprint']+'`.')
+            for source in old['sources']:lines.append(f"Source evidence: `{source['path']}:{source['line']}`, SHA-256 `{source['sha256']}`.")
+        else:lines+=['','New primitive from the bounded gap check. It does not replace or rename a difference-based operator.']
+        lines+=['','Versioned differences: '+' '.join(c['semantic_changes']) if c['semantic_changes'] else 'No additional operator-specific change.',f"Implementation: `{c['implementation']['module']}:{c['implementation']['callable']}`, operation `{c['kernel']}`.", 'Acceptance references: '+', '.join('`'+t+'`' for t in c['certification']['test_refs'])+'.','']
+    lines += ['## Foundation boundary and source eligibility','',
+        'The executable foundation supports fixture recipes and deterministic logical/materialization identities. SourceView identity, ordered versioned operators, exact parameters, history/execution/grid policies and source selection bind the logical recipe. Input evidence, evaluation coverage and implementation dependencies distinguish computed materializations; execution timestamps, paths, labels, target/horizon choices and research outcomes do not redefine an unchanged logical feature recipe.','',
+        'The separate next task is to certify a concrete real SourceView and explicitly selected recipe, then create production Features and their parent Signal IDs. No such production definitions or observations are populated here. Further formula suggestions, cross-series interactions, targets and research remain future scope.','']
+    return '\n'.join(lines)

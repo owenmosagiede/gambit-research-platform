@@ -1,0 +1,29 @@
+[Unit]
+Description=Gambit independent research worker
+After=network.target
+RequiresMountsFor=/srv/gambit
+ConditionPathIsMountPoint=/srv/gambit
+ConditionPathExists=/etc/gambit/worker-enabled
+StartLimitIntervalSec=600
+StartLimitBurst=3
+[Service]
+Type=simple
+User=gambit
+Group=gambit
+WorkingDirectory=/srv/gambit/research_platform
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/gambit/venv/bin/python tools/run_research_worker.py
+Restart=on-failure
+RestartSec=10
+# SIGTERM drains the current job. Never force-kill a long scientific run on deploy.
+TimeoutStopSec=infinity
+KillSignal=SIGTERM
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/gambit/research_platform/storage
+[Install]
+WantedBy=multi-user.target

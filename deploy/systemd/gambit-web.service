@@ -1,0 +1,30 @@
+[Unit]
+Description=Gambit authenticated research web service
+After=network.target
+RequiresMountsFor=/srv/gambit
+ConditionPathIsMountPoint=/srv/gambit
+StartLimitIntervalSec=300
+StartLimitBurst=5
+[Service]
+Type=simple
+User=gambit
+Group=gambit
+WorkingDirectory=/srv/gambit/research_platform
+EnvironmentFile=/etc/gambit/web.env
+RuntimeDirectory=gambit-web
+RuntimeDirectoryMode=0750
+# Give Caddy access to this socket directory only, never the research volume.
+ExecStartPre=+/usr/bin/setfacl -m u:caddy:rx /run/gambit-web
+ExecStart=/opt/gambit/venv/bin/gunicorn --config deploy/gunicorn.conf.py web.wsgi:application
+ExecStartPost=+/bin/sh -c 'for i in $(seq 1 100); do if test -S /run/gambit-web/http.sock; then setfacl -m u:caddy:rw /run/gambit-web/http.sock; exit 0; fi; sleep 0.1; done; exit 1'
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=150
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/gambit/research_platform/storage /srv/gambit/auth /run/gambit-web
+[Install]
+WantedBy=multi-user.target

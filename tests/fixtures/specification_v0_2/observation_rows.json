@@ -1,0 +1,32 @@
+[
+  {
+    "materialization_id": "MATERIALIZATION_03e1fc1726a1a181f3d5af943b0a4ad39c732075221dd8746585285371b5e537",
+    "entity_id": "SOURCE_ENTITY_A",
+    "observation_time": "2000-01-01T00:00:00.000000Z",
+    "value": "1.25",
+    "status": "valid",
+    "reason_code": null,
+    "available_at": "2000-01-01T00:00:00.000000Z",
+    "target_end_time": null,
+    "lineage": {
+      "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+      "version": "1.0.0",
+      "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+    }
+  },
+  {
+    "materialization_id": "MATERIALIZATION_03e1fc1726a1a181f3d5af943b0a4ad39c732075221dd8746585285371b5e537",
+    "entity_id": "SOURCE_ENTITY_A",
+    "observation_time": "2000-01-02T00:00:00.000000Z",
+    "value": null,
+    "status": "missing",
+    "reason_code": "SYNTHETIC_MISSING",
+    "available_at": null,
+    "target_end_time": null,
+    "lineage": {
+      "id": "LINEAGE_3ae15a428f44ff6c22bc9c43ea534b3b2d29146996973e7fae5cd6b729435eb7",
+      "version": "1.0.0",
+      "content_sha256": "9cea8792238eac8ca0c40f4915cde3ee38191cfd19591ce4ae54968ab5079060"
+    }
+  }
+]

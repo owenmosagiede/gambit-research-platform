@@ -1,0 +1,30 @@
+/* Gambit Systems 1.0.0. Default research surface: white. */
+@font-face{font-family:Inter;src:url("./fonts/Inter-Variable.ttf") format("truetype");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"IBM Plex Mono";src:url("./fonts/IBMPlexMono-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"IBM Plex Mono";src:url("./fonts/IBMPlexMono-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+:root{--g-ink:#151817;--g-ivory:#F3F1E9;--g-stone:#D7D2C5;--g-signal:#9ED64A;--g-canvas:#FFFFFF;--g-surface:#FFFFFF;--g-text:#151817;--g-muted:#5C625E;--g-border:#D8DCD6;--g-input-border:#858C84;--g-primary:#151817;--g-on-primary:#FFFFFF;--g-link:#356B34;--g-focus:#356B34;--g-success:#2E6844;--g-success-fill:#EAF3EC;--g-warning:#84620C;--g-warning-fill:#FBF3DA;--g-error:#AA3D32;--g-error-fill:#FBEDE9;--g-info:#315C7A;--g-info-fill:#E9F0F5;--g-font:Inter,Arial,sans-serif;--g-mono:"IBM Plex Mono",monospace;--g-radius:4px;--g-fast:120ms;--g-normal:180ms;--g-ease:cubic-bezier(.2,0,0,1)}
+[data-gambit-theme="dark"]{--g-canvas:#101512;--g-surface:#1B211D;--g-text:#F3F1E9;--g-muted:#B3B9B2;--g-border:#465249;--g-input-border:#728273;--g-primary:#F3F1E9;--g-on-primary:#151817;--g-link:#9ED64A;--g-focus:#9ED64A;--g-success:#A8D9B6;--g-success-fill:#173523;--g-warning:#E9CE82;--g-warning-fill:#352B13;--g-error:#F4B4AA;--g-error-fill:#391F1B;--g-info:#ADD0EA;--g-info-fill:#1A2C3B}
+.gambit{font:400 14px/1.43 var(--g-font);color:var(--g-text);background:var(--g-canvas)}
+.gambit *{box-sizing:border-box}.gambit [hidden]{display:none!important}
+.g-display{font:500 clamp(36px,5vw,56px)/1.07 var(--g-font);letter-spacing:-.027em}
+.g-h1{font:500 36px/42px var(--g-font);letter-spacing:-.7px}.g-h2{font:500 24px/30px var(--g-font)}
+.g-overline{font:500 11px/16px var(--g-font);letter-spacing:1.6px;text-transform:uppercase}
+.g-data{font:400 13px/20px var(--g-mono);font-variant-numeric:tabular-nums}
+.g-muted{color:var(--g-muted)}.g-link{color:var(--g-link);text-underline-offset:3px}
+.g-button{min-height:40px;padding:9px 16px;border:1px solid var(--g-border);border-radius:var(--g-radius);font:500 14px/20px var(--g-font);color:var(--g-text);background:var(--g-surface);transition:background var(--g-fast) var(--g-ease);cursor:pointer}
+.g-button-primary{background:var(--g-primary);color:var(--g-on-primary);border-color:var(--g-primary)}
+.g-button:hover{filter:brightness(.97)}.g-button-primary:hover{filter:brightness(1.12)}
+.g-button:disabled{opacity:.48;cursor:not-allowed}.g-button:focus-visible,.g-input:focus-visible,.g-select:focus-visible{outline:2px solid var(--g-focus);outline-offset:2px}
+.g-label{display:block;font:600 12px/16px var(--g-font);margin-bottom:8px}
+.g-input,.g-select{display:block;width:100%;min-height:40px;padding:9px 12px;border:1px solid var(--g-input-border);border-radius:var(--g-radius);background:var(--g-surface);color:var(--g-text);font:400 14px/20px var(--g-font)}
+.g-input[aria-invalid="true"],.g-select[aria-invalid="true"]{border-color:var(--g-error)}
+.g-help{margin-top:6px;font:400 12px/18px var(--g-font);color:var(--g-muted)}
+.g-table{width:100%;border-collapse:collapse;font:400 14px/20px var(--g-font)}
+.g-table th{font-weight:500;color:var(--g-muted);text-align:left}.g-table td,.g-table th{padding:12px 16px;border-bottom:1px solid var(--g-border);vertical-align:top}
+.g-table .g-number{text-align:right;font-variant-numeric:tabular-nums}.g-panel{padding:24px;border:1px solid var(--g-border);border-radius:var(--g-radius);background:var(--g-surface)}
+.g-status{display:inline-flex;align-items:center;gap:6px;padding:3px 6px;border-radius:2px;font:500 12px/16px var(--g-font);color:var(--g-muted);background:var(--g-canvas)}
+.g-status-success{color:var(--g-success);background:var(--g-success-fill)}.g-status-warning{color:var(--g-warning);background:var(--g-warning-fill)}.g-status-error{color:var(--g-error);background:var(--g-error-fill)}.g-status-info{color:var(--g-info);background:var(--g-info-fill)}
+@media(pointer:coarse){.g-button,.g-input,.g-select{min-height:44px}.g-input,.g-select{font-size:16px}}
+@media(prefers-reduced-motion:reduce){.gambit *{transition:none!important;animation:none!important}}
+
+@media(max-width:600px){.g-h1{font-size:28px;line-height:34px}.g-display{font-size:36px;line-height:40px}}

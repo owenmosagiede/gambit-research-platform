@@ -1,0 +1,47 @@
+[
+  {
+    "package": "Django",
+    "version": "5.2.18",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "gunicorn",
+    "version": "26.2.0",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "asgiref",
+    "version": "3.12.1",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "sqlparse",
+    "version": "0.6.0",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "jsonschema",
+    "version": "4.25.1",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "jsonschema-specifications",
+    "version": "2025.9.1",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "attrs",
+    "version": "26.1.0",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "referencing",
+    "version": "0.37.0",
+    "published_vulnerabilities": []
+  },
+  {
+    "package": "rpds-py",
+    "version": "2026.9.1",
+    "published_vulnerabilities": []
+  }
+]

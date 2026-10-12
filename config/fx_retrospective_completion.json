@@ -1,0 +1,54 @@
+{
+  "alignment_policy": {
+    "approval_evidence": {
+      "content_sha256": "b02798b766388dacbd04df66a678dafccd98ffb402564a2afd5114f69f74404c",
+      "id": "EVIDENCE_63a162f8a975a25fda80701febe60896047eaf299903c3bcc8d83081f26b818c",
+      "version": "1.0.0"
+    },
+    "approval_state": "approved",
+    "id": "FX_RETROSPECTIVE_PROVIDER_DATES",
+    "max_date_gap": 0,
+    "max_valuation_gap_seconds": null,
+    "mode": "retrospective_date_label",
+    "version": "1.0.0"
+  },
+  "knowledge_cutoff": "2026-10-09",
+  "return_policy": {
+    "approval_evidence": {
+      "content_sha256": "b02798b766388dacbd04df66a678dafccd98ffb402564a2afd5114f69f74404c",
+      "id": "EVIDENCE_63a162f8a975a25fda80701febe60896047eaf299903c3bcc8d83081f26b818c",
+      "version": "1.0.0"
+    },
+    "approval_state": "approved",
+    "calendar_id": "RESEARCH_WEEKDAYS",
+    "calendar_version": "1.0.0",
+    "clock": "scheduled_bars",
+    "endpoint": {
+      "rule": "exact",
+      "tolerance": {
+        "amount": 0,
+        "unit": "calendar_days"
+      }
+    },
+    "entry": {
+      "delay": {
+        "amount": 0,
+        "unit": "calendar_days"
+      },
+      "rule": "anchor_mark"
+    },
+    "horizons": [
+      1,
+      7,
+      21,
+      63,
+      252
+    ],
+    "representation": "simple",
+    "retrospective_policy": {
+      "content_sha256": "236166e724f422a5f4a3569985360884904850b873cdef04be5de4d0cfd8f115",
+      "id": "POLICY_2ba9539c29b93277e30ee4c2b0752c3e54cbcf9a101ec19b2628dc5fb43ec14b",
+      "version": "1.0.0"
+    }
+  }
+}

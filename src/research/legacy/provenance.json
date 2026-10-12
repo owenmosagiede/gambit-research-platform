@@ -1,0 +1,320 @@
+{
+  "purpose": "Read-only numerical helpers copied verbatim; no legacy writers or runtime dependencies. New adapters separately validate current contracts.",
+  "files": [
+    {
+      "destination": "p1.py",
+      "function": "_numeric",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        148,
+        152
+      ],
+      "function_sha256": "b28ff203777a178fc9451a5d6b738f65a45214b8f5740f050c39a7743ed5bb26"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_sign",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        155,
+        162
+      ],
+      "function_sha256": "abc9f8faefce04219e7a0fadc75d278d1512b3618e3f6178cb673446bec2397a"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_constant",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        165,
+        166
+      ],
+      "function_sha256": "858b49a34185c32034d58cde5b53384474b5d7b21f59e4c911b2a0b047a9f2db"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_average_ranks",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        169,
+        181
+      ],
+      "function_sha256": "af363a18b3a94e7c85b4ae99e5e2b4c96b37e79f3a4da491d9a727942780403e"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_pearson",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        184,
+        197
+      ],
+      "function_sha256": "48baf843320ba586bf86dcef0d892fa951e252b6c84af036fceef16707b7c91a"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_spearman",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        200,
+        203
+      ],
+      "function_sha256": "65868dbeb48d147f919dc90dd3c5a0e1f76cd28a64e215b211cc35edf9b25550"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_ols_with_hac",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        206,
+        262
+      ],
+      "function_sha256": "f60bd885a80ac96074a37c2fc25bdd96791d003b7053cb2ee9644d9e9a043e6a"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_mean_hac",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        265,
+        282
+      ],
+      "function_sha256": "83766e8f9189331227973307d1c6f9779009140a5bd2e7506f62ed746f5b141b"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_three_blocks",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        285,
+        293
+      ],
+      "function_sha256": "4aafb44c1921e5deee624a954e26b92ec5397f19d91ed111e5502d11509a071c"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_time_series_stability",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        296,
+        332
+      ],
+      "function_sha256": "18e33cde4eafbb13075d220152414b4f2a6195a4d832445161743c9b6ece2d20"
+    },
+    {
+      "destination": "p1.py",
+      "function": "_cross_sectional_stability",
+      "source": "src/empirical_signal_research/engine.py",
+      "source_sha256": "421052ca846acaffaefc5f94331d7cb16ff480f687ed38b65a5f8b18ecf150cd",
+      "source_lines": [
+        335,
+        363
+      ],
+      "function_sha256": "a407466a6e37881ec2bbe6b766d5eaab956a27b6728c9127c171b4cfb2026936"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_sign",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        117,
+        121
+      ],
+      "function_sha256": "b51650002c880a91ddb825f06f508621e512e604254844dbea5edf4a961cb8ef"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_orientation",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        124,
+        125
+      ],
+      "function_sha256": "cfdcd3cdf64e60be5c6176ed9f62571e8f6b9eeacfad56f5a352d0e8b987b738"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_ols_hac",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        128,
+        157
+      ],
+      "function_sha256": "b583dd519bb8ee86bd546814c36cd43b6083ad487569324cf5b022e642d957e1"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_average_ranks",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        160,
+        168
+      ],
+      "function_sha256": "9830d6c9d242b5c16cd5c6743e89703dd6b8c5e542b838edc9af387f09535f44"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_pearson",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        171,
+        176
+      ],
+      "function_sha256": "258c02c8f07f1f5ac8536d7b055df623d597e8cc23e50d11b114fa6365a21e45"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_mean_hac",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        179,
+        185
+      ],
+      "function_sha256": "cd61ee2802a39b518084663b51592a86ba9d804205e2ba9bb5f10721d69886aa"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_raw_estimate",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        188,
+        198
+      ],
+      "function_sha256": "b3f0cfb31c3c04062b854e0796fc99b9073b9b06886ef8fa57ee7b38b8474488"
+    },
+    {
+      "destination": "p2.py",
+      "function": "_blocks",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        201,
+        218
+      ],
+      "function_sha256": "3f5dbee14bd44f1603093804b0223385f07aa8589a69cc8ae45a0cace483602d"
+    },
+    {
+      "destination": "p2.py",
+      "function": "benjamini_hochberg",
+      "source": "src/signal_validation/engine.py",
+      "source_sha256": "a6e6d1f5081884db304fdbca6287bbaf572163a4758882593e24a19913f26f03",
+      "source_lines": [
+        221,
+        228
+      ],
+      "function_sha256": "ffe652069173b5b68b29c45869d0d0bb579f72b150fca1b90c5b8712dafc1511"
+    },
+    {
+      "destination": "admission.py",
+      "function": "_path",
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435",
+      "source_lines": [
+        40,
+        46
+      ],
+      "function_sha256": "60881dbd8f391db8b8f3c30eb0458ba212872fd9a92dfe178d6b2a87b5229f81"
+    },
+    {
+      "destination": "admission.py",
+      "function": "_result",
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435",
+      "source_lines": [
+        49,
+        73
+      ],
+      "function_sha256": "9d04f749449799b60d91eb0d4eeee962b4657adf11659e559eb9491030723642"
+    },
+    {
+      "destination": "admission.py",
+      "function": "_sign",
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435",
+      "source_lines": [
+        89,
+        94
+      ],
+      "function_sha256": "995b14090043059e01db2a1b6c176fedae5c23bb0e581eb92b2472048ecaf806"
+    },
+    {
+      "destination": "admission.py",
+      "function": "_numeric_threshold",
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435",
+      "source_lines": [
+        349,
+        375
+      ],
+      "function_sha256": "d6501bf256dfba4e7106ee83618b98e53643888da4f01d44868d866d35e6489b"
+    },
+    {
+      "destination": "admission.py",
+      "function": "_sign_stability",
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435",
+      "source_lines": [
+        378,
+        447
+      ],
+      "function_sha256": "5edad6eb0c161e66dc0271a0629b3cb642fe7fadc05150c15940eb677bed293c"
+    },
+    {
+      "destination": "admission.py",
+      "function": "_decision_from_results",
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435",
+      "source_lines": [
+        450,
+        461
+      ],
+      "function_sha256": "a91c013f15eb139e89ffcd0d1e03183fc9fbdf0f78aca975806c238179780a5a"
+    }
+  ],
+  "policy_sources": [
+    {
+      "source": "src/research_specification_registry/registry.py",
+      "source_sha256": "9fb641121e857f2d5537331abe0e2e3490747d9650f64f051192010dfbd6df13"
+    },
+    {
+      "source": "src/candidate_admission/registry.py",
+      "source_sha256": "5b101df516880e98f2770382441ca03172c154af8fd6584ff5c58ba23eba7fc5"
+    },
+    {
+      "source": "src/candidate_admission/gate.py",
+      "source_sha256": "361bd2c54c6ec5f0d97c5a3da9050c0d4464fec259b665a9a1a0e32b14c42435"
+    },
+    {
+      "source": "src/signal_validation/registry.py",
+      "source_sha256": "c0becb5b3712f044f6085dcd218d731a9653244696e855e9ffbb748f66a106c5"
+    },
+    {
+      "source": "src/signal_validation/gate.py",
+      "source_sha256": "3185549a9debe6039d8309e4da8e941653d46db05d9641bd2c719c71f6fe7d97"
+    }
+  ],
+  "adapter_notes": [
+    "The helpers are copied verbatim; source and function SHA-256 fingerprints pin the inspected implementation, not only legacy version labels.",
+    "Adapters use ISO date comparisons, require explicit frozen windows/clock compatibility/missing-stat disposition and preserve unknown availability.",
+    "P1 discovery thresholds and chronological stability rules and P2 standard/252 thresholds are retained. P2 missing-stat behavior remains legacy_failed_v1, pending a production policy disposition.",
+    "P2 interval scheduling is the same maximum non-overlapping interval algorithm on validated date strings with shared boundaries allowed; fixed CS requires same target endpoint per date.",
+    "No legacy writers, registry imports, dynamic source path, scientific data, or results are imported."
+  ]
+}
