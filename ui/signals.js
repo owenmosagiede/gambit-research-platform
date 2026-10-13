@@ -65,7 +65,13 @@
         Array.isArray(t.parameters) && t.parameters.every(p => text(p.name) && p.value && p.value.value !== undefined));
   }
   const reference = value => value && text(value.id) && text(value.version) && /^[0-9a-f]{64}$/.test(value.content_sha256);
-  const researchLabel = value => value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
+  const researchLabels = {
+    untested: "Untested",
+    results_linked: "Research results available",
+    unverified: "Research status unavailable",
+    checking: "Checking research status"
+  };
+  const researchLabel = value => researchLabels[value] || value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
   function validStructuredResults(item) {
     if (item.results === undefined) return true; // Historical reference-only projections.
     const date = value => text(value) && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -190,14 +196,18 @@
     return { wrap, grid, body };
   }
   function outputList(entry) { return entry.kind === "stored_signal" ? [entry.signal] : entry.outputs; }
-  function stateLabel(entry) { return entry.kind === "stored_signal" ? researchLabel(entry.signal.scientific_state) : entry.research.label; }
+  // Labels are presentation only; stored and reusable Features share state keys.
+  function researchState(entry) {
+    return entry.catalog_pending ? "checking" : entry.kind === "stored_signal" ? entry.signal.scientific_state : entry.research.state;
+  }
+  function stateLabel(entry) { return researchLabel(researchState(entry)); }
   function populateFilters() {
-    const choices = {provider: entries.flatMap(entry => outputList(entry).map(output => output.source.provider)), state: entries.map(stateLabel)};
+    const choices = {provider: entries.flatMap(entry => outputList(entry).map(output => output.source.provider)), state: entries.map(researchState)};
     for (const [key, values] of Object.entries(choices)) {
       const control = filters[key], previous = control.value;
       const all = el("option", key === "provider" ? "All providers" : "All statuses"); all.value = "";
       control.replaceChildren(all, ...[...new Set(values)].sort().map(value => {
-        const option = el("option", key === "provider" ? providerName(value) : value); option.value = value; return option;
+        const option = el("option", key === "provider" ? providerName(value) : researchLabel(value)); option.value = value; return option;
       }));
       control.value = values.includes(previous) ? previous : "";
     }
@@ -205,7 +215,7 @@
   function matches(entry) {
     const query = filters.search.value.trim().toLowerCase(), from = filters.from.value, to = filters.to.value;
     if (from && to && from > to) return false;
-    if (filters.state.value && filters.state.value !== stateLabel(entry)) return false;
+    if (filters.state.value && filters.state.value !== researchState(entry)) return false;
     const grouped = entry.kind !== "stored_signal", item = grouped ? entry : entry.signal;
     const words = [item.name, entry.id, operatorText(item), grouped ? entry.source.label : entry.signal.source.series_id,
       ...outputList(entry).flatMap(output => [output.signal_id, output.source.series_id, providerName(output.source.provider)])].join(" ").toLowerCase();
@@ -294,9 +304,9 @@
       const dashboard = el("div"); fragment.append(dashboard); window.SignalResearch.mount(dashboard, entry);
     } else {
     fragment.append(facts([["Source", entry.source.label], ["Transformation", operatorText(entry)],
-      ["Research status", entry.research.label]]));
+      ["Research status", stateLabel(entry)]]));
     const research = el("p", undefined, "research-note");
-    research.append(el("strong", entry.research.label), document.createTextNode(entry.research.description));
+    research.append(el("strong", stateLabel(entry)), document.createTextNode(entry.research.description));
     fragment.append(research);
     if (entry.research.relationships.length) {
       for (const relationship of entry.research.relationships.filter(r => Array.isArray(r.results))) {
@@ -381,7 +391,7 @@
     openLibrary(); revealSelection(); renderTable();
     $("signal-detail").setAttribute("aria-busy", "false"); $("signal-detail-retry").hidden = true;
     detailTitle.textContent = entry.name;
-    detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : entry.outputs.length ? `${entry.research.label} · Select a stored output to view its observations and lineage.` : `${entry.research.label} · Registered definition; ${entry.catalog_pending ? "stored coverage is loading" : "no stored outputs are catalogued"}.`;
+    detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : entry.outputs.length ? `${stateLabel(entry)} · Select a stored output to view its observations and lineage.` : `${stateLabel(entry)} · Registered definition; ${entry.catalog_pending ? "stored coverage is loading" : "no stored outputs are catalogued"}.`;
     detailBody.replaceChildren(groupContent(entry)); detailTitle.focus({preventScroll: true});
     if (!window.SignalResearch && entry.details_deferred && entry.research.state === "results_linked") {
       const generation = detailRequest, controller = new AbortController(); detailController = controller;
@@ -409,7 +419,7 @@
     const latest = rows[rows.length - 1];
     const group = groupForSignal(signal.signal_id);
     detailTitle.textContent = group ? group.name : signal.name;
-    detailStatus.textContent = `${signal.source.series_id} · ${providerName(signal.source.provider)} · Materialized · ${data.research.label || researchLabel(signal.scientific_state)}`;
+    detailStatus.textContent = `${signal.source.series_id} · ${providerName(signal.source.provider)} · Materialized · ${researchLabel(data.research.state)}`;
     if (["unknown_historical_availability", "retrospective_snapshot_unknown"].includes(signal.availability_semantics)) {
       detailStatus.textContent += " · Historical availability unknown";
     }
@@ -464,7 +474,7 @@
     ]));
     fragment.append(el("p", data.timing.description, "precision-note"));
     const research = el("p", undefined, "research-note");
-    research.append(el("strong", data.research.state === "untested" ? "Research results: not tested" : data.research.label || researchLabel(data.research.state)),
+    research.append(el("strong", data.research.state === "untested" ? "Research results: not tested" : researchLabel(data.research.state)),
       document.createTextNode(data.research.description));
     if (data.research.relationships && data.research.relationships.length) {
       const links = el("details", undefined, "definition-panel"); links.append(el("summary", "This output’s authoritative research records"));
@@ -608,7 +618,7 @@
         if (chosen?.kind === "stored_signal" && window.SignalResearch) await selectEntry(chosen.id);
         else if (chosen && chosen.kind !== "stored_signal") {
           detailTitle.textContent = chosen.name;
-          detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : `${chosen.research.label} · Select a stored output to view its observations and lineage.`;
+          detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : `${stateLabel(chosen)} · Select a stored output to view its observations and lineage.`;
           detailBody.replaceChildren(groupContent(chosen));
         }
       }

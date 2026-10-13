@@ -11,11 +11,56 @@ class SignalFilterTests(unittest.TestCase):
         a=signals.group();b=signals.ces()
         steps=[{'action':'filter','key':'search','value':'momentum'}, {'action':'clear'},
                {'action':'filter','key':'provider','value':'FRED_ALFRED'}, {'action':'clear'},
-               {'action':'filter','key':'state','value':'Research results linked'}, {'action':'clear'},
+               {'action':'filter','key':'state','value':'results_linked'}, {'action':'clear'},
                {'action':'filter','key':'from','value':'2030-01-01'}, {'action':'clear'}]
         views=signals.ui([a,b],steps)
         self.assertEqual([len(signals.rows(v['table'])) for v in views],[2,1,2,1,2,0,2,0,2])
         self.assertTrue(all(len(v['requests'])==1 for v in views))
+    def test_shared_research_status_groups_stored_and_recipe_records(self):
+        stored = signals.ces(); stored['signal']['scientific_state'] = 'results_linked'
+        recorded = signals.recorded_group()
+        linked = signals.group(index=2, linked=True)
+        untested = signals.group(index=3)
+        unavailable = signals.group(index=4)
+        unavailable['research'].update(state='unverified', label='Research status unavailable')
+        views = signals.ui([stored, recorded, linked, untested, unavailable], [
+            {'action':'filter', 'key':'state', 'value':'results_linked'},
+            {'action':'filter', 'key':'state', 'value':'untested'},
+            {'action':'filter', 'key':'state', 'value':'unverified'},
+            {'action':'clear'}])
+        self.assertEqual(views[0]['stateOptions'], [
+            {'value':'', 'label':'All statuses'},
+            {'value':'results_linked', 'label':'Research results available'},
+            {'value':'untested', 'label':'Untested'},
+            {'value':'unverified', 'label':'Research status unavailable'}])
+        self.assertEqual([len(signals.rows(v['table'])) for v in views], [5, 3, 1, 1, 5])
+        self.assertEqual([row[4] for row in signals.rows(views[1]['table'])], ['Research results available'] * 3)
+        self.assertIn('Existing CES monthly change', signals.flatten(views[1]['table']))
+        self.assertNotIn('VALIDATED', signals.flatten(views[1]['table']))
+        self.assertTrue(all(len(v['requests']) == 1 for v in views))
+
+    def test_state_filter_survives_refresh_with_different_api_label(self):
+        old, updated = signals.group(linked=True), signals.recorded_group()
+        views = signals.ui([old], [
+            {'action':'filter', 'key':'state', 'value':'results_linked'},
+            {'action':'refresh', 'detail':signals.refresh_event()}],
+            catalogs=[signals.catalog_for(old), signals.catalog_for(updated)])
+        self.assertEqual(views[-1]['selectedState'], 'results_linked')
+        self.assertEqual(len(signals.rows(views[-1]['table'])), 1)
+        self.assertEqual(signals.rows(views[-1]['table'])[0][4], 'Research results available')
+        self.assertEqual(len(views[-1]['requests']), 2)
+
+    def test_stored_signal_details_use_same_label_without_changing_evidence(self):
+        stored = signals.ces(); stored['signal']['scientific_state'] = 'results_linked'
+        detail = signals.detail(stored['signal'], linked=True, ces=True)
+        views = signals.ui([stored], [{'action':'select', 'id':stored['id']}],
+            responses={'/api/signal-library/' + stored['id']: detail})
+        self.assertIn('Research results available', views[-1]['status'])
+        self.assertIn('Research results available', signals.flatten(views[-1]['detail']))
+        self.assertIn('Observations', signals.flatten(views[-1]['detail']))
+        self.assertIn(stored['id'], signals.flatten(views[-1]['detail']))
+        self.assertTrue(all(call['method'] == 'GET' for call in views[-1]['requests']))
+
     def test_provider_and_date_must_match_same_output(self):
         a=signals.group(outputs=[signals.output(),signals.output(2,'EURUSD')])
         a['outputs'][1]['source']['provider']='Other provider'
