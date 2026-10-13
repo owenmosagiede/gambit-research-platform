@@ -209,6 +209,8 @@ function snapshot() {
     detail:read(ids["signal-detail-body"]), title:ids["signal-detail-title"].textContent, status:ids["signal-detail-status"].textContent,
     detailHidden:ids["signal-detail"].hidden, catalogStatus:ids["signal-library-status"].textContent, busy:ids["signal-detail"].attributes["aria-busy"],
     catalogRetryHidden:ids["signal-library-retry"].hidden, detailRetryHidden:ids["signal-detail-retry"].hidden,
+    stateOptions:ids["signal-state"].children.map(option => ({value:option.value, label:option.textContent})),
+    selectedState:ids["signal-state"].value,
     requests, aborted:signals.map(signal => signal.aborted)})));
 }
 (async () => {
@@ -414,12 +416,12 @@ class SignalRecipeUiTests(unittest.TestCase):
     def test_linked_research_is_not_untested_or_universally_validated(self):
         item = group(linked=True)
         view = ui([item], [{'action':'select','id':item['id']}, {'action':'output','id':sid(),'mid':mid()}])[-1]
-        self.assertEqual(rows(view['table'])[0][4], 'Research results linked')
+        self.assertEqual(rows(view['table'])[0][4], 'Research results available')
         self.assertIn('RELATIONSHIP_abc', flatten(view['detail']))
         self.assertIn('TRIAL_RESULT_abc', flatten(view['detail']))
         self.assertIn('Scope, Target and horizon belong to each authoritative relationship', flatten(view['detail']))
         self.assertNotIn('Research results: not tested', flatten(view['detail']))
-        self.assertIn('Research results linked', view['status'])
+        self.assertIn('Research results available', view['status'])
 
     def test_multiple_historical_projections_of_one_relationship_preserve_all_links(self):
         item = group(linked=True)
@@ -428,7 +430,7 @@ class SignalRecipeUiTests(unittest.TestCase):
         item['research']['relationships'].append(second)
         item['research']['relationship_count'] = 1
         view = ui([item], [{'action':'select','id':item['id']}])[-1]
-        self.assertEqual(rows(view['table'])[0][4], 'Research results linked')
+        self.assertEqual(rows(view['table'])[0][4], 'Research results available')
         self.assertIn('ENTRY_abc', flatten(view['detail']))
         self.assertIn('ENTRY_later', flatten(view['detail']))
         self.assertTrue(view['catalogRetryHidden'])
@@ -444,7 +446,7 @@ class SignalRecipeUiTests(unittest.TestCase):
                 item['research']['relationships'].append(second)
                 item['research']['relationship_count'] = 2
                 view = ui([item], [{'action':'select','id':item['id']}])[-1]
-                self.assertEqual(rows(view['table'])[0][4], 'Research results linked')
+                self.assertEqual(rows(view['table'])[0][4], 'Research results available')
                 self.assertIn('ENTRY_abc', flatten(view['detail']))
                 self.assertIn('ENTRY_other', flatten(view['detail']))
                 self.assertTrue(view['catalogRetryHidden'])
@@ -477,7 +479,7 @@ class SignalRecipeUiTests(unittest.TestCase):
             self.assertIn(text, second)
         self.assertNotIn('FTMO_UNIVERSE', first)
         self.assertNotIn('TRIAL_P2_a', second)
-        self.assertEqual(rows(view['table'])[0][4], 'Research results recorded')
+        self.assertEqual(rows(view['table'])[0][4], 'Research results available')
         self.assertEqual(rows(view['table'])[0][3], 'N/A')
         self.assertNotIn('VALIDATED', flatten(view['table']))
 
@@ -491,7 +493,7 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertEqual(len(final['requests']), 2)
         self.assertEqual(final['title'], old['name'])
         self.assertIn('TRIAL_P2_a', flatten(final['detail']))
-        self.assertEqual(rows(final['table'])[0][4], 'Research results recorded')
+        self.assertEqual(rows(final['table'])[0][4], 'Research results available')
         self.assertTrue(all(call['method'] == 'GET' for call in final['requests']))
 
     def test_hidden_library_defers_and_coalesces_refresh_until_opened(self):
@@ -509,7 +511,7 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertEqual(len(states[3]['requests']), 1)
         self.assertEqual(len(states[6]['requests']), 1)
         self.assertEqual(len(states[7]['requests']), 2)
-        self.assertIn('Research results recorded', flatten(states[-1]['table']))
+        self.assertIn('Research results available', flatten(states[-1]['table']))
 
     def test_historical_output_link_loads_catalog_from_experiment_page(self):
         item = group()
