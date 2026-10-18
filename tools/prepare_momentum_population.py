@@ -66,6 +66,22 @@ def capacity(root):
   raise RuntimeError('Preparation paused to retain a full backup-staging copy plus 10 GiB on boot disk')
  return {'data_free_bytes':free,'data_free_inodes':volume.f_favail,'backup_staging_free_bytes':boot_free}
 
+def verify_preflight(bundle,profile,bundle_sha,expected_pairs):
+ receipt=json.loads((bundle/'target-preflight-receipt.json').read_text())
+ raw=(bundle/'cloud-verify-all.jsonl').read_bytes()
+ if (receipt.get('verification_log_sha256')!=hashlib.sha256(raw).hexdigest()
+     or receipt.get('bundle_sha256')!=bundle_sha
+     or receipt.get('source_snapshots')!=profile['target_selection']['source_snapshots']
+     or receipt.get('target_materializations')!=profile['target_selection']['materializations']
+     or receipt.get('knowledge_cutoff')!=profile['target_selection']['knowledge_cutoff']
+     or receipt.get('success') is not True):
+  raise RuntimeError('Numerical preflight receipt differs from exact approved inputs')
+ audit=[json.loads(line) for line in raw.splitlines()]
+ verified={(v['instrument'],v['horizon']) for v in audit if v.get('kind')=='target_verified'}
+ if verified!=expected_pairs or not audit or audit[-1].get('kind')!='done':
+  raise RuntimeError('Full exact-source/Target numerical preflight is incomplete')
+
+
 def main():
  parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,required=True)
  parser.add_argument('--bundle',type=Path,required=True);parser.add_argument('--expected-bundle-sha256',required=True)
@@ -158,10 +174,7 @@ def main():
           'scope_count':61,'P2':'deferred pending real P1 admission','research_executed':False}
  if not args.apply:print(json.dumps(summary));return
  if os.environ.get('GAMBIT_FX_LINEAGE_STORAGE')!='packed_v1':raise RuntimeError('Packed writer must be explicitly enabled')
- audit=[json.loads(line) for line in (bundle/'cloud-verify-all.jsonl').read_text().splitlines()]
- verified={(v['instrument'],v['horizon']) for v in audit if v.get('kind')=='target_verified'}
- if verified!={(s,h) for s in starts for h in manifest['horizons']}:
-  raise RuntimeError('Full exact-source/Target numerical preflight is incomplete')
+ verify_preflight(bundle,profile,args.expected_bundle_sha256,{(s,h) for s in starts for h in manifest['horizons']})
  signal.signal(signal.SIGTERM,stopping);signal.signal(signal.SIGINT,stopping)
  completed=0;published=0;receipts=[]
  def state(status,**details):
@@ -186,6 +199,13 @@ def main():
      existing[value['definition']['id']].append(value)
    atomic(out/'program.json',program);state('preparing')
   for symbol in sorted(by_instrument):
+   # Check exact Target bytes again; numerical replay is certified by the
+   # pinned preflight receipt. A receipt never substitutes for current integrity.
+   with executor(root):
+    idle();stable_code();target_store=TargetStore(root)
+    for binding in profile['target_selection']['materializations'][symbol].values():
+     target_store.verify_closure([target_store.resolve(binding)])
+    del target_store
    period={'start_inclusive':starts[symbol],'end_exclusive':end}
    context_plan={'plan_id':program_id+'_'+symbol,'periods':{'P1':period}}
    with execution_inputs(root,program['application_implementation']) as context:

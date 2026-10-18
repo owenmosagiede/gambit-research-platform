@@ -46,4 +46,19 @@ class GeometryTests(unittest.TestCase):
      env=dict(os.environ,GAMBIT_ISOLATED_TEST='1'),capture_output=True,text=True)
    self.assertNotEqual(result.returncode,0);self.assertIn('Frozen preparation bundle differs',result.stderr)
    self.assertEqual({p.name:p.read_bytes() for p in root.iterdir()},before)
+ def test_preflight_requires_exact_pins_complete_horizons_and_log_integrity(self):
+  import hashlib
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);profile={'target_selection':{'source_snapshots':{'EURUSD':{'id':'source'}},'materializations':{'EURUSD':{'1':{'id':'target'}}},'knowledge_cutoff':'2026-10-09'}}
+   raw=b'{"kind":"target_verified","instrument":"EURUSD","horizon":1}\n{"kind":"done"}\n'
+   (root/'cloud-verify-all.jsonl').write_bytes(raw)
+   receipt={'verification_log_sha256':hashlib.sha256(raw).hexdigest(),'bundle_sha256':'bundle',
+      'source_snapshots':profile['target_selection']['source_snapshots'],'target_materializations':profile['target_selection']['materializations'],
+      'knowledge_cutoff':'2026-10-09','success':True}
+   (root/'target-preflight-receipt.json').write_text(json.dumps(receipt))
+   m.verify_preflight(root,profile,'bundle',{('EURUSD',1)})
+   with self.assertRaisesRegex(RuntimeError,'incomplete'):m.verify_preflight(root,profile,'bundle',{('EURUSD',1),('EURUSD',7)})
+   with self.assertRaisesRegex(RuntimeError,'differs'):m.verify_preflight(root,profile,'different',{('EURUSD',1)})
+   (root/'cloud-verify-all.jsonl').write_bytes(raw+b' ')
+   with self.assertRaisesRegex(RuntimeError,'differs'):m.verify_preflight(root,profile,'bundle',{('EURUSD',1)})
 if __name__=='__main__':unittest.main()
