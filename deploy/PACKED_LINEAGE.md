@@ -105,3 +105,9 @@ Its scope report distinguishes prepared rows, valid Feature rows, unavailable
 windows and source/Target verification from paired-sample sufficiency and actual
 research validation. Validation-period preparation remains deferred until real
 P1 admission. The general research batch-submission tool remains separate work.
+
+Catalog scans retain only per-output display metadata; FeatureStore does not
+memoize full materialization manifests containing row-lineage arrays. The
+preparation inventory stores only independently rechecked materialization IDs,
+so restarting a nearly complete batch does not require loading every stored
+row-lineage reference into RAM. Existing exact validation remains in place.

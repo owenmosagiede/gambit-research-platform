@@ -130,7 +130,11 @@ class FeatureStore:
             raise PublicationError('Conflicting loose and packed lineage')
         self._validate(record)
         if reference(record)!=binding or record_path(record)!=relative:raise PublicationError('Immutable reference or path mismatch')
-        self._resolved[key]=deepcopy(record)
+        # Materializations contain every row-lineage reference. Catalog scans
+        # must not retain the entire observation population in this store.
+        # Exact numerical reuse is bounded separately by verified_inputs.
+        if not identifier.startswith('MATERIALIZATION_'):
+            self._resolved[key]=deepcopy(record)
         return record
 
     def payload(self, member):
