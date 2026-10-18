@@ -227,7 +227,11 @@ def main():
     del target_store
    period={'start_inclusive':starts[symbol],'end_exclusive':end}
    context_plan={'plan_id':program_id+'_'+symbol,'periods':{'P1':period}}
-   with execution_inputs(root,program['application_implementation']) as context:
+   # The longest verified source working set exceeds the research default of
+   # 128 MiB. A bounded 512 MiB cache prevents repeatedly re-verifying that same
+   # snapshot between annual windows. Production execution also has a 2 GiB
+   # process limit; this does not change normal research worker cache budgets.
+   with execution_inputs(root,program['application_implementation'],max_bytes=512*1024*1024) as context:
     with phase_inputs(root,context_plan,'P1'):
      for entry in sorted(by_instrument[symbol],key=lambda r:r['recipe']['id']):
       covered=set();results=[];unavailable=[];counts=Counter()
@@ -267,7 +271,8 @@ def main():
                'P2':'deferred pending real P1 admission'}
       with executor(root):
        atomic(out/'bindings'/symbol/(entry['recipe']['id']+'.json'),receipt)
-       completed+=1;receipts.append(receipt);state('preparing',instrument=symbol,cache_counts=dict(context.counts))
+       completed+=1;receipts.append(receipt);state('preparing',instrument=symbol,cache_counts=dict(context.counts),
+         cache_seconds=dict(context.seconds),cache_retained_bytes=context.bytes,cache_limit_bytes=context.max_bytes)
   with executor(root):
    scope_report=[]
    for scope in scopes:
