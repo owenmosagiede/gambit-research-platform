@@ -71,3 +71,35 @@ After packed outputs exist, roll back write behavior by setting the flag to
 `loose`, retaining a packed-capable reader. Do not expand all packs into loose
 files: that may exceed capacity. A rollback to pre-adapter readers is blocked.
 This first rollout does not compact historical files or garbage-collect orphans.
+
+## Approved Momentum preparation operator
+
+`tools/prepare_momentum_population.py` is specific to the approved 53-recipe,
+43-instrument, 18-universe discovery-input program. It requires a checksum-pinned
+manifest bundle and revalidates exact registered recipe mappings, source/Target
+pins, Scope membership snapshots, research policy and phase boundaries. Use
+`--dry-run` to inspect metadata without publication; only explicit `--apply`
+can publish, and that additionally requires all 215 numerical Target preflight
+results. It imports no research execution kernel and never creates P1/P2 trials.
+
+The operator uses the existing numerical publisher and independent reader, with
+one execution/phase input context per instrument. All 53 recipes retain their own
+exact Feature cache keys. It splits storage windows at year and universe-start
+boundaries so overlapping universes can reuse instrument outputs. Historical
+outputs are independently replayed before reuse; partially overlapping outputs
+are not double-counted. All-null windows are explicit, not silently dropped.
+
+Each publication holds the research executor lock, refuses an active research
+queue, checks application/profile stability and retains at least 20 GiB and one
+million file slots on the data volume. It also checks room for a full backup
+staging copy plus 10 GiB on the boot disk. Checkpoints follow completed verified
+publications. A stopped/failed run is resumed with the same checked bundle; it
+re-inventories and verifies existing materializations. A live-code change,
+capacity breach or contention pauses explicitly. This operator does not start,
+stop or reconfigure services; running it as a managed job is a separate reviewed
+operational step. `--max-windows` bounds a production preparation pilot.
+
+Its scope report distinguishes prepared rows, valid Feature rows, unavailable
+windows and source/Target verification from paired-sample sufficiency and actual
+research validation. Validation-period preparation remains deferred until real
+P1 admission. The general research batch-submission tool remains separate work.
