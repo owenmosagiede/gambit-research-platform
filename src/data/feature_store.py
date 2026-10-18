@@ -61,6 +61,8 @@ class FeatureStore:
         self._resolved={}
         self._payloads={}
         self._native_rows={}
+        from data.lineage_packs import PackedLineage
+        self._packed_lineage=PackedLineage(self)
 
     def path(self, relative):
         path=self.root/relative
@@ -119,7 +121,13 @@ class FeatureStore:
             for prefix,folder in catalogs.items():
                 if identifier.startswith(prefix):relative=f'storage/catalog/{folder}/{identifier}.json';break
         if relative is None:raise PublicationError('Unsupported immutable reference kind: '+identifier)
-        record=strict_json(stable_read(self.path(relative)))
+        loose = self.path(relative)
+        packed = self._packed_lineage.resolve(binding, rebuild_missing=not loose.exists()) if identifier.startswith('LINEAGE_') else None
+        record = strict_json(stable_read(loose)) if loose.exists() else packed
+        if record is None:
+            raise FileNotFoundError(loose)
+        if packed is not None and record != packed:
+            raise PublicationError('Conflicting loose and packed lineage')
         self._validate(record)
         if reference(record)!=binding or record_path(record)!=relative:raise PublicationError('Immutable reference or path mismatch')
         self._resolved[key]=deepcopy(record)
