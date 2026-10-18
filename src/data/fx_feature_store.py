@@ -141,7 +141,7 @@ def _bindings(recipe, batch):
 def _implementation(store, recipe):
     project=Path(__file__).resolve().parents[2]
     names=('src/data/targets/store.py','src/data/verified_inputs.py','src/data/fx_feature_store.py','src/data/fx_feature_contracts.py','src/data/fx_feature_recipes.py',
-        'src/data/feature_store.py','src/data/transformations/engine.py','src/data/transformations/numeric.py',
+        'src/data/feature_store.py','src/data/lineage_packs.py','src/data/transformations/engine.py','src/data/transformations/numeric.py',
         'src/data/transformations/registry.py','src/data/transformations/contracts.py','src/data/transformations/identity.py',
         'src/data/targets/fx.py','src/data/transformations/fx.py','src/data/fx_records.py',
         'src/data/fx_onboarding.py','src/data/alfred_onboarding.py','src/data/targets/contracts.py',
@@ -225,7 +225,13 @@ def prepare_fx_feature(root, feature_ref, *, price_snapshot, batch_policy, knowl
             return {'reused':True,'feature':feature_ref,'signal_id':feature['body']['signal_id'],
                 'materialization':reference(old['manifest']),'entry':reference(entry),
                 'row_count':len(rows),'status_counts':old['manifest']['status_counts']}
-        for record in (implementation,input_record,*lineages): store.install_record(record)
+        from data.lineage_packs import storage_mode, install_records
+        mode = storage_mode()
+        for record in (implementation,input_record): store.install_record(record)
+        if mode == 'packed_v1':
+            install_records(store,lineages,fail_at=fail_at)
+        else:
+            for record in lineages: store.install_record(record)
         member=store.io.blob(b''.join(canonical_bytes(row)+b'\n' for row in rows),'jsonl','fx_feature_observations',len(rows))
         meta=_metadata_for(feature,snapshot,compiled,bindings)
         meta['dataset']=store.resolve(meta['source_view'])['body']['dataset']

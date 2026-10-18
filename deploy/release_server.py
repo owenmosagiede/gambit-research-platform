@@ -38,8 +38,28 @@ def safe_target(root, name):
     return path
 
 
+def require_packed_reader(root, prospective):
+    """Packed data is irreversible to a loose-only reader, not to the data."""
+    if not next((root/'storage/catalog/lineage_packs').glob('*.json'), None):
+        return
+    required = {'src/data/feature_store.py': b'PackedLineage',
+                'src/data/lineage_packs.py': b'fx_row_lineage_pack_v1'}
+    for name, marker in required.items():
+        path = safe_target(root, name)
+        data = prospective.get(name, path.read_bytes() if path.is_file() else None)
+        if data is None or marker not in data:
+            raise RuntimeError('Stored lineage packs require a compatible reader; blocked '+name)
+
+
+def rollback_files(folder, record):
+    return {row['path']: (folder/'before'/row['path']).read_bytes() if row['before'] is not None else None
+            for row in record['changes']}
+
+
 def plan(root, manifest, files):
     changes = []; blocked = []
+    try: require_packed_reader(root, files)
+    except RuntimeError as exc: blocked.append({'path': 'storage/catalog/lineage_packs', 'reason': str(exc)})
     for row in manifest['files']:
         name = row['path']; folder = name.split('/')[0]; target = safe_target(root, name)
         old = sha(target.read_bytes()) if target.is_file() else None
@@ -168,6 +188,7 @@ def restart(machine):
 
 
 def restore(machine, folder, record):
+    require_packed_reader(machine.root, rollback_files(folder, record))
     for row in reversed(record['changes']):
         path = safe_target(machine.root, row['path'])
         # Repeated recovery is safe; unrelated edits must never be overwritten.
@@ -265,6 +286,7 @@ def rollback(machine, release_id):
     with ExitStack() as outer:
         guard(outer, machine.state/'control.lock'); guard(outer, machine.backup/'backup.lock')
         record = json.loads((folder/'receipt.json').read_text())
+        require_packed_reader(machine.root, rollback_files(folder, record))
         machine.backup_ready(); machine.idle()
         states = [machine.status(u) for u in UNITS]
         if states == ['active', 'active']: stop_idle(machine)

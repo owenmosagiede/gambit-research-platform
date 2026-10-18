@@ -107,6 +107,20 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(restored['status'],'rolled_back')
         self.assertEqual((self.m.root/'src/example.py').read_bytes(),b'old code\n')
         self.assertEqual(self.data.read_bytes(),before)
+    def test_packed_history_prevents_loose_only_deployment_and_rollback(self):
+        self.files.update({'src/data/feature_store.py': b'from data.lineage_packs import PackedLineage',
+                           'src/data/lineage_packs.py': b"FORMAT = 'fx_row_lineage_pack_v1'"})
+        self.manifest=artifact(self.files)
+        released=self.apply()
+        catalog=self.m.root/'storage/catalog/lineage_packs/example.json'
+        catalog.parent.mkdir(parents=True);catalog.write_text('{}')
+        events=list(self.m.events)
+        with self.assertRaisesRegex(RuntimeError,'compatible reader'):
+            server.rollback(self.m,released['release_id'])
+        self.assertEqual(self.m.events,events)
+        old=dict(self.files);old['src/data/feature_store.py']=b'loose only reader'
+        self.assertTrue(server.plan(self.m.root,artifact(old),old)['blockers'])
+
     def test_running_or_queued_work_is_never_stopped(self):
         self.m.jobs=['existing-request']
         with self.assertRaisesRegex(RuntimeError,'research exists'):self.apply()
