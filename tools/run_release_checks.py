@@ -13,6 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = [
+    'test_research_batches', 'test_batch_http', 'test_batch_ui',
     'test_momentum_preparation_operator', 'test_lineage_packs', 'test_fx_feature_store', 'test_verified_inputs', 'test_research_inputs',
     'test_release_workflow', 'test_contracts', 'test_transformation_numeric',
     'test_transformation_registry', 'test_transformation_engine',

@@ -75,7 +75,7 @@ def make_server(root,host='127.0.0.1',port=0,research_jobs=None):
             self.close_connection=True
             if not self.allowed_request():return
             target=urlsplit(self.path)
-            submit=target.path=='/api/experiments'
+            submit=(target.path=='/api/experiments' or target.path=='/api/batches' or target.path.startswith('/api/batches/'))
             action=None;rid=None
             if target.path.startswith('/api/experiments/'):
                 parts=target.path[len('/api/experiments/'):].split('/')
@@ -93,9 +93,9 @@ def make_server(root,host='127.0.0.1',port=0,research_jobs=None):
                 lengths=self.headers.get_all('Content-Length',[])
                 if len(lengths)!=1:raise ValueError()
                 length=int(lengths[0])
-                if not 1<=length<=16384:raise ValueError()
+                if not 1<=length<=(262144 if target.path.startswith('/api/batches') else 16384):raise ValueError()
             except ValueError:
-                self.error(413,'INVALID_LENGTH','Request body must be 1–16384 bytes.');return
+                self.error(413,'INVALID_LENGTH','Request body exceeds the endpoint limit.');return
             try:
                 self.connection.settimeout(5)
                 data=self.rfile.read(length)

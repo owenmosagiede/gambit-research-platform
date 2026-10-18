@@ -17,6 +17,7 @@
   <script src="/scopes.js" defer></script>
   <script src="/submission.js" defer></script>
   <script src="/queue.js" defer></script>
+  <script src="/batches.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#experiment-inputs">Skip to experiment inputs</a>
@@ -90,6 +91,13 @@
         <p id="queue-action-status" class="field-note" role="status" aria-live="polite"></p>
         <a class="text-button" href="#ledger">View completed trials in Trial Ledger →</a>
         <div id="queue-board" class="queue-board"></div>
+      </section>
+      <section class="trial-queue" aria-labelledby="batch-title">
+        <div class="queue-heading"><h2 id="batch-title">Research batches</h2><button id="batch-refresh" type="button" class="text-button">Refresh batches</button></div>
+        <p class="field-note">Approved batches run on the server when the research queue is available. Closing your laptop does not stop them. Viewing this panel never launches research.</p>
+        <label for="batch-select">Saved batch</label><select id="batch-select"><option value="">Loading batches…</option></select>
+        <p id="batch-status" role="status" aria-live="polite" class="field-note"></p>
+        <div id="batch-detail"></div>
       </section>
       <details id="selection-details" class="definition-panel">
         <summary>Selection details and stored coverage</summary>

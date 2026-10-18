@@ -222,6 +222,18 @@ class ResearchRecoveryTests(unittest.TestCase):
         with self.assertRaises(ResearchError):
             jobs.store.results_for_recipe(request["feature"]["id"])
 
+    def test_unreadable_event_is_quarantined_without_crashing_worker(self):
+        jobs = ResearchJobs(self.root, adapter=self.adapter)
+        request = intent()
+        jobs.submit(request)
+        event_path = next((self.root / "storage/catalog/attempts").glob("*/events/RESEVENT_*.json"))
+        event_path.write_text('{broken')
+        jobs.run_pending_once()
+        failure = jobs.get(request["request_id"])
+        self.assertTrue(failure["operational_failure"])
+        self.assertIn("Unreadable execution event", failure["incident"]["diagnostic"])
+        self.assertEqual(self.adapter.resolve_calls, 0)
+
     def test_tampered_event_cannot_be_ignored_in_favor_of_mutable_job(self):
         jobs = ResearchJobs(self.root, adapter=self.adapter)
         request = intent()

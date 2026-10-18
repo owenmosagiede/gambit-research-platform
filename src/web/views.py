@@ -84,7 +84,7 @@ def api(request, endpoint):
     jobs, catalogs = services(str(settings.RESEARCH_ROOT))
     route = ApplicationRoutes(settings.RESEARCH_ROOT, jobs, catalogs, request.method, request.get_full_path())
     if request.method == 'POST':
-        if not settings.ALLOW_SUBMISSIONS and (request.path == '/api/experiments' or request.path.endswith('/resume')):
+        if not settings.ALLOW_SUBMISSIONS and (request.path == '/api/experiments' or request.path.endswith('/resume') or (request.path.startswith('/api/batches/') and request.path.endswith('/approve'))):
             return denied(request, 503, 'DEPLOYMENT_NOT_ACTIVATED', 'Cloud submissions are disabled until migration and recovery checks pass.')
         if request.content_type != 'application/json' or request.headers.get('Transfer-Encoding'):
             return denied(request, 415, 'INVALID_BODY', 'Use a bounded JSON request.')
@@ -92,8 +92,8 @@ def api(request, endpoint):
             length = int(request.headers.get('Content-Length', '0'))
         except ValueError:
             length = 0
-        if not 1 <= length <= 16384:
-            return denied(request, 413, 'INVALID_LENGTH', 'Request body must be 1–16384 bytes.')
+        if not 1 <= length <= (262144 if request.path.startswith('/api/batches') else 16384):
+            return denied(request, 413, 'INVALID_LENGTH', 'Request body exceeds the endpoint limit.')
         if len(request.body) != length:
             return denied(request, 400, 'INVALID_BODY', 'Incomplete request.')
         route.write(request.body)
