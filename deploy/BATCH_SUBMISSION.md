@@ -107,9 +107,13 @@ The existing deployment activation gate also protects batch approval/resume.
 | POST | `/api/batches/<uuid>/pause` | Empty object; pause further intake |
 | POST | `/api/batches/<uuid>/resume` | Empty object; resume the same batch intake |
 
-Child jobs are visible through the existing Trial Queue and Trial Ledger. Batch
-summary/progress are exposed through this API and operator tool; this release does
-not add a batch configuration page to the UI.
+Child jobs are visible through the existing Trial Queue and Trial Ledger. The
+Experiment page also has a read-only Research batches panel: saved completion
+counts, per-experiment preparation/P1/P2 status, timestamps in the viewer's time
+zone, and explicit stale-connection warnings. It refreshes every 15 seconds and
+shows 25 items per page. Counts are derived from durable submissions rather than
+a process-local counter. This panel never creates or approves batches. Configuration
+and approval remain in the API/operator tool.
 
 ## Identity and duplicates
 

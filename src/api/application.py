@@ -30,6 +30,7 @@ ASSETS = dict(PIT_ASSETS, **{'/signals.js': ('signals.js', 'text/javascript; cha
                            '/scopes.js': ('scopes.js', 'text/javascript; charset=utf-8'),
                            '/features.js': ('features.js', 'text/javascript; charset=utf-8'),
                            '/queue.js': ('queue.js', 'text/javascript; charset=utf-8'),
+                           '/batches.js': ('batches.js', 'text/javascript; charset=utf-8'),
                            '/submission.js': ('submission.js', 'text/javascript; charset=utf-8')})
 
 

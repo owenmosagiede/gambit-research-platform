@@ -282,7 +282,7 @@ class ResearchBatches:
                 item['dispatch'] = r
                 if r.get('request_id'):
                     job = self.jobs.get(r['request_id'], _snapshot=snapshot)
-                    item['job'] = {k: job[k] for k in ('request_id', 'status', 'stage', 'progress', 'horizons', 'updated_at')}
+                    item['job'] = {k: job.get(k) for k in ('request_id', 'status', 'stage', 'progress', 'horizons', 'updated_at', 'preparation_progress', 'message')}
                     counts[job['status']] += 1
                 else: counts['excluded'] += 1
             items.append(item)
