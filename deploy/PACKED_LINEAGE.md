@@ -28,10 +28,12 @@ rewritten. No old loose files are removed by this release.
    environment and restart only while idle under the release/backup/executor
    maintenance locks. Absent variable means `loose`; unknown values fail closed.
    The flag changes physical storage only, not scientific identity.
-5. Preparation operators must hold `research-executor.lock` for their lifetime,
-   verify there is no active research before starting, respect cancellation,
-   checkpoint completed materializations, and stop before exhausting space or
-   inodes. Backups and deployment use the same lock. Never fabricate P1 admission
+5. Preparation operators must hold `research-executor.lock` during every
+   publication and reuse verification, recheck for active research before each
+   operation, respect cancellation, checkpoint completed materializations, and
+   stop before exhausting space or inodes. Backups and deployment use the same
+   lock. Between operations the Momentum preparer yields that lock and checks
+   for code/profile changes before proceeding. Never fabricate P1 admission
    to prepare P2, and never launch research as part of a storage rollout.
 
 ## Authority, publication, and bounds
