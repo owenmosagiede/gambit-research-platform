@@ -91,7 +91,8 @@ boundaries so overlapping universes can reuse instrument outputs. Historical
 outputs are independently replayed before reuse; partially overlapping outputs
 are not double-counted. All-null windows are explicit, not silently dropped.
 
-Each publication holds the research executor lock, refuses an active research
+Each publication waits up to 30 seconds for brief executor contention, then
+holds the research executor lock and refuses an active research
 queue, checks application/profile stability and retains at least 20 GiB and one
 million file slots on the data volume. It also checks room for a full backup
 staging copy plus 10 GiB on the boot disk. Checkpoints follow completed verified

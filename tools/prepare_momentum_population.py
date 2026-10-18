@@ -51,7 +51,13 @@ def compatible_window(period,start,end,boundaries):
 def executor(root):
  path=root/'storage/catalog/operations/research-executor.lock'
  with path.open('a+b') as lock:
-  fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  deadline=time.monotonic()+30
+  while True:
+   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);break
+   except BlockingIOError:
+    if STOP:raise InterruptedError('Preparation stopped while waiting for the research executor')
+    if time.monotonic()>=deadline:raise RuntimeError('Research executor remained busy; preparation paused')
+    time.sleep(.1)
   try:yield
   finally:fcntl.flock(lock,fcntl.LOCK_UN)
 
