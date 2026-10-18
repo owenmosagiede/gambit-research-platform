@@ -226,7 +226,10 @@ class ResearchBatches:
                 try:
                     m = checked(path)
                     state = checked(d / 'state.json')['state'] if (d / 'state.json').exists() else 'previewing'
-                    if state in ('paused', 'ready', 'completed', 'needs_attention'): continue
+                    if state in ('paused', 'completed', 'needs_attention'): continue
+                    # Approval is authority; a crash can leave its state projection
+                    # at ready after the immutable approval was already committed.
+                    if state == 'ready' and not (d / 'approval.json').exists(): continue
                     if implementation() != m['implementation']: raise ResearchConflict('Implementation changed; create a new preview')
                     rows = self._rows(d)
                     if len(rows) < len(m['intents']):

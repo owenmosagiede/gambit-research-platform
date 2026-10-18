@@ -109,6 +109,21 @@ class BatchTests(unittest.TestCase):
         self.batches.control(m['batch_id'], 'resume')
         self.assertEqual(self.finish(m['batch_id'])['job_counts'], {'succeeded': 2})
 
+    def test_crash_after_approval_recovers_without_reapproval(self):
+        m, s = self.preview()
+        with patch.object(self.batches, '_state', side_effect=OSError('approval state interrupted')):
+            with self.assertRaises(OSError): self.approve(m, s)
+        self.assertTrue((self.batches.directory(m['batch_id'])/'approval.json').exists())
+        self.assertEqual(self.batches.status(m['batch_id'])['state']['state'], 'ready')
+        self.assertEqual(self.finish(m['batch_id'])['job_counts'], {'succeeded': 2})
+
+    def test_approval_retry_does_not_unpause(self):
+        m, s = self.preview(); self.approve(m, s)
+        self.batches.control(m['batch_id'], 'pause')
+        self.approve(m, s); self.jobs.run_pending_once()
+        self.assertEqual(self.batches.status(m['batch_id'])['state']['state'], 'paused')
+        self.assertFalse(self.jobs.list_jobs()['items'])
+
     def test_invalid_member_requires_explicit_exclusion(self):
         resolve = self.adapter.resolve_plan
         def invalid(root, request, policy):
