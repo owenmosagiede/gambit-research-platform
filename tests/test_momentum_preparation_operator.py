@@ -31,6 +31,23 @@ class GeometryTests(unittest.TestCase):
    v=SimpleNamespace(**(vars(good)|changes));b=SimpleNamespace(f_bavail=boot_free*1024**3,f_frsize=1)
    with patch.object(m.os,'statvfs',side_effect=[v,b]):
     with self.assertRaisesRegex(RuntimeError,'paused'):m.capacity(Path('/fixture'))
+ def test_executor_waits_for_brief_contention_and_honors_stop(self):
+  import fcntl,threading
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);path=root/'storage/catalog/operations/research-executor.lock';path.parent.mkdir(parents=True)
+   with path.open('a+b') as other:
+    fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    timer=threading.Timer(.15,lambda:fcntl.flock(other,fcntl.LOCK_UN));timer.start()
+    try:
+     with m.executor(root):pass
+    finally:timer.join()
+    fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    with patch.object(m,'STOP',True):
+     with self.assertRaises(InterruptedError):
+      with m.executor(root):self.fail('Contended executor must not be entered')
+    with patch.object(m.time,'monotonic',side_effect=[0,31]):
+     with self.assertRaisesRegex(RuntimeError,'remained busy'):
+      with m.executor(root):self.fail('Contended executor must not be entered')
  def test_apply_and_dry_run_cannot_be_combined_or_use_unbounded_negative_limit(self):
   for args in [('--apply','--dry-run'),('--max-windows','-1')]:
    with tempfile.TemporaryDirectory() as folder:

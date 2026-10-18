@@ -97,6 +97,31 @@ class LineagePackTests(unittest.TestCase):
                         self.assertEqual(self.item(packed),expected)
                     finally: self.root=original
 
+    def test_materialization_catalog_reads_do_not_retain_row_lineage_arrays(self):
+        saved=self.packed();store=FeatureStore(self.root)
+        binding=saved['materialization'];first=store.resolve(binding)
+        self.assertTrue(first['lineage'])
+        self.assertFalse(any(k[0].startswith('MATERIALIZATION_') for k in store._resolved))
+        first['lineage'].clear()
+        self.assertTrue(store.resolve(binding)['lineage'])
+        path=store.path(record_path(store.resolve(binding)))
+        value=json.loads(path.read_text());value['semantic_content_sha256']='0'*64
+        path.write_text(json.dumps(value))
+        with self.assertRaises(PublicationError):store.resolve(binding)
+
+    def test_resumption_inventory_keeps_locators_and_checks_scope_boundaries(self):
+        spec=importlib.util.spec_from_file_location('momentum_operator',fixture.PROJECT/'tools/prepare_momentum_population.py')
+        operator=importlib.util.module_from_spec(spec);spec.loader.exec_module(operator)
+        saved=self.packed();manifest=self.item(saved)['manifest'];fid=self.feature['id']
+        selected={fid:{'historical_feature':reference(self.feature),'instrument_id':'EURUSD','source_snapshot':self.snapshot}}
+        kwargs=dict(root=self.root,selected=selected,batch=manifest['input_key']['batch_policy'],
+            cutoff=manifest['input_key']['knowledge_cutoff'],starts={'EURUSD':self.days[0]},end='2024-05-01',boundaries={'EURUSD':[]})
+        self.assertEqual(operator.inventory_candidates(**kwargs),{fid:[manifest['id']]})
+        kwargs['boundaries']={'EURUSD':[self.days[20]]}
+        self.assertEqual(operator.inventory_candidates(**kwargs),{})
+        path=self.store.path(record_path(manifest));path.parent.rename(path.parent.with_name('MATERIALIZATION_'+'0'*64))
+        with self.assertRaisesRegex(RuntimeError,'path differs'):operator.inventory_candidates(**kwargs)
+
     def test_missing_corrupt_and_incomplete_indexes_recover(self):
         saved = self.packed(start=self.days[40])
         expected = self.item(saved)

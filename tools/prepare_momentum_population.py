@@ -51,7 +51,13 @@ def compatible_window(period,start,end,boundaries):
 def executor(root):
  path=root/'storage/catalog/operations/research-executor.lock'
  with path.open('a+b') as lock:
-  fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  deadline=time.monotonic()+30
+  while True:
+   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);break
+   except BlockingIOError:
+    if STOP:raise InterruptedError('Preparation stopped while waiting for the research executor')
+    if time.monotonic()>=deadline:raise RuntimeError('Research executor remained busy; preparation paused')
+    time.sleep(.1)
   try:yield
   finally:fcntl.flock(lock,fcntl.LOCK_UN)
 
@@ -82,6 +88,25 @@ def verify_preflight(bundle,profile,bundle_sha,expected_pairs):
   raise RuntimeError('Full exact-source/Target numerical preflight is incomplete')
 
 
+def inventory_candidates(root,selected,batch,cutoff,starts,end,boundaries):
+ from data.fx_feature_contracts import validate_record
+ existing=defaultdict(list)
+ for path in sorted((root/'storage/catalog/feature_store').glob('*/manifest.json')):
+  value=json.loads(path.read_text())
+  if value.get('schema_version')!='0.6.0':continue
+  validate_record(value)
+  if path.parent.name!=value['id']:raise RuntimeError('Materialization path differs')
+  entry=selected.get(value['definition']['id'])
+  if entry is None:continue
+  key=value['input_key'];symbol=entry['instrument_id']
+  if (value['definition']!=entry['historical_feature'] or key['source_snapshots']!=[entry['source_snapshot']]
+      or key['batch_policy']!=batch or key['knowledge_cutoff']!=cutoff
+      or not compatible_window(key['period'],starts[symbol],end,boundaries[symbol])):continue
+  # Independent replay reloads the exact manifest. Retain locators only.
+  existing[value['definition']['id']].append(value['id'])
+ return existing
+
+
 def main():
  parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,required=True)
  parser.add_argument('--bundle',type=Path,required=True);parser.add_argument('--expected-bundle-sha256',required=True)
@@ -99,7 +124,6 @@ def main():
  from data.targets.store import TargetStore
  from data.targets.fx import _approved_policy,_price_snapshot
  from data.fx_feature_store import prepare_fx_feature,read_fx_materialization
- from data.fx_feature_contracts import validate_record
  from data.reusable_features import reusable_recipe_mapping_context
  from data.scopes import resolve_scope
  from data.verified_inputs import execution_inputs,phase_inputs
@@ -177,6 +201,7 @@ def main():
  verify_preflight(bundle,profile,args.expected_bundle_sha256,{(s,h) for s in starts for h in manifest['horizons']})
  signal.signal(signal.SIGTERM,stopping);signal.signal(signal.SIGINT,stopping)
  completed=0;published=0;receipts=[]
+ selected_entries={e['historical_feature']['id']:e for entries in by_instrument.values() for e in entries}
  def state(status,**details):
   value=dict(summary,status=status,updated_at=datetime.now(timezone.utc).isoformat(),completed_bindings=completed,
              new_windows_this_execution=published,**details)
@@ -190,13 +215,7 @@ def main():
   with executor(root):
    idle();stable_code();capacity(root)
    # Inventory once. Each candidate is independently replayed before reuse.
-   existing=defaultdict(list)
-   for path in sorted((root/'storage/catalog/feature_store').glob('*/manifest.json')):
-    value=json.loads(path.read_text())
-    if value.get('schema_version')=='0.6.0':
-     validate_record(value)
-     if path.parent.name!=value['id']:raise RuntimeError('Materialization path differs')
-     existing[value['definition']['id']].append(value)
+   existing=inventory_candidates(root,selected_entries,batch,manifest['knowledge_cutoff'],starts,end,boundaries)
    atomic(out/'program.json',program);state('preparing')
   for symbol in sorted(by_instrument):
    # Check exact Target bytes again; numerical replay is certified by the
@@ -223,13 +242,9 @@ def main():
        covered.update(dates);counts.update(r['status'] for r in sample)
        results.append({'reference':reference(value),'period':key['period'],'row_count':len(sample),
                        'status_counts':dict(Counter(r['status'] for r in sample)),'reused':reused})
-      for value in existing.get(entry['historical_feature']['id'],[]):
-       key=value['input_key']
-       if (key['source_snapshots']!=[entry['source_snapshot']] or key['batch_policy']!=batch
-           or key['knowledge_cutoff']!=manifest['knowledge_cutoff']
-           or not compatible_window(key['period'],starts[symbol],end,boundaries[symbol])):continue
+      for identifier in existing.get(entry['historical_feature']['id'],[]):
        with executor(root):
-        idle();stable_code();accept(read_fx_materialization(root,value['id'],research=True),True)
+        idle();stable_code();accept(read_fx_materialization(root,identifier,research=True),True)
       for a,b in windows(starts[symbol],end,boundaries[symbol]):
        missing=sorted(set(days(a,(date.fromisoformat(b)+timedelta(days=1)).isoformat()))-covered)
        for lo,hi in _chunks(missing):
