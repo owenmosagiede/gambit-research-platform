@@ -64,7 +64,7 @@ class ProductionAccessTests(unittest.TestCase):
         return self.client.post(path, data=json.dumps(data), content_type='application/json',
             HTTP_ORIGIN='http://testserver', **({'HTTP_X_CSRFTOKEN': token} if token else {}), **headers)
     def test_all_private_assets_and_routes_require_owner(self):
-        routes = ['/app/', '/session.js', '/api/experiments', '/api/research-readiness',
+        routes = ['/api/batches', '/api/batches/10000000-0000-4000-8000-000000000002', '/app/', '/session.js', '/api/experiments', '/api/research-readiness',
             '/api/feature-library', '/api/signal-library-summaries', '/api/pit-library',
             '/api/scope-library', '/api/target-library', '/api/trial-evidence/TRIAL_'+'a'*64,
             '/api/feature-research/FEATURE_RECIPE_'+'a'*64, '/api/research-results/FEATURE_RECIPE_'+'a'*64]
@@ -78,6 +78,23 @@ class ProductionAccessTests(unittest.TestCase):
         for route in routes:
             with self.subTest(viewer_route=route): self.assertEqual(self.client.get(route).status_code,403)
         self.assertFalse((self.root/'storage').exists())
+    def test_batch_requires_owner_csrf_and_explicit_cloud_activation(self):
+        from test_research_batches import manifest
+        from runtime.research_batches import ResearchBatches
+        m=manifest();token=self.login()
+        self.assertEqual(self.post(m,path='/api/batches').status_code,403)
+        self.assertEqual(self.post(m,token,path='/api/batches').status_code,202)
+        batches=ResearchBatches(self.jobs)
+        for _ in range(2): batches.advance()
+        s=batches.status(m['batch_id']);body={'preview_sha256':s['preview_sha256'],'exclude_blocked':False}
+        path='/api/batches/'+m['batch_id']+'/approve'
+        with override_settings(ALLOW_SUBMISSIONS=False):
+            self.assertEqual(self.post(body,token,path=path).status_code,503)
+            self.assertEqual(self.post({},token,path='/api/batches/'+m['batch_id']+'/resume').status_code,503)
+        self.assertFalse((batches.directory(m['batch_id'])/'approval.json').exists())
+        self.assertEqual(self.post(body,token,path=path).status_code,202)
+        self.assertFalse(list((self.root/'storage/catalog/submissions').glob('*.json')))
+
     def test_public_has_no_private_bundle_or_research_metadata(self):
         for route in ('/', '/about/', '/login/', '/healthz', '/public/site.css', '/public/gambit-app-mark.svg'):
             r=self.client.get(route); self.assertEqual(r.status_code,200)

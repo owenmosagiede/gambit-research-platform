@@ -80,6 +80,23 @@ class ApplicationRoutes:
                 self.send_json(200,value,head)
             except Exception:self.error(503,'RESEARCH_SPEC_UNAVAILABLE','The backend Research Spec could not be verified.',head)
             return
+        if target.path == '/api/batches' or target.path.startswith('/api/batches/'):
+            from runtime.research_batches import ResearchBatches, checked
+            batches = ResearchBatches(jobs)
+            if target.query:
+                self.error(400, 'UNSUPPORTED_QUERY', 'Use an exact batch ID.', head); return
+            try:
+                if target.path == '/api/batches':
+                    value = {'batches': [{'batch_id': p.parent.name, 'name': checked(p)['request']['name'],
+                        'state': checked(p.parent/'state.json') if (p.parent/'state.json').exists() else {'state':'previewing'}}
+                        for p in sorted(batches.base.glob('*/manifest.json'))]}
+                else:
+                    value = batches.status(request_id(target.path[len('/api/batches/'):]))
+                self.send_json(200, value, head)
+            except FileNotFoundError: self.error(404, 'NOT_FOUND', 'Batch not found.', head)
+            except ResearchError: self.error(409, 'BATCH_UNVERIFIED', 'Batch records could not be verified.', head)
+            except Exception: self.error(503, 'BATCH_UNAVAILABLE', 'Batch status is temporarily unavailable.', head)
+            return
         if target.path=='/api/experiments':
             if target.query:self.error(400,'UNSUPPORTED_QUERY','Use the queue endpoint without query parameters.',head);return
             try:value=jobs.list_jobs()
@@ -272,6 +289,27 @@ class ApplicationRoutes:
     def write(self,data):
         jobs=self.jobs
         target=urlsplit(self.path)
+        if target.path == '/api/batches' or target.path.startswith('/api/batches/'):
+            from runtime.research_batches import ResearchBatches
+            from data.alfred_onboarding import strict_json
+            try:
+                if target.scheme or target.netloc or target.query: raise ResearchError('Use exact batch endpoints')
+                value = strict_json(data); batches = ResearchBatches(jobs)
+                if target.path == '/api/batches':
+                    result = batches.create(value)
+                else:
+                    parts = target.path[len('/api/batches/'):].split('/')
+                    if len(parts) != 2: raise ResearchError('Use approve, pause or resume')
+                    bid, action = parts; request_id(bid)
+                    if action == 'approve': result = batches.approve(bid, value)
+                    elif action in ('pause', 'resume') and value == {}: result = batches.control(bid, action)
+                    else: raise ResearchError('Unsupported batch action')
+                self.send_json(202, result)
+            except ResearchConflict as exc: self.error(409, 'BATCH_CONFLICT', str(exc))
+            except FileNotFoundError: self.error(404, 'NOT_FOUND', 'Batch not found.')
+            except (ResearchError, ValueError, TypeError, UnicodeError) as exc: self.error(400, 'INVALID_BATCH', str(exc))
+            except Exception: self.error(503, 'BATCH_UNAVAILABLE', 'Receipt uncertain. Check the same batch ID before retrying.')
+            return
         submit=target.path=='/api/experiments'
         action=None;rid=None
         if target.path.startswith('/api/experiments/'):

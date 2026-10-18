@@ -172,35 +172,51 @@ class ResearchJobs:
         if record['request_id']!=rid or record['intent_fingerprint']!=digest(record['intent']):raise ResearchError('Submission integrity conflict')
         if record['record_sha256']!=digest({k:v for k,v in record.items() if k!='record_sha256'}):raise ResearchError('Submission checksum conflict')
         return record
-    def _events(self,rid):
-        directory=inside(self.root,'storage/catalog/attempts');events=[]
-        if directory.exists():
-            for p in directory.glob('*/events/RESEVENT_*.json'):
+    def _event_snapshot(self):
+        """Read history once for a multi-job view; each chain is still verified."""
+        groups={}
+        directory=inside(self.root,'storage/catalog/attempts')
+        for p in directory.glob('*/events/RESEVENT_*.json'):
+            try:
                 event=read_json(p)
-                if event.get('request_id')!=rid:continue
-                if p.stem!='RESEVENT_'+digest(event):raise ResearchError('Execution event checksum mismatch')
-                events.append(event)
+                rid=event.get('request_id')
+                request_id(rid)
+            except (ValueError, TypeError, AttributeError, OSError) as exc:
+                # Preserve fail-closed history verification, but let callers
+                # quarantine submissions rather than crashing the worker loop.
+                groups.setdefault(None,[]).append(p.name + ': ' + str(exc)[:200])
+                continue
+            groups.setdefault(rid,[]).append((p.stem,event))
+        return groups
+    def _events(self,rid,snapshot=None):
+        snapshot=self._event_snapshot() if snapshot is None else snapshot
+        if snapshot.get(None):raise ResearchError('Unreadable execution event: ' + snapshot[None][0])
+        entries=snapshot.get(rid,[])
+        events=[]
+        for name,event in entries:
+            if name!='RESEVENT_'+digest(event):raise ResearchError('Execution event checksum mismatch')
+            events.append(event)
         events.sort(key=lambda e:e['sequence'])
         previous=None
         for i,e in enumerate(events):
             if e['sequence']!=i or e['previous']!=previous:raise ResearchError('Execution event chain conflict')
             previous=digest(e)
         return events
-    def _read_job(self,rid):
+    def _read_job(self,rid,snapshot=None):
         self._submission(rid)
         p=self._job_path(rid)
         # Verify the projection's last event cheaply; recover/reconcile from the
         # append-only chain after a missing/partial projection or interrupted update.
-        events=self._events(rid)
+        events=self._events(rid,snapshot)
         if not events:return None
         expected=dict(events[-1]['job'],sequence=events[-1]['sequence'],event_sha256=digest(events[-1]))
         return expected
-    def get(self,rid):
+    def get(self,rid, *, _snapshot=None):
         path=self._submission_path(rid)
         with lock(self.root,'research-writer'):
             incident=self._incident_path(path)
             if incident.exists():return self._incident_job(read_json(incident))
-            try:job=self._read_job(rid)
+            try:job=self._read_job(rid,_snapshot)
             except Exception as exc:
                 if not path.exists() and not self._job_path(rid).exists():raise
                 return self._incident_job(self._incident(path,exc))
@@ -267,7 +283,7 @@ class ResearchJobs:
             job=self._read_job(rid)
             if job is None:raise ResearchError('Unknown execution')
             job.update(changes);return self._save(job)
-    def submit(self,value):
+    def submit(self,value, *, _batch_packet=None, _batch_duplicate_policy=None, _batch_reuse_id=None):
         request=normalize_submission(value);rid=request.pop('request_id');intent=request
         with lock(self.root,'research-writer'):
             path=self._submission_path(rid)
@@ -277,30 +293,60 @@ class ResearchJobs:
                 try:original=self._submission(rid)
                 except Exception as exc:return self._incident_job(self._incident(path,exc)),False
                 if original['intent']!=intent:raise ResearchConflict('This request ID already has different inputs')
+                if _batch_packet is not None:
+                    from runtime.research_batches import semantic_key
+                    if 'frozen_plan' not in original or semantic_key(original)!=semantic_key(_batch_packet):
+                        raise ResearchConflict('Deterministic batch ID belongs to different frozen inputs')
                 job=self._read_job(rid)
                 if job is not None:return self.public(job),False
                 # Recover a crash after durable intent but before its first event.
             else:
-                profile=load_profile(self.root)
-                frozen_plan=None
-                frozen_application=None
-                if self.adapter is None:
-                    from research import inputs, external_features, feature_applications
-                    try:
-                        _, capability = feature_applications.binding_for(self.root, intent['feature'])
-                        if capability['kind'] == feature_applications.SINGLE_SERIES:
-                            profile=external_features.load_profile(self.root)
-                            frozen_plan=inputs.resolve_plan(self.root,intent,profile)
-                            frozen_application=frozen_plan['feature_application']
-                        else:
-                            scope=inputs.resolve_scope(self.root,intent['scope']['id'],intent['scope']['version'])
-                            frozen_application=feature_applications.resolve(self.root,intent['feature'],scope)
-                    except (ValueError,KeyError,TypeError,OSError) as exc:
-                        raise ResearchBlocked(getattr(exc,'blockers',[{'code':'FEATURE_APPLICATION_BLOCKED','message':str(exc)}])) from exc
-                original={'schema_version':'0.8.0','request_id':rid,'intent':intent,'intent_fingerprint':digest(intent),
-                    'research_spec':profile,'implementation':implementation(),'created_at':now()}
-                if frozen_plan is not None:original['frozen_plan']=frozen_plan
-                if frozen_application is not None:original['feature_application']=frozen_application
+                if _batch_packet is not None:
+                    from runtime.research_batches import ResearchBatches
+                    packet=deepcopy(_batch_packet)
+                    if packet['intent']!=intent or packet['implementation']!=implementation():
+                        raise ResearchConflict('Batch frozen inputs or implementation differ')
+                    current_profile=load_profile(self.root)
+                    if self.adapter is None:
+                        from research import external_features, feature_applications
+                        _, capability=feature_applications.binding_for(self.root,intent['feature'])
+                        if capability['kind']==feature_applications.SINGLE_SERIES:
+                            current_profile=external_features.load_profile(self.root)
+                    if current_profile!=packet['research_spec']:
+                        raise ResearchConflict('Research Spec changed after preview; create a new batch')
+                    matches,ambiguous=ResearchBatches(self)._duplicates(packet)
+                    if ambiguous:raise ResearchConflict('Matching history has unresolved inputs; review before dispatch')
+                    reusable=[(r,j) for r,j in matches if j and j['status'] in ACTIVE|{'succeeded'}]
+                    if _batch_reuse_id is not None:
+                        reusable=[(r,j) for r,j in reusable if r==_batch_reuse_id]
+                        if not reusable:raise ResearchConflict('Previewed duplicate is no longer reusable; no replacement was submitted')
+                    if reusable and _batch_duplicate_policy=='reuse_exact':
+                        _,job=sorted(reusable,key=lambda x:(x[1]['status']!='succeeded',x[0]))[0]
+                        return self.public(job),False
+                    if matches:raise ResearchConflict('Exact duplicate requires review; no automatic retry of failed/cancelled research')
+                    original=dict(packet,schema_version='0.8.0',request_id=rid,
+                                  intent_fingerprint=digest(intent),created_at=now())
+                else:
+                    profile=load_profile(self.root)
+                    frozen_plan=None
+                    frozen_application=None
+                    if self.adapter is None:
+                        from research import inputs, external_features, feature_applications
+                        try:
+                            _, capability = feature_applications.binding_for(self.root, intent['feature'])
+                            if capability['kind'] == feature_applications.SINGLE_SERIES:
+                                profile=external_features.load_profile(self.root)
+                                frozen_plan=inputs.resolve_plan(self.root,intent,profile)
+                                frozen_application=frozen_plan['feature_application']
+                            else:
+                                scope=inputs.resolve_scope(self.root,intent['scope']['id'],intent['scope']['version'])
+                                frozen_application=feature_applications.resolve(self.root,intent['feature'],scope)
+                        except (ValueError,KeyError,TypeError,OSError) as exc:
+                            raise ResearchBlocked(getattr(exc,'blockers',[{'code':'FEATURE_APPLICATION_BLOCKED','message':str(exc)}])) from exc
+                    original={'schema_version':'0.8.0','request_id':rid,'intent':intent,'intent_fingerprint':digest(intent),
+                        'research_spec':profile,'implementation':implementation(),'created_at':now()}
+                    if frozen_plan is not None:original['frozen_plan']=frozen_plan
+                    if frozen_application is not None:original['feature_application']=frozen_application
                 original['record_sha256']=digest(original)
                 install_bytes(path,canonical(original)+b'\n')
             job={'request_id':rid,'attempt_id':str(uuid.uuid4()),'status':'queued','stage':'recorded','message':'Request recorded. Waiting for the research worker.',
@@ -343,18 +389,27 @@ class ResearchJobs:
         for p in inside(self.root,'storage/catalog/operations/jobs').glob('*.json'):
             paths.setdefault(p.name,directory/p.name)
         found=[]
-        for p in sorted(paths.values()):
-            with lock(self.root,'research-writer'):
+        with lock(self.root,'research-writer'):
+            snapshot=self._event_snapshot()
+            for p in sorted(paths.values()):
                 if self._incident_path(p).exists():continue
                 try:
                     request_id(p.stem)
-                    job=self._read_job(p.stem)
+                    job=self._read_job(p.stem,snapshot)
                     original=self._submission(p.stem) if job is None else None
                 except Exception as exc:
                     self._incident(p,exc);continue
-            if job is None:
-                self.submit(dict(original['intent'],request_id=p.stem));found.append(self._read_job(p.stem))
-            elif job['status'] in ACTIVE:found.append(job)
+                if job is None:
+                    # Recover after releasing the writer lock, through normal Submit.
+                    found.append({'request_id':p.stem,'original':original})
+                elif job['status'] in ACTIVE:found.append(job)
+        for i,job in enumerate(found):
+            if 'original' in job:
+                self.submit(dict(job['original']['intent'],request_id=job['request_id']))
+                found[i]=self._read_job(job['request_id'])
+        if not found and not self.stop_event.is_set():
+            from runtime.research_batches import ResearchBatches
+            ResearchBatches(self).advance()
         return [job['request_id'] for job in sorted(found,key=self.queue_key)]
 
     def _worker_ready(self,state):
@@ -366,7 +421,8 @@ class ResearchJobs:
     def _loop(self):
         while not self.stop_event.is_set():
             # Idle is healthy; lock contention is explicit and never spawns a second executor.
-            if inside(self.root,'storage/catalog/submissions').exists() or inside(self.root,'storage/catalog/operations/jobs').exists():
+            if (inside(self.root,'storage/catalog/submissions').exists() or inside(self.root,'storage/catalog/operations/jobs').exists()
+                    or inside(self.root,'storage/catalog/operations/research_batches').exists()):
                 with lock(self.root,'research-executor',nonblocking=True) as claimed:
                     if claimed:
                         pending=self._pending()
