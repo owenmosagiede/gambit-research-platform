@@ -74,8 +74,8 @@ ID without a matching receipt is not an accepted submission response.
 ## History reconciliation and release gate
 
 Run `tools/reconcile_experiments.py --root WORKSPACE` on a protected copy or the
-existing cloud workspace. It reads submissions, journals and verified event/plan
-references, reports unresolved bindings, duplicate science groups, orphan job
+existing cloud workspace. It verifies submissions, journals, event/plan references and linked result
+artifacts, reports unresolved bindings, duplicate science groups, orphan job
 projections and pending publications. It does not select a winning historical
 trial or launch research. `--rebuild-index` writes only the rebuildable lookup.
 Historical duplicates and validation-exposure records are retained.

@@ -119,6 +119,7 @@ class NativeApplicationIntegrationTests(unittest.TestCase):
         import json,uuid
         from runtime.research_jobs import ResearchJobs
         f=self.fixture
+        f.profile['periods']={'P1':{'start_inclusive':'2020-01-01','end_exclusive':'2022-01-01'},'P2':{'start_inclusive':'2022-01-01','end_exclusive':'2024-04-23'}}
         (self.root/'config/research_execution.json').write_text(json.dumps(f.profile))
         jobs=ResearchJobs(self.root);self.addCleanup(jobs.close)
         request=dict(f.intent,request_id=str(uuid.uuid4()))

@@ -152,7 +152,7 @@ class IdentityIndex:
         for p in sorted(inside(self.root, 'storage/catalog/submissions').glob('*.json')):
             try:
                 original = self.jobs._submission(p.stem)
-                self.jobs._read_job(p.stem, snapshot)  # verify execution history too
+                self.verify_results(self.jobs._read_job(p.stem, snapshot))
                 item = self.entry(original, snapshot)
                 if p.stem in entries and entries[p.stem] != item:
                     raise ResearchError('Journal and submission differ')
@@ -184,6 +184,21 @@ class IdentityIndex:
         except (OSError, ValueError, KeyError, TypeError):
             pass
         return self.rebuild()
+
+    def verify_results(self, job):
+        if job:
+            try:
+                for reference in job.get('results', []):
+                    link = self.jobs.store.resolve('link', reference)
+                    for trial_ref in link['body']['trial_results']:
+                        trial = self.jobs.store.resolve('trial', trial_ref)
+                        for artifact in trial['body']['artifact_manifests']:
+                            self.jobs.store.verify_artifact(artifact)
+                    for kind, field in (('admission', 'admission_results'), ('validation', 'validation_results')):
+                        for ref in link['body'].get(field, []):
+                            self.jobs.store.resolve(kind, ref)
+            except (ValueError, KeyError, TypeError, OSError) as exc:
+                raise ResearchConflict('Saved results require reconciliation: ' + str(exc)) from exc
 
     def matches(self, packet, index=None):
         index = self.load() if index is None else index
@@ -217,19 +232,7 @@ class IdentityIndex:
                 continue
             if published:
                 job = self.jobs._read_job(rid)
-                if job:
-                    try:
-                        for reference in job.get('results', []):
-                            link = self.jobs.store.resolve('link', reference)
-                            for trial_ref in link['body']['trial_results']:
-                                trial = self.jobs.store.resolve('trial', trial_ref)
-                                for artifact in trial['body']['artifact_manifests']:
-                                    self.jobs.store.verify_artifact(artifact)
-                            for kind, field in (('admission', 'admission_results'), ('validation', 'validation_results')):
-                                for ref in link['body'].get(field, []):
-                                    self.jobs.store.resolve(kind, ref)
-                    except (ValueError, KeyError, TypeError, OSError) as exc:
-                        raise ResearchConflict('Saved results require reconciliation: ' + str(exc)) from exc
+                self.verify_results(job)
             else:
                 j = self.journal(rid)
                 if not j or not j.get('submission'):
