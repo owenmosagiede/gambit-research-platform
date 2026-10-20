@@ -156,3 +156,24 @@ items. A changed implementation halts old preview/dispatch; never rewrite frozen
 packets to force continuation. Existing queued jobs also retain their usual
 implementation-change protection. No deployment or production batch approval is
 part of development testing.
+
+## Owner launch controls
+
+The Research batches panel on the Experiment page lists operator-prepared batches.
+Select a batch, inspect the selections and resource estimates, click **Review
+batch**, then **Launch reviewed batch**. This approves the exact saved preview
+through the existing submission API. Incomplete or blocked previews cannot be
+launched from this panel; prepare a corrected batch first. A changed preview
+requires another review. Unknown time and storage estimates remain labeled as
+uncalibrated.
+
+**Pause batch** stops future intake, not already queued or running experiments.
+**Resume approved batch** continues the approved intake; **Resume checks** only
+continues an unapproved preview. Closing the browser does not stop cloud work.
+The panel never launches on page load, never retries a launch automatically,
+and refreshes saved status after a request with an uncertain outcome. It uses
+owner authentication and the existing CSRF-protected same-origin API.
+
+Preparation stays within each submitted experiment's existing preparation → P1
+→ conditional P2 pathway. These controls do not restart the full historical-input
+sweep, provision capacity, or alter research identities and scientific policies.
