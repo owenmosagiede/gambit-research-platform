@@ -159,7 +159,9 @@ class ExternalFeatureEndToEndTests(unittest.TestCase):
         self.assertEqual(len(list((root/'storage/catalog/trial_ledger').rglob('*.json'))),trial_count)
         # A different submission reuses exact scientific evidence, not only request IDs.
         repeat=dict(request,request_id=str(uuid.uuid4()))
-        code,_=http('/api/experiments','POST',repeat);self.assertEqual(code,202)
+        code,reused=http('/api/experiments','POST',repeat);self.assertEqual(code,200)
+        self.assertEqual(reused['job']['request_id'],request['request_id'])
+        self.assertEqual(reused['job']['submission_receipt']['request_id'],repeat['request_id'])
         deadline=time.monotonic()+90
         while time.monotonic()<deadline:
             job=jobs.get(repeat['request_id'])

@@ -51,6 +51,31 @@ class BatchHTTPTests(unittest.TestCase):
         self.assertEqual(len(list((self.root/'storage/catalog/submissions').glob('*.json'))),2)
         print('Batch HTTP evidence: preview ran no kernels; exact approval; independent worker; TS+CS; 10 horizon outcomes; P2 evidence; web restart; 2 unique submissions.')
 
+    def test_ui_api_and_batch_intake_race_across_processes(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import uuid
+        from test_research_runtime import intent
+        self.web()
+        jobs=WebResearchJobs(self.root,adapter=Adapter());batches=ResearchBatches(jobs)
+        m=manifest(scopes=[intent()['scope']]);batches.create(m);batches.advance()
+        status=batches.status(m['batch_id'])
+        batches.approve(m['batch_id'],{'preview_sha256':status['preview_sha256'],'exclude_blocked':False})
+        requests=[intent() for _ in range(8)]
+        def submit(r):return r,self.request('POST','/api/experiments',r)
+        with ThreadPoolExecutor(max_workers=9) as pool:
+            dispatch=pool.submit(batches.advance)
+            results=list(pool.map(submit,requests));dispatch.result()
+        ids={value['job']['request_id'] for _,(code,value) in results if code in (200,202)}
+        self.assertEqual(len(ids),1)
+        self.assertTrue(all(code in (200,202) for _,(code,_) in results),results)
+        self.assertEqual(len(list((self.root/'storage/catalog/submissions').glob('*.json'))),1)
+        for request,(code,value) in results:
+            status,retry=self.request('GET','/api/experiments/'+request['request_id'])
+            self.assertEqual(status,200);self.assertEqual(retry['job']['request_id'],value['job']['request_id'])
+        batch=batches.status(m['batch_id'])
+        self.assertIn(batch['items'][0]['dispatch']['request_id'],ids)
+        self.assertFalse(list((self.root/'storage/catalog/trial_ledger/records').glob('*.json')))
+
     def test_invalid_routes_payloads_and_retry_identity(self):
         self.web(); m=manifest()
         self.assertEqual(self.request('POST','/api/batches',m)[0],202)

@@ -161,6 +161,18 @@ class ResearchSubmissionUITests(unittest.TestCase):
     def test_queue_can_confirm_late_submission_without_retry(self):
         state=ui([{'action':'submit'},{'action':'queue','value':{'items':[job('p1')]}}],routes={'POST /api/experiments':[{'error':True}]})[-1]
         self.assertFalse(state['state']['uncertain']);self.assertFalse(state['submitDisabled'])
+    def test_reused_canonical_id_requires_receipt_and_survives_reload(self):
+        receipt={'request_id':REQUEST_ID,'canonical_request_id':SECOND_ID,'scientific_identity':'a'*64,'journal_sha256':'b'*64}
+        response=job('succeeded',request_id=SECOND_ID,submission_receipt=receipt,intake_action='view_results')
+        state=ui([{'action':'submit'}],routes={'POST /api/experiments':[response]})[-1]
+        self.assertFalse(state['state']['uncertain']);self.assertEqual(state['state']['job']['request_id'],SECOND_ID)
+        self.assertIn('View existing trial/results',state['notice'])
+        state=ui(saved={'payload':payload()},routes={'GET /api/experiments/'+REQUEST_ID:[response]})[-1]
+        self.assertFalse(state['state']['uncertain']);self.assertTrue(all(c['method']=='GET' for c in state['calls']))
+        response['job']['submission_receipt']['request_id']=SECOND_ID
+        state=ui([{'action':'submit'}],routes={'POST /api/experiments':[response]})[-1]
+        self.assertTrue(state['state']['uncertain'])
+
     def test_wrong_response_cannot_confirm_submission(self):
         state=ui([{'action':'submit'}],routes={'POST /api/experiments':[job(request_id=SECOND_ID)]})[-1]
         self.assertTrue(state['state']['uncertain'])

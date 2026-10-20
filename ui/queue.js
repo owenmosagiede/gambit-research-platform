@@ -12,7 +12,7 @@
   const labels = {rejected:"Submission rejected", submitting:"Saving submission", unconfirmed:"Receipt unconfirmed", queued: "Queued", resolving: "Checking inputs", preparing: "Preparing observations",
     p1: "In P1", p2: "In P2", blocked: "Blocked", failed: "Execution failed", succeeded: "Completed", cancelled: "Cancelled"};
   let timer = null, loading = false, active = true, last = null, rendered = null, ledgerRendered = null;
-  let client = window.researchSubmissionState || null;
+  let client = window.researchSubmissionState || null, focusedRequest = null;
   const actions = new Map(), publishedResults = new Map();
   const dismissalKey = "research-platform.queue-dismissals.v1";
   const attention = new Set(["blocked", "failed"]);
@@ -61,6 +61,7 @@
   const outcome = value => ({pending:"Pending", admitted:"Admitted", rejected:"Rejected", not_admitted:"Not admitted", not_run:"Not run", VALIDATED:"Validated", FAILED:"Failed", UNRESOLVED:"Unresolved"}[value] || value);
   function addDetails(card, item) {
     const j = item.job;
+    card.id = `trial-${j.request_id}`;
     const prep = j.preparation_progress;
     if (j.status === "preparing" && prep && j.stage === `${prep.phase} preparation`) {
       const n = value => Number.isInteger(value) && value >= 0;
@@ -194,7 +195,7 @@
     note.textContent = `${rows.length} of ${all.length} saved submissions. ${last.issues.length ? "Some records could not be verified; see queue status." : "Each entry preserves its original selections and horizon outcomes."}`;
     for (const item of rows) {
       const j = item.job, names = item.intent ? selection(item.intent) : null;
-      const card = node("details", undefined, "ledger-card"); card.dataset.requestId = j.request_id; card.open = expanded.has(j.request_id);
+      const card = node("details", undefined, "ledger-card"); card.dataset.requestId = j.request_id; card.open = expanded.has(j.request_id) || focusedRequest === j.request_id;
       const summary = node("summary");
       summary.append(node("strong", names ? names.Feature : "Submission evidence unavailable"),
         node("span", names ? `${names.Scope} · ${names.Target} · ${names["Expected Direction"]}` : j.request_id),
@@ -288,6 +289,13 @@
     const index=last.items.findIndex(row=>row.job.request_id===item.job.request_id);
     if (index<0) last.items.push(item); else last.items[index]={...last.items[index],...item};
     rendered=null; ledgerRendered=null; redraw();
+  });
+  window.addEventListener("research-ledger-focus", event => {
+    focusedRequest = event.detail?.request_id;
+    if (!focusedRequest || !$("ledger-search")) return;
+    $("ledger-search").value = focusedRequest;
+    for (const name of ["ledger-state", "ledger-from", "ledger-to"]) $(name).value = "";
+    ledgerRendered = null; renderLedger();
   });
   window.addEventListener("research-queue-refresh", load);
   refresh.addEventListener("click", load);

@@ -31,13 +31,13 @@ class ResearchHTTPTests(unittest.TestCase):
         (self.root/'config').mkdir(parents=True)
         from test_research_runtime import profile
         pending = profile()
-        pending['approval_state'] = 'pending'
+        pending['approval_state'] = 'approved'
         (self.root/'config/research_execution.json').write_text(json.dumps(pending))
         (self.root/'ui').mkdir()
         shutil.copyfile(PROJECT/'ui/submission.js', self.root/'ui/submission.js')
         self.server = None
-        self.adapter = Mock()
-        self.adapter.resolve_plan.side_effect = AssertionError('Pending research profile must never resolve or read inputs')
+        from test_research_runtime import Adapter
+        self.adapter = Mock(wraps=Adapter())
 
     def tearDown(self):
         if self.server:
@@ -80,6 +80,7 @@ class ResearchHTTPTests(unittest.TestCase):
         self.fail('Temporary fixture did not reach ' + status)
 
     def test_default_web_and_readiness_get_create_no_requests_or_storage(self):
+        config=self.root/'config/research_execution.json'; value=json.loads(config.read_text());value['approval_state']='pending';config.write_text(json.dumps(value))
         self.start()
         self.assertIsNone(self.server.research_jobs.thread)
         code, headers, value = self.request('/api/research-readiness')
@@ -91,22 +92,15 @@ class ResearchHTTPTests(unittest.TestCase):
         self.assertFalse((self.root/'storage').exists())
         self.adapter.resolve_plan.assert_not_called()
 
-    def test_submit_web_queues_and_separate_executor_blocks_pending_profile(self):
+    def test_pending_profile_rejected_before_recording_or_preparing(self):
+        config=self.root/'config/research_execution.json';value=json.loads(config.read_text());value['approval_state']='pending';config.write_text(json.dumps(value))
         self.start()
         code, _, value = self.request('/api/experiments', method='POST', value=submission())
-        self.assertEqual(code, 202)
-        self.assertEqual(value['job']['request_id'], REQUEST_ID)
-        self.assertEqual(value['job']['status'], 'queued')
-        executor = ResearchJobs(self.root, adapter=self.adapter)
-        executor.run_pending_once()
-        blocked = self.await_status('blocked')
-        self.assertTrue(blocked['blockers'])
-        self.assertEqual(blocked['results'], [])
+        self.assertEqual(code, 422)
+        self.assertFalse(value['recorded'])
         self.adapter.resolve_plan.assert_not_called()
         self.adapter.prepare_phase.assert_not_called()
-        self.adapter.load_phase.assert_not_called()
-        self.assertFalse((self.root/'storage/catalog/trial_ledger').exists())
-        self.assertFalse((self.root/'storage/catalog/feature_store').exists())
+        self.assertFalse((self.root/'storage/catalog/submissions').exists())
 
     def test_obsolete_resume_returns_explicit_conflict_without_requeue(self):
         self.start(idle_worker=True)
@@ -127,7 +121,8 @@ class ResearchHTTPTests(unittest.TestCase):
         first = self.request('/api/experiments', method='POST', value=submission())
         second = self.request('/api/experiments', method='POST', value=submission())
         self.assertEqual([first[0], second[0]], [202, 200])
-        self.assertEqual(first[2]['job'], second[2]['job'])
+        self.assertEqual(first[2]['job']['request_id'], second[2]['job']['request_id'])
+        self.assertEqual(first[2]['job']['submission_receipt'], second[2]['job']['submission_receipt'])
         changed = submission(); changed['expected_direction'] = 'NEGATIVE'
         self.assertEqual(self.request('/api/experiments', method='POST', value=changed)[0], 409)
         stored = json.loads((self.root/'storage/catalog/submissions'/f'{REQUEST_ID}.json').read_text())
@@ -145,7 +140,8 @@ class ResearchHTTPTests(unittest.TestCase):
         self.assertEqual([i['job']['request_id'] for i in value['items']],[REQUEST_ID,other['request_id']])
         self.assertEqual([i['queue_position'] for i in value['items']],[1,2])
         self.assertEqual(value['items'][1]['intent']['expected_direction'],'NEGATIVE')
-        self.adapter.resolve_plan.assert_not_called()
+        self.assertEqual(self.adapter.resolve_plan.call_count,2)
+        self.adapter.prepare_phase.assert_not_called()
         self.assertEqual(self.request('/api/experiments?run=true')[0],400)
 
     def test_local_referrer_policy_preserves_safari_post_origin(self):
@@ -213,19 +209,19 @@ class ResearchHTTPTests(unittest.TestCase):
         self.assertNotEqual(resumed['job']['attempt_id'], old_attempt)
         self.assertEqual(self.request(base + '/resume', method='POST', value={})[0], 409)
         self.assertEqual(path.read_bytes(), frozen)
-        self.adapter.resolve_plan.assert_not_called()
+        self.adapter.resolve_plan.assert_called_once()
+        self.adapter.prepare_phase.assert_not_called()
 
-    def test_resume_pending_profile_does_not_replace_approval_or_run_research(self):
+    def test_retry_after_rejected_policy_can_record_only_after_approval(self):
+        config=self.root/'config/research_execution.json';value=json.loads(config.read_text());value['approval_state']='pending';config.write_text(json.dumps(value))
         self.start()
-        self.request('/api/experiments', method='POST', value=submission())
-        ResearchJobs(self.root, adapter=self.adapter).run_pending_once()
-        self.await_status('blocked')
-        path = self.root/'storage/catalog/submissions'/f'{REQUEST_ID}.json'; frozen = path.read_bytes()
-        self.assertEqual(self.request('/api/experiments/' + REQUEST_ID + '/resume', method='POST', value={})[0], 200)
-        ResearchJobs(self.root, adapter=self.adapter).run_pending_once()
-        self.await_status('blocked')
-        self.assertEqual(path.read_bytes(), frozen)
+        self.assertEqual(self.request('/api/experiments', method='POST', value=submission())[0],422)
+        self.assertEqual(self.request('/api/experiments/'+REQUEST_ID)[0],404)
         self.adapter.resolve_plan.assert_not_called()
+        value['approval_state']='approved';config.write_text(json.dumps(value))
+        self.assertEqual(self.request('/api/experiments', method='POST', value=submission())[0],202)
+        self.adapter.resolve_plan.assert_called_once()
+        self.adapter.prepare_phase.assert_not_called()
 
     def test_queries_invalid_ids_and_wrong_methods_cannot_start_work(self):
         self.start(idle_worker=True)

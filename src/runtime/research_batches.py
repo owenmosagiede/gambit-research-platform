@@ -35,13 +35,8 @@ def save(path, value, *, mutable=False):
 
 
 def semantic_key(packet):
-    """Existing output windows are reusable caches, not a different hypothesis."""
-    plan = deepcopy(packet['frozen_plan'])
-    plan.pop('plan_id', None)
-    for member in plan['members']:
-        member.pop('feature_materializations', None)
-    return digest({'intent': packet['intent'], 'research_spec': packet['research_spec'],
-                   'implementation': packet['implementation'], 'plan': plan})
+    from runtime.experiment_identity import scientific_key
+    return digest({'scientific_identity': scientific_key(packet), 'implementation': packet['implementation']})
 
 
 def weekdays(period):
@@ -103,36 +98,12 @@ class ResearchBatches:
         return save(d / 'state.json', {'state': state, 'updated_at': now(), **kwargs}, mutable=True)
 
     def _packet(self, intent, impl):
-        from research import inputs, external_features, feature_applications
-        profile = load_profile(self.root)
-        if self.jobs.adapter is None:
-            _, contract = feature_applications.binding_for(self.root, intent['feature'])
-            if contract['kind'] == feature_applications.SINGLE_SERIES:
-                profile = external_features.load_profile(self.root)
-        blockers = profile_blockers(profile)
-        if blockers: raise ResearchBlocked(blockers)
-        adapter = self.jobs.adapter or inputs
-        plan = adapter.resolve_plan(self.root, intent, profile)
-        return {'intent': intent, 'research_spec': profile, 'implementation': impl, 'frozen_plan': plan,
-                **({'feature_application': plan['feature_application']} if 'feature_application' in plan else {})}
+        from runtime.experiment_identity import freeze
+        return freeze(self.jobs, intent, impl)
 
     def _duplicates(self, packet):
-        matches = []; ambiguous = []
-        snapshot = self.jobs._event_snapshot()
-        for p in sorted(inside(self.root, 'storage/catalog/submissions').glob('*.json')):
-            # Corruption must be explicit; never turn unverifiable history into a fresh run.
-            original = self.jobs._submission(p.stem)
-            if original['intent'] != packet['intent']: continue
-            if original['research_spec'] != packet['research_spec'] or original['implementation'] != packet['implementation']: continue
-            job = self.jobs._read_job(p.stem, snapshot)
-            plan = original.get('frozen_plan')
-            if plan is None and job and job.get('plan'):
-                plan = self.jobs.store.resolve('plan', job['plan'])['body']
-            if plan is None:
-                ambiguous.append(p.stem); continue
-            if semantic_key(dict(original, frozen_plan=plan)) == semantic_key(packet):
-                matches.append((p.stem, job))
-        return matches, ambiguous
+        from runtime.experiment_identity import IdentityIndex
+        return IdentityIndex(self.jobs).matches(packet)
 
     def _preview_row(self, d, manifest, index):
         intent = manifest['intents'][index]

@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import threading
 import unittest
 
-from research.contracts import canonical, digest, ref, ResearchError
+from research.contracts import canonical, digest, ref, ResearchError, ResearchConflict
 from research.store import ResearchStore, read_json
 from runtime.research_jobs import ResearchJobs
 from test_research_runtime import Adapter, KernelSpy, intent, profile, reference
@@ -144,9 +144,9 @@ class ResearchRecoveryTests(unittest.TestCase):
         payload = self.root / f"storage/payloads/sha256/{sha[:2]}/{sha}.json"
         payload.write_bytes(payload.read_bytes() + b" ")
         second = intent()
-        jobs.submit(second)
-        jobs.run_pending_once()
-        self.assertEqual(jobs.get(second["request_id"])["status"], "failed")
+        with self.assertRaisesRegex(ResearchConflict, "reconciliation"):
+            jobs.submit(second)
+        self.assertFalse(jobs._submission_path(second["request_id"]).exists())
         self.assertEqual(spy.calls, before)
         with self.assertRaisesRegex(ResearchError, "corruption"):
             jobs.store.results_for_recipe(first["feature"]["id"])
@@ -232,7 +232,7 @@ class ResearchRecoveryTests(unittest.TestCase):
         failure = jobs.get(request["request_id"])
         self.assertTrue(failure["operational_failure"])
         self.assertIn("Unreadable execution event", failure["incident"]["diagnostic"])
-        self.assertEqual(self.adapter.resolve_calls, 0)
+        self.assertEqual(self.adapter.resolve_calls, 1)
 
     def test_tampered_event_cannot_be_ignored_in_favor_of_mutable_job(self):
         jobs = ResearchJobs(self.root, adapter=self.adapter)
@@ -247,7 +247,7 @@ class ResearchRecoveryTests(unittest.TestCase):
         self.assertIn("event checksum", failure["incident"]["diagnostic"])
         self.assertEqual(failure["results"], [])
         jobs.run_pending_once()
-        self.assertEqual(self.adapter.resolve_calls, 0)
+        self.assertEqual(self.adapter.resolve_calls, 1)
 
 
 if __name__ == "__main__":
