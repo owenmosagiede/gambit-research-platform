@@ -19,6 +19,8 @@ independent workers, P1/P2, persistence, recovery, UI, and deployment safeguards
 It is not the full production-data acceptance suite. No market data, trial
 records, cloud keys, or AI credentials are needed. Policy fixtures preserve the
 three approved transformation specification records and their six exact files.
+Validation and release preparation allow 60 minutes for the complete suite;
+the currency migration test stages all 126 prices, 22,680 Features and 630 Targets.
 
 ## Prepare a release
 
