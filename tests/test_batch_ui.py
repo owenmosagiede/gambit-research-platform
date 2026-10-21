@@ -88,6 +88,14 @@ class BatchUITests(unittest.TestCase):
         value = browser([self.listing(), batch()])[0]
         self.assertIn('does not confirm a stall', value['detail'])
 
+    def test_reconciled_history_cannot_be_launched_or_resumed(self):
+        b=batch(approved=False);b['read_only']=True
+        b['state']['state']='paused'
+        views=browser([self.listing(),b],['click:batch-review','click:batch-launch','click:batch-resume'])
+        self.assertIn('Retained historical batch',views[-1]['detail'])
+        self.assertIn('cannot be relaunched',views[-1]['detail'])
+        self.assertTrue(all(c['method']=='GET' for c in views[-1]['calls']))
+
     def test_review_then_launch_exact_preview_once(self):
         values = browser([self.listing(), batch(approved=False), {}, self.listing(), batch()],
                          ['click:batch-launch', 'click:batch-review', 'click:batch-launch', 'click:batch-launch'])

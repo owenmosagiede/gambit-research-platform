@@ -163,6 +163,8 @@ class ResearchBatches:
             from data.fx_currency_migration import check_intake
             check_intake(self.root)
             m = checked(d / 'manifest.json'); preview = self._preview(d, m)
+            if m['schema'] != 'research_batch_v1':
+                raise ResearchConflict('Reconciled historical batches are read-only')
             if len(preview['rows']) != len(m['intents']) or digest(preview) != value['preview_sha256']:
                 raise ResearchConflict('Preview is incomplete or differs from the approved preview')
             if preview['counts'].get('blocked') and not value['exclude_blocked']:
@@ -183,6 +185,8 @@ class ResearchBatches:
             from data.fx_currency_migration import check_intake
             check_intake(self.root)
             m = checked(d / 'manifest.json')
+            if m['schema'] != 'research_batch_v1':
+                raise ResearchConflict('Reconciled historical batches are read-only')
             if action not in ('pause', 'resume'): raise ResearchError('Unknown batch action')
             if action == 'resume' and implementation() != m['implementation']:
                 raise ResearchConflict('Implementation changed; preserve this batch and create a new preview')
@@ -204,6 +208,8 @@ class ResearchBatches:
                 d = path.parent
                 try:
                     m = checked(path)
+                    if m['schema'] == 'research_batch_retained_ts_v1':
+                        continue  # Reconciled history never grants new dispatch authority.
                     state = checked(d / 'state.json')['state'] if (d / 'state.json').exists() else 'previewing'
                     if state in ('paused', 'completed', 'needs_attention'): continue
                     # Approval is authority; a crash can leave its state projection
@@ -266,6 +272,7 @@ class ResearchBatches:
                 else: counts['excluded'] += 1
             items.append(item)
         free = shutil.disk_usage(self.root).free
+        historical = m['schema'] == 'research_batch_retained_ts_v1'
         return {'batch_id': bid, 'name': m['request']['name'], 'state': state,
             'created_at': m['created_at'], 'requested_combinations': m['requested_combinations'],
             'unique_experiments': len(m['intents']), 'input_duplicates': m['input_duplicates'],
@@ -273,4 +280,6 @@ class ResearchBatches:
             'preview_sha256': digest(preview), 'preview_counts': preview['counts'], 'estimates': preview['estimates'],
             'free_bytes_on_workspace_filesystem': free, 'job_counts': dict(counts), 'items': items,
             'implementation_fingerprint': m['implementation']['fingerprint'],
-            'approved': (d / 'approval.json').exists(), 'research_results': 'Each job retains its own Scope, Target, direction and horizon outcomes.'}
+            'approved': not historical and (d / 'approval.json').exists(),
+            'read_only': historical, 'reconciliation': m.get('reconciliation'),
+            'research_results': 'Each job retains its own Scope, Target, direction and horizon outcomes.'}

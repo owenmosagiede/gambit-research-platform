@@ -106,7 +106,24 @@ operational controls; do not restart old code after activating the new registry.
    ```
 
    Review exact paths, hashes, blockers and all 86 protected TS definition and
-   membership files. Mixed CS/TS batches, unsupported historical schemas,
+   membership files. The v2 manifest also lists explicit operational batch
+   replacements under `replace`. Completed mixed batches can be reconciled only
+   when their original checksummed manifest, approved preview, every row and
+   frozen packet, dispatch receipts and successful authoritative jobs agree.
+   Only original legacy-CS/canonical-TS batches qualify; unfinished, excluded,
+   corrupt, unknown-file and new-currency mixed batches remain blockers.
+
+   Reconciliation replaces only the operational batch manifest with a distinctly
+   versioned `research_batch_retained_ts_v1` read-only view. It keeps the original
+   batch ID and original TS row indices, removes retired CS selections, and pins
+   the original manifest/approval hashes and every retained per-item file hash.
+   TS submissions, trials, results, frozen packets, rows and dispatch receipts
+   remain byte-identical. The original approval stays unchanged as historical
+   evidence; it never authorizes the replacement view to dispatch or resume work.
+   The UI exposes retained completed history without launch/resume controls.
+   No copy of the old mixed manifest or discarded CS research is archived.
+
+   Unsupported mixed batches, unsupported historical schemas,
    unverifiable queue histories, symlinks and retained references to deleted
    records block application. Resolve these explicitly; never widen the delete
    list or delete a whole catalog directory to bypass a blocker.
@@ -122,7 +139,10 @@ operational controls; do not restart old code after activating the new registry.
    payloads, verifies TS bytes and activates the currency release. The mutable
    intake lookup is discarded and rebuilt from retained authority. No archive
    copies of the discarded definitions or results are created. The migration
-   receipt contains hashes and paths only.
+   receipt contains hashes, paths and the retained-TS operational replacements;
+   it contains no discarded CS records. Interrupted replacement/deletion resumes
+   only from the identical reviewed v2 manifest, accepting each replacement's
+   exact before or after bytes and rejecting any other retained-data change.
 6. With the matching code already installed, verify 50
    active Scopes (43 TS, seven CS), 18 frozen members each, no legacy CS selections,
    correct application compatibility, and retained TS references. Restart services

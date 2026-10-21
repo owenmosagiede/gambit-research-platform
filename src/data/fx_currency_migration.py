@@ -92,6 +92,12 @@ def plan(root,release_ref):
     store=FeatureStore(root);release=store.resolve(release_ref)
     validate_release(root,release)
     files,records=_inventory(root);selected=set();blockers=[]
+    from data.fx_batch_reconciliation import reconcile
+    replacements,reconciled,batch_blockers=reconcile(Path(root),files,records,RETIRED,set(PAIR_IDS))
+    blockers.extend(batch_blockers)
+    # Ownership is evaluated against the reviewed retained-TS operational view.
+    # The inventory continues to pin the ORIGINAL bytes until apply.
+    records.update(replacements)
     eligible={p for p in records if p.startswith(CORE+OPERATIONAL)}
     scopes={p:_scopes(r) for p,r in records.items()}
     strings={p:_strings(r) for p,r in records.items()}
@@ -125,6 +131,7 @@ def plan(root,release_ref):
     batches={p[len(batchbase):].split('/')[0] for p in selected if p.startswith(batchbase)}
     for bid in batches:
         prefix=batchbase+bid+'/'
+        if prefix in reconciled:continue
         paths={p for p in records if p.startswith(prefix)}
         if any(scopes[p]-RETIRED for p in paths):blockers.append('Mixed batch must be reconciled explicitly: '+bid)
         else:selected|=paths
@@ -183,7 +190,8 @@ def plan(root,release_ref):
             if hashlib.sha256(raw).hexdigest()!=sha:raise ValueError('Deletion payload checksum mismatch')
             payloads[path.relative_to(root).as_posix()]={'sha256':sha,'bytes':len(raw)}
     deletions={p:files[p] for p in sorted(selected)};deletions.update(payloads)
-    result={'schema':'fx_currency_deletion_v1','release':release_ref,'inventory':files,'delete':deletions,
+    result={'schema':'fx_currency_deletion_v2','release':release_ref,'inventory':files,'delete':deletions,
+        'replace':replacements,
         'protected_ts':protected,'retired_scopes':sorted(RETIRED),'blockers':sorted(set(blockers))}
     result['sha256']=digest(result)
     return result
@@ -191,7 +199,7 @@ def plan(root,release_ref):
 
 def apply(root,manifest,expected_sha256):
     if (manifest.get('sha256')!=expected_sha256 or digest({k:v for k,v in manifest.items() if k!='sha256'})!=expected_sha256
-            or manifest.get('schema')!='fx_currency_deletion_v1' or manifest.get('blockers')):
+            or manifest.get('schema')!='fx_currency_deletion_v2' or manifest.get('blockers')):
         raise ValueError('A complete, unchanged, unblocked deletion manifest is required')
     from data.fx_currency_release import validate_release
     from data.fx_currency_catalog import activate
@@ -214,13 +222,19 @@ def apply(root,manifest,expected_sha256):
             # Recompute eligibility as well as hashes; a caller cannot forge a broader deletion list.
             if plan(root,manifest['release'])!=manifest:raise ValueError('Deletion plan or inventory changed; re-plan')
         files,_=_inventory(root)
-        expected={p:v for p,v in manifest['inventory'].items() if p not in manifest['delete']}
-        actual={p:v for p,v in files.items() if p not in manifest['delete']}
+        changed=set(manifest['delete'])|set(manifest['replace'])
+        expected={p:v for p,v in manifest['inventory'].items() if p not in changed}
+        actual={p:v for p,v in files.items() if p not in changed}
         # Activation may have committed immediately before an interrupted completion receipt.
         from data.fx_currency_catalog import ACTIVE,active_release
         if marker.exists() and ACTIVE in actual and ACTIVE not in expected:
             if reference_for_active(root)==manifest['release']:actual.pop(ACTIVE)
         if actual!=expected:raise ValueError('Retained inventory changed; migration cannot resume')
+        for p,value in manifest['replace'].items():
+            raw=canonical(value)+b'\n'
+            after={'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
+            if files.get(p) not in (manifest['inventory'][p],after):
+                raise ValueError('Reconciled batch bytes changed: '+p)
         for p,v in manifest['delete'].items():
             path=inside(root,p)
             if (Path(root)/p).is_symlink():raise ValueError('Deletion path became a symlink')
@@ -228,8 +242,11 @@ def apply(root,manifest,expected_sha256):
                 raw=stable_read(path)
                 if {'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}!=v:raise ValueError('Deletion bytes changed: '+p)
         install_bytes(marker,canonical({'sha256':expected_sha256})+b'\n')
-        # Durable manifest contains hashes only, so recovery never retains old results.
+        # Recovery retains only hashes of deleted data and the retained-TS view;
+        # it never stores copies of discarded CS definitions or research.
         install_bytes(inside(root,BASE+'/manifest.json'),canonical(manifest)+b'\n')
+        for p,value in sorted(manifest['replace'].items()):
+            install_bytes(inside(root,p),canonical(value)+b'\n',mutable=True)
         for p in sorted(manifest['delete']):
             path=inside(root,p)
             if path.exists():
