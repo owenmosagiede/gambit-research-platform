@@ -145,7 +145,10 @@ def resolve_feature_scope(root, identifier, scope_id, scope_version, *, version=
     try:
         config=strict_json(stable_read(store.path('config/fx_retrospective_completion.json')))
         batch=_approved_policy(store,config['return_policy']);cutoff=normalize_time(config['knowledge_cutoff'],'date')
-        policy=get_fx_policy(root)
+        if recipe['body']['input_contract']['source_profile']=='fx_currency_price.1.0.0':
+            from data.fx_currency_features import get_policy
+            policy=get_policy(root)
+        else:policy=get_fx_policy(root)
         if recipe['body']['evaluation_policy']!=reference(policy):
             raise PublicationError('Recipe evaluation policy differs from the configured preparation policy')
         values={item['name']:item['value']['value'] for item in policy['body']['parameters']}
@@ -157,7 +160,13 @@ def resolve_feature_scope(root, identifier, scope_id, scope_version, *, version=
     response['preparation_context']={'knowledge_cutoff':cutoff,'evaluation_policy':reference(policy),
         'retrospective_policy':batch['retrospective_policy'],'output_period_requested':None}
     try:
-        rows=list_instruments(root)
+        currency_recipe=recipe['body']['input_contract']['source_profile']=='fx_currency_price.1.0.0'
+        if currency_recipe!=(scope.get('research_basis')=='currency_against_quote_reference'):
+            raise PublicationError('Feature and Scope price orientation differ')
+        if scope.get('price_catalog'):
+            from data.fx_currency_catalog import resolve_prices
+            _,instruments=resolve_prices(root,scope['price_catalog']);rows=list(instruments.values())
+        else:rows=list_instruments(root)
         current={row['instrument_id']:row for row in rows}
         if len(current)!=len(rows):raise PublicationError('Ambiguous current instrument registry')
         bindings=legacy_bindings_for_recipe(root,reference(recipe),verify_features=False);by_symbol={}

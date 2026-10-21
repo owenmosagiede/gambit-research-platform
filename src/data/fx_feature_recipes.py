@@ -123,8 +123,8 @@ def configurations(registry):
     return result
 
 
-def build_fx_feature(root, instrument, configuration, *, registry=None, evaluation_policy=None):
-    registry=registry or Registry(root);store=FeatureStore(root)
+def build_fx_feature(root, instrument, configuration, *, registry=None, evaluation_policy=None, store=None):
+    registry=registry or Registry(root);store=store or FeatureStore(root)
     policy=evaluation_policy or get_fx_policy(root)
     snapshot=store.resolve(instrument['price_snapshot']);body=snapshot['body']
     view=store.resolve(body['definition']);dataset=store.resolve(view['body']['dataset'])
@@ -162,7 +162,11 @@ def validate_fx_recipe(root, feature):
     if reference(make_feature_definition(normalized,feature['display_name']))!=reference(feature):raise PublicationError('FX Feature canonical identity mismatch')
     if len(normalized['sources'])!=1 or normalized['sources'][0]['alias']!='source' or normalized['history_mode']!='resolved_state' or normalized['calculation_scope_requirement']!='none' or normalized['scope_policy'] is not None:
         raise PublicationError('FX recipes require exactly one price source and the resolved-state profile')
-    policy=get_fx_policy(root)
+    source=store.resolve(normalized['sources'][0]['source_view'])
+    if source['body'].get('profile')=='fx_currency_price.1.0.0':
+        from data.fx_currency_features import get_policy
+        policy=get_policy(root)
+    else:policy=get_fx_policy(root)
     if normalized.get('evaluation_policy')!=reference(policy):raise PublicationError('Wrong FX Feature evaluation policy')
     for field,name in [('history_policy','POL_TRANSFORM_HISTORY'),('execution_policy','POL_TRANSFORM_EXECUTION')]:
         if normalized[field]!=reference(registry.get_policy(name)):raise PublicationError('Wrong '+field)

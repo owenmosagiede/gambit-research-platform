@@ -116,7 +116,7 @@
       const group = document.createElement("optgroup");
       group.label = label;
       for (const item of items) {
-        const label = item.kind === "universe" ? `${item.display_name} · ${item.member_count} pairs` : item.display_name;
+        const label = item.reference_currency ? `${item.display_name} · ${item.member_count} currencies vs ${item.reference_currency}` : item.kind === "universe" ? `${item.display_name} · ${item.member_count} pairs` : item.display_name;
         group.append(option(label, choice(item)));
       }
       select.append(group);

@@ -84,6 +84,8 @@ class ResearchBatches:
                     raise ResearchError('Estimate bounds must be ordered nonnegative integers')
         d = self.directory(bid)
         with lock(self.root, 'batch-writer'):
+            from data.fx_currency_migration import check_intake
+            check_intake(self.root)
             if (d / 'manifest.json').exists():
                 original = checked(d / 'manifest.json')
                 if original['request'] != value: raise ResearchConflict('Batch ID already belongs to another manifest')
@@ -158,6 +160,8 @@ class ResearchBatches:
             raise ResearchError('Approval requires the reviewed preview hash and explicit exclude_blocked choice')
         d = self.directory(bid)
         with lock(self.root, 'batch-writer'):
+            from data.fx_currency_migration import check_intake
+            check_intake(self.root)
             m = checked(d / 'manifest.json'); preview = self._preview(d, m)
             if len(preview['rows']) != len(m['intents']) or digest(preview) != value['preview_sha256']:
                 raise ResearchConflict('Preview is incomplete or differs from the approved preview')
@@ -176,6 +180,8 @@ class ResearchBatches:
     def control(self, bid, action):
         d = self.directory(bid)
         with lock(self.root, 'batch-writer'):
+            from data.fx_currency_migration import check_intake
+            check_intake(self.root)
             m = checked(d / 'manifest.json')
             if action not in ('pause', 'resume'): raise ResearchError('Unknown batch action')
             if action == 'resume' and implementation() != m['implementation']:
@@ -192,6 +198,8 @@ class ResearchBatches:
         """
         with lock(self.root, 'batch-writer', nonblocking=True) as claimed:
             if not claimed: return
+            from data.fx_currency_migration import MARKER
+            if inside(self.root,MARKER).exists():return
             for path in sorted(self.base.glob('*/manifest.json'), key=lambda p: p.stat().st_mtime_ns):
                 d = path.parent
                 try:

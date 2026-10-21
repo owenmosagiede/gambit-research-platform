@@ -107,6 +107,9 @@ def recipe_for_legacy_feature(root,feature):
 def legacy_recipe_projector(root,recipe):
     """Build one verified, per-request projector for independently read members."""
     validate_record(recipe)
+    if recipe['body']['input_contract']['source_profile']=='fx_currency_price.1.0.0':
+        from data.fx_currency_features import projector
+        return projector(root,recipe)
     registry,policy,variants=_context(root)
     expected={record['id']:record for record in (_definition(registry,policy,v) for v in variants.values())}
     candidate=expected.get(recipe['id'])
@@ -241,13 +244,23 @@ def _read_registered(root):
 
 
 def list_reusable_fx_recipes(root):
-    _,_,_,records,_,_=_registered(root)
+    try:_,_,_,records,_,_=_registered(root)
+    except ReusableRecipeNotFound:records={}
+    from data.fx_currency_catalog import active_release
+    if active_release(root):
+        from data.fx_currency_features import records as currency_records
+        records={**records,**currency_records(root)}
     return sorted(records.values(),key=lambda record:(record['display_name'],record['id']))
 
 
 def load_reusable_recipe(root,identifier,version='1.0.0'):
     if not isinstance(identifier,str) or not RECIPE_ID.fullmatch(identifier) or version!='1.0.0':
         raise ReusableRecipeNotFound('Unknown reusable Feature recipe')
+    from data.fx_currency_catalog import active_release
+    if active_release(root):
+        from data.fx_currency_features import records as currency_records
+        record=currency_records(root).get(identifier)
+        if record is not None:return deepcopy(record)
     _,_,_,records,_,_=_registered(root)
     if identifier not in records:raise ReusableRecipeNotFound('Unknown reusable Feature recipe')
     return deepcopy(records[identifier])
@@ -261,6 +274,10 @@ def legacy_bindings_for_recipe(root,recipe_ref,*,verify_features=True):
     independently; catalog identities, exact reference structure and declared
     43-source coverage remain checked without opening individual source files.
     """
+    from data.fx_currency_catalog import active_release
+    if active_release(root):
+        from data.fx_currency_features import records as currency_records, bindings as currency_bindings
+        if recipe_ref.get('id') in currency_records(root):return currency_bindings(root,recipe_ref,verify_features)
     if type(verify_features) is not bool:raise PublicationError("verify_features must be boolean")
     store,registry,policy,records,definitions,bindings=_registered(root)
     record=records.get(recipe_ref.get('id')) if isinstance(recipe_ref,dict) else None

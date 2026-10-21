@@ -257,6 +257,9 @@ def register_fx_scopes(root, request_text, *, registered_at=None):
     Existing matching memberships pin their original metadata evidence even when a
     newer price registration or readiness assessment becomes available.
     """
+    from data.fx_currency_catalog import active_release
+    if active_release(root) is not None:
+        raise ScopeConflict('Legacy CS registration was permanently removed by the currency migration')
     store = FeatureStore(root)
     evidence = _request_evidence(request_text)
     policies = _policies(evidence)
@@ -327,6 +330,10 @@ def _readiness(members, current):
 
 
 def _resolve(store, definition, index, current):
+    from data.transformations.fx_currency import SCOPE_IDS
+    if definition.get('id') in SCOPE_IDS:
+        from data.fx_currency_scopes import resolve
+        return resolve(store, definition, index)
     store._validate(definition)
     scope_ref = reference(definition)
     if store.resolve(scope_ref) != definition:
@@ -399,10 +406,17 @@ def resolve_scope(root, identifier, version):
 def list_scopes(root):
     """Registry projection; unsupported/unavailable scopes are reported, never hidden as ready."""
     store = FeatureStore(root)
+    from data.fx_currency_catalog import active_release
+    from data.transformations.fx_currency import SCOPE_IDS
+    active = active_release(root)
     index = _snapshot_index(store)
     current = {item['instrument_id']: item for item in list_instruments(root)}
     scopes, issues = [], []
     for path in sorted(store.path('definitions/scopes').glob('*/*.json')):
+        if active is None and path.parent.name in SCOPE_IDS:
+            continue  # Staged definitions are not selectable before activation.
+        if active is not None and path.parent.name in {row[0] for row in UNIVERSES}:
+            continue
         try:
             definition = strict_json(stable_read(path))
             if record_path(definition) != str(path.relative_to(store.root)):

@@ -348,9 +348,9 @@ def _max_known(values):
     return max(values)
 
 
-def _construct(instrument_id, prepared, source_metadata, alignment, legs):
-    specification = instrument_spec(instrument_id)
-    bound_recipe = recipe(instrument_id, source_metadata, alignment)
+def _construct(instrument_id, prepared, source_metadata, alignment, legs, *, specification=None, bound_recipe=None):
+    specification = instrument_spec(instrument_id) if specification is None else specification
+    bound_recipe = recipe(instrument_id, source_metadata, alignment) if bound_recipe is None else bound_recipe
     symbols = specification["source_symbols"]
     dates = sorted(set().union(*(set(prepared.get(symbol, {})) for symbol in symbols)))
     leg_lookup = {currency: {row["reference_time"]: row for row in rows} for currency, rows in legs.items()}

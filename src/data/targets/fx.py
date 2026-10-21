@@ -173,16 +173,22 @@ def _price_snapshot(store, binding, policy, *, verify_rows=True):
     """
     from data.transformations.fx import instrument_spec, recipe, construct_prices, normalize_legs
     record=store.resolve(binding);body=record.get('body',{})
-    if record['record_type']!='snapshot_manifest' or body.get('kind')!='fx_constructed_prices' or body.get('profile')!='fx_price.1.0.0':
+    profile=body.get('profile')
+    if profile=='fx_currency_price.1.0.0':
+        from data.transformations.fx_currency import instrument_spec, recipe, construct_prices
+    if record['record_type']!='snapshot_manifest' or body.get('kind')!='fx_constructed_prices' or profile not in ('fx_price.1.0.0','fx_currency_price.1.0.0'):
         raise TargetStoreError('Target requires a canonical constructed FX price snapshot')
     spec=instrument_spec(body['instrument_id'])
     if body['economic_id']!=spec['economic_id']:raise TargetStoreError('FX economic identity mismatch')
-    view=store.resolve(body['definition']);dataset=store.resolve(view.get('body',{}).get('dataset'))
+    view=store.resolve(body['definition'])
+    if not isinstance(view.get('body',{}).get('dataset'),dict):
+        raise TargetStoreError('Price SourceView must bind an exact dataset')
+    dataset=store.resolve(view['body']['dataset'])
     transformation=store.resolve(body['recipe']);recipe_body=transformation.get('body',{})
-    if transformation['record_type']!='transformation_definition' or recipe_body.get('profile')!='fx_price.1.0.0':
+    if transformation['record_type']!='transformation_definition' or recipe_body.get('profile')!=profile:
         raise TargetStoreError('Not a canonical FX transformation recipe')
     expected_recipe=recipe(body['instrument_id'],recipe_body['sources'],recipe_body['alignment_policy'])
-    if recipe_body!={'profile':'fx_price.1.0.0',**expected_recipe['body']} or recipe_body['alignment_policy'] is None:
+    if recipe_body!={'profile':profile,**expected_recipe['body']} or recipe_body['alignment_policy'] is None:
         raise TargetStoreError('FX recipe differs from the supported versioned construction')
     alignment=recipe_body['alignment_policy']
     if alignment['mode']=='retrospective_date_label' and alignment['approval_evidence']!=policy['approval_evidence']:
@@ -193,9 +199,9 @@ def _price_snapshot(store, binding, policy, *, verify_rows=True):
     meta={'base_currency':spec['base_currency'],'quote_currency':spec['quote_currency'],'unit':spec['unit'],
         'price_field':'close','price_basis':'unknown','timing':{'timezone':None,'bar_boundary':None,'session_convention':None,'synchronization':'unverified'}}
     if body['source_metadata']!=meta:raise TargetStoreError('Target source semantics differ from the bounded unknown-timing FX profile')
-    expected_dataset={'kind':'fx_constructed_dataset','profile':'fx_price.1.0.0','instrument_id':spec['instrument_id'],
+    expected_dataset={'kind':'fx_constructed_dataset','profile':profile,'instrument_id':spec['instrument_id'],
         'economic_id':spec['economic_id'],'recipe':body['recipe'],'source_metadata':meta}
-    expected_view={'kind':'fx_constructed_view','profile':'fx_price.1.0.0','dataset':reference(dataset),'recipe':body['recipe'],'source_metadata':meta}
+    expected_view={'kind':'fx_constructed_view','profile':profile,'dataset':reference(dataset),'recipe':body['recipe'],'source_metadata':meta}
     if dataset['record_type']!='dataset_definition' or dataset['body']!=expected_dataset or view['record_type']!='source_view_definition' or view['body']!=expected_view:
         raise TargetStoreError('Price snapshot does not belong to its declared dataset and source view')
     expected_construction={'method':spec['method'],'version':'1.0.0','price_basis':'unknown','alignment':alignment['mode'],'policy':body['recipe']}
@@ -222,7 +228,7 @@ def _price_snapshot(store, binding, policy, *, verify_rows=True):
     expected_legs=normalize_legs(sources,source_metadata=metadata);seen=set()
     for leg_ref in body['normalized_legs']:
         leg=store.resolve(leg_ref);leg_body=leg['body'];currency=leg_body['currency']
-        if leg_body.get('kind')!='fx_normalized_leg' or leg_body.get('profile')!='fx_price.1.0.0' or currency in seen or currency not in expected_legs:
+        if leg_body.get('kind')!='fx_normalized_leg' or leg_body.get('profile')!=profile or currency in seen or currency not in expected_legs:
             raise TargetStoreError('Invalid or duplicated normalized FX leg')
         values=read_rows(store,leg_body['members']);symbol=next(symbol for symbol in sources if currency in symbol.split('/'))
         if values!=expected_legs[currency] or leg_body['record_count']!=len(values) or leg_body['semantic_content_sha256']!=digest(values) or leg_body['upstream_snapshots']!=[upstreams[symbol]]:

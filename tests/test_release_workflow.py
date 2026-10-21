@@ -192,3 +192,16 @@ class ReleaseTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class BatchReleaseGateTests(unittest.TestCase):
+    def test_paused_batch_blocks_code_release_without_jobs(self):
+        from runtime.research_batches import save
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            folder=root/'storage/catalog/operations/research_batches/fixture'
+            save(folder/'manifest.json',{'schema':'research_batch_v1','batch_id':'fixture'})
+            save(folder/'state.json',{'state':'paused'})
+            machine=server.Machine(root)
+            self.assertEqual(machine.queue(),['batch:fixture'])
+            save(folder/'state.json',{'state':'completed'},mutable=True)
+            self.assertEqual(machine.queue(),[])

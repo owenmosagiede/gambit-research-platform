@@ -212,8 +212,10 @@ class ResearchJobs:
         expected=dict(events[-1]['job'],sequence=events[-1]['sequence'],event_sha256=digest(events[-1]))
         return expected
     def get(self,rid, *, _snapshot=None):
+        from data.fx_currency_migration import check_intake
         path=self._submission_path(rid)
         with lock(self.root,'research-writer'):
+            check_intake(self.root)
             from runtime.experiment_identity import IdentityIndex
             index=IdentityIndex(self)
             journal=index.journal(rid)
@@ -328,9 +330,12 @@ class ResearchJobs:
         return value
 
     def submit(self,value, *, _batch_packet=None, _batch_duplicate_policy=None, _batch_reuse_id=None):
+        from data.fx_currency_migration import check_intake
+        check_intake(self.root)
         from runtime.experiment_identity import IdentityIndex, freeze, scientific_key, save, release_reviews
         request=normalize_submission(value);rid=request.pop('request_id');intent=request
         with lock(self.root,'research-writer'):
+            check_intake(self.root)
             index=IdentityIndex(self)
             journal=index.journal(rid)
             if journal:
@@ -389,7 +394,9 @@ class ResearchJobs:
             if original:value['intake_action']='created'
         return value,original is not None
     def cancel(self,rid):
+        from data.fx_currency_migration import check_intake
         with lock(self.root,'research-writer'):
+            check_intake(self.root)
             request_id(rid)
             incident=self._incident_path(self._submission_path(rid))
             if incident.exists():raise ResearchConflict('Quarantined submissions cannot be resumed or changed')
@@ -400,7 +407,9 @@ class ResearchJobs:
                 job=self._save(job)
         return self.public(job)
     def resume(self,rid):
+        from data.fx_currency_migration import check_intake
         with lock(self.root,'research-writer'):
+            check_intake(self.root)
             request_id(rid)
             incident=self._incident_path(self._submission_path(rid))
             if incident.exists():raise ResearchConflict('Quarantined submissions cannot be resumed or changed')
@@ -418,7 +427,9 @@ class ResearchJobs:
         if self._cancelled(rid):raise Cancelled()
     def _pending(self):
         from runtime.experiment_identity import IdentityIndex
+        from data.fx_currency_migration import MARKER
         with lock(self.root,'research-writer'):
+            if inside(self.root,MARKER).exists():return []
             index=IdentityIndex(self);state=index.load()
             if not state['issues']:
                 for rid in state.get('pending',[]):
