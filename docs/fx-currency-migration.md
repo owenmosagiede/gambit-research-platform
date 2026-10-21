@@ -67,15 +67,22 @@ not inherit a mutable active-release pointer as its scientific identity.
 Normal code deployment does not install registry changes. Do not run this tool
 against the historical Desktop store or copy its observations to production.
 Run with the reviewed candidate source, locked dependencies and the sole cloud
-store as `--root`. Stop web intake, batch dispatch and workers for staging and
-application. Hold the normal backup/release operational controls; do not restart
-old application code after activating the new registry.
+store as `--root`. Deploy the compatible code first through the normal controlled
+release, while the old registry is still active. Then stop web intake, batch
+dispatch and workers for staging and application. Hold the normal backup/release
+operational controls; do not restart old code after activating the new registry.
 
 1. Merge and validate the prerequisite shared experiment-intake change and this
    change. Obtain the exact release artifact and checks receipt. Keep the cloud
    Python/runtime unchanged. Complete or explicitly cancel active requests on
    their original implementation first. Reconcile every unfinished retained TS
-   batch; a paused batch still contains frozen old implementation inputs.
+   batch; a paused batch still contains frozen old implementation inputs. Unfinished
+   batches are a release blocker, including old-only batches awaiting explicit
+   disposal; do not run unwanted experiments merely to clear the gate. Install
+   the reviewed `deploy/release_server.py` in the separately managed release-control
+   directory as an explicit operator change. Apply the normal controlled code
+   release while services are healthy, then stop them for the registry migration.
+   This code supports the old registry during that intermediate window.
 2. Create an explicit request JSON outside the platform catalog with
    `source_snapshots` (all 18 provider symbols mapped to exact content references),
    `return_policy` (the existing approved five-horizon policy), and `request_text`
@@ -116,9 +123,7 @@ old application code after activating the new registry.
    intake lookup is discarded and rebuilt from retained authority. No archive
    copies of the discarded definitions or results are created. The migration
    receipt contains hashes and paths only.
-6. Install the matching code through the controlled release path while services
-   remain stopped. A coordinated registry/code migration needs an operator-managed
-   stop/restart window; do not use an automatic intermediate restart. Verify 50
+6. With the matching code already installed, verify 50
    active Scopes (43 TS, seven CS), 18 frozen members each, no legacy CS selections,
    correct application compatibility, and retained TS references. Restart services
    only with matching registry and code. Selection checks must not launch research.
