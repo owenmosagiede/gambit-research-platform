@@ -160,8 +160,9 @@ def resolve_feature_scope(root, identifier, scope_id, scope_version, *, version=
     response['preparation_context']={'knowledge_cutoff':cutoff,'evaluation_policy':reference(policy),
         'retrospective_policy':batch['retrospective_policy'],'output_period_requested':None}
     try:
-        from research.feature_applications import resolve as resolve_application
-        resolve_application(root,{'id':identifier,'version':version},scope)
+        currency_recipe=recipe['body']['input_contract']['source_profile']=='fx_currency_price.1.0.0'
+        if currency_recipe!=(scope.get('research_basis')=='currency_against_quote_reference'):
+            raise PublicationError('Feature and Scope price orientation differ')
         if scope.get('price_catalog'):
             from data.fx_currency_catalog import resolve_prices
             _,instruments=resolve_prices(root,scope['price_catalog']);rows=list(instruments.values())

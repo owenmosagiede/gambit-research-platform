@@ -71,7 +71,7 @@ class CurrencyReleaseTests(unittest.TestCase):
         from test_scopes import metadata_fixture,WHEN
         from test_research_inputs import approved_profile
         cls.temp=tempfile.TemporaryDirectory();cls.addClassCleanup(cls.temp.cleanup)
-        cls.root,legacy,audit,_=build_fixture(Path(cls.temp.name))
+        cls.root,legacy,audit,_=build_fixture(Path(cls.temp.name),days=('2020-01-02','2020-01-03','2020-01-06','2020-01-07','2020-01-08','2020-01-09','2020-01-10'))
         project=Path(__file__).resolve().parents[1]
         shutil.copytree(project/'definitions',cls.root/'definitions',dirs_exist_ok=True)
         shutil.rmtree(cls.root/'definitions/scopes')
@@ -108,7 +108,8 @@ class CurrencyReleaseTests(unittest.TestCase):
         self.assertEqual(result['issues'],[])
         self.assertEqual(result['scope_count'],50)
         self.assertEqual(sum(s['kind']=='universe' for s in result['scopes']),7)
-        recipe=next(iter(records(self.root).values()))
+        recipe=next(r for r in records(self.root).values() if r['body']['steps'][-1]['operator']['id']=='TR_BASE_change_diff'
+            and r['body']['steps'][-1]['parameters']==[{'name':'k','unit':'observations','value':{'kind':'integer','value':'5'}}])
         selection={k:recipe[k] for k in ('id','version')}
         with self.assertRaises(ApplicationBlocked):resolve(self.root,selection,resolve_scope(self.root,'EURUSD','1.0.0'))
         intent={'feature':selection,'scope':{'id':'FX_CCY_VS_USD','version':'1.0.0'},'target_family':'price_return','expected_direction':'NEGATIVE'}
@@ -123,10 +124,13 @@ class CurrencyReleaseTests(unittest.TestCase):
         from data.fx_feature_store import prepare_fx_feature,read_fx_materialization
         member=frozen['members'][0]
         saved=prepare_fx_feature(self.root,member['feature'],price_snapshot=member['price_snapshot'],
-            batch_policy=frozen['batch_policy'],knowledge_cutoff=frozen['knowledge_cutoff'],start='2020-01-02',end='2020-01-07')
+            batch_policy=frozen['batch_policy'],knowledge_cutoff=frozen['knowledge_cutoff'],start='2020-01-02',end='2020-01-10')
         output=read_fx_materialization(self.root,saved['materialization']['id'])
         self.assertEqual(output['manifest']['input_key']['source_snapshots'],[member['price_snapshot']])
         self.assertTrue(all(r['entity_id']==member['instrument_id'] for r in output['observations']))
+        import math
+        _,prices=_price_snapshot(FeatureStore(self.root),member['price_snapshot'],frozen['batch_policy'])
+        self.assertAlmostEqual(float(output['observations'][-1]['value']),math.log(float(prices[-1]['value'])/float(prices[1]['value'])))
         self.assertTrue(apply(self.root,manifest,manifest['sha256'])['reused'])
 
 class CurrencySemanticsTests(unittest.TestCase):

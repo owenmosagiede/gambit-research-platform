@@ -18,7 +18,7 @@ from data.transformations.identity import digest
 PROJECT = Path(__file__).resolve().parents[1]
 
 
-def build_fixture(directory):
+def build_fixture(directory, days=('2020-01-02', '2020-01-03', '2020-01-06', '2020-01-07')):
     root, legacy = directory / 'platform', directory / 'legacy'
     root.mkdir(); legacy.mkdir()
     shutil.copytree(PROJECT / 'specs', root / 'specs')
@@ -37,7 +37,7 @@ def build_fixture(directory):
         directory.mkdir(parents=True)
         rows = [{'datetime': day, 'open': str(number + 1), 'high': str(number + 2),
                  'low': str(number + 1), 'close': str(number + 1 + i / 10)}
-                for i, day in enumerate(('2020-01-02', '2020-01-03', '2020-01-06', '2020-01-07'))]
+                for i, day in enumerate(days)]
         raw = {'meta': {'symbol': symbol, 'interval': '1day'}, 'values': rows}
         raw_bytes = canonical(raw)
         raw_hash = sha(raw_bytes)
@@ -72,11 +72,11 @@ def build_fixture(directory):
             'pages': [{'directory': str(directory.relative_to(legacy)),
                 'observation_path': obs_relative, 'observation_sha256': sha(obs_bytes),
                 'raw_path': raw_relative, 'raw_sha256': raw_hash, 'retrieved_at': capture,
-                'ingestion_id': ingestion_id, 'actual_ohlc_rows': 16, 'actual_close_rows': 4}],
-            'actual_close_rows': 4, 'unique_close_dates': 4,
-            'coverage_min': '2020-01-02', 'coverage_max': '2020-01-07',
+                'ingestion_id': ingestion_id, 'actual_ohlc_rows': len(rows)*4, 'actual_close_rows': len(rows)}],
+            'actual_close_rows': len(rows), 'unique_close_dates': len(rows),
+            'coverage_min': min(days), 'coverage_max': max(days),
             'all_raw_artifacts': [{'path': raw_relative, 'sha256': raw_hash,
-                'known_ingestions': [ingestion], 'date_min': '2020-01-02', 'date_max': '2020-01-07'}],
+                'known_ingestions': [ingestion], 'date_min': min(days), 'date_max': max(days)}],
             'raw_dates_absent_from_canonical': []})
     audit = {'sources': sources, 'legacy_root': str(legacy)}
     # The caller receives a stable fixture path outside the read-only source root.

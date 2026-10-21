@@ -107,3 +107,12 @@ class CurrencyDeletionTests(unittest.TestCase):
     def test_unhandled_retained_consumer_blocks_deletion(self):
         self.put('storage/catalog/signal_library/entries/shared.json',{'record_type':'signal_library_entry','research_result':ref(self.trial)})
         self.assertTrue(any('Retained consumer' in b for b in self.preview()['blockers']))
+
+
+    def test_batch_mixing_retired_and_new_currency_scope_is_not_deleted(self):
+        path='storage/catalog/operations/research_batches/mixed/manifest.json'
+        self.put(path,{'schema':'research_batch_v1','intents':[
+            {'scope':{'id':'FX_G10','version':'1.0.0'}},{'scope':{'id':'FX_CCY_VS_USD','version':'1.0.0'}}]})
+        manifest=self.preview()
+        self.assertTrue(any('Mixed' in b for b in manifest['blockers']))
+        self.assertNotIn(path,manifest['delete'])

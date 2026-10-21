@@ -11,6 +11,7 @@ import hashlib
 import re
 from data.alfred_onboarding import strict_json,stable_read
 from data.scopes import UNIVERSES,PAIR_IDS
+from data.transformations.fx_currency import SCOPE_IDS
 from data.feature_store import FeatureStore
 from data.targets.store import TargetStore
 from research.store import lock,install_bytes,inside,FOLDERS
@@ -44,9 +45,11 @@ def _strings(value):
 
 def _scopes(value):
     if isinstance(value,dict):
-        found={value['id']} if isinstance(value.get('id'),str) and value.get('id') in RETIRED|set(PAIR_IDS) else set()
+        found={value['id']} if isinstance(value.get('id'),str) and value.get('id') in RETIRED|set(PAIR_IDS)|set(SCOPE_IDS) else set()
         for key in ('scope','scope_id'):
-            if isinstance(value.get(key),str) and value[key] in RETIRED|set(PAIR_IDS):found.add(value[key])
+            candidate=value.get(key)
+            if isinstance(candidate,str) and candidate:found.add(candidate)
+            elif isinstance(candidate,dict) and isinstance(candidate.get('id'),str):found.add(candidate['id'])
         return found|set().union(*(_scopes(v) for v in value.values())) if value else found
     if isinstance(value,list):return set().union(*(_scopes(v) for v in value)) if value else set()
     return set()
@@ -97,7 +100,7 @@ def plan(root,release_ref):
         if p.startswith(CORE) and record.get('schema_version')!='0.8.0':
             blockers.append('Unsupported historical research schema: '+p)
         if scopes[p]&RETIRED:
-            if scopes[p]&set(PAIR_IDS):blockers.append('Mixed CS/TS ownership: '+p)
+            if scopes[p]-RETIRED:blockers.append('Mixed retired/retained Scope ownership: '+p)
             else:selected.add(p)
     for p,r in records.items():
         kind=str(r.get('record_type',''))
@@ -113,8 +116,8 @@ def plan(root,release_ref):
         ids=set().union(*(_identities(records[p]) for p in selected)) if selected else set()
         additions={p for p in eligible-selected if strings[p]&ids}
         for p in additions:
-            if scopes[p]&set(PAIR_IDS):blockers.append('Retained TS record references retired CS history: '+p)
-        additions={p for p in additions if not scopes[p]&set(PAIR_IDS)}
+            if scopes[p]-RETIRED:blockers.append('Retained Scope record references retired CS history: '+p)
+        additions={p for p in additions if not scopes[p]-RETIRED}
         if not additions:break
         selected|=additions
     # Delete whole old-only batch directories, including checksummed previews/packets.
@@ -123,7 +126,7 @@ def plan(root,release_ref):
     for bid in batches:
         prefix=batchbase+bid+'/'
         paths={p for p in records if p.startswith(prefix)}
-        if any(scopes[p]&set(PAIR_IDS) for p in paths):blockers.append('Mixed batch must be reconciled explicitly: '+bid)
+        if any(scopes[p]-RETIRED for p in paths):blockers.append('Mixed batch must be reconciled explicitly: '+bid)
         else:selected|=paths
     # Shared artifacts are retained; only artifacts exclusively referenced by deleted records qualify.
     removed_refs=set().union(*(strings[p] for p in selected)) if selected else set()
