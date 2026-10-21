@@ -122,7 +122,8 @@ def resolve_prices(root, catalog_ref, *, verify_rows=False):
         if row.get('kind')!='fx_currency_registration' or row.get('profile')!=currency.PROFILE or symbol in result:
             raise ValueError('Invalid or duplicate currency registration')
         snapshot,_=_price_snapshot(store,row['price_snapshot'],batch,verify_rows=verify_rows)
-        if (snapshot['body']['instrument_id']!=symbol or row['source_metadata']!=snapshot['body']['source_metadata']
+        if (snapshot['body'].get('profile')!=currency.PROFILE
+                or snapshot['body']['instrument_id']!=symbol or row['source_metadata']!=snapshot['body']['source_metadata']
                 or row['economic_id']!=spec['economic_id'] or row['approval']!=body['approval']
                 or row['source_inputs']!=[body['source_snapshots'][s] for s in spec['source_symbols']]
                 or snapshot['body']['upstream_snapshots']!=row['source_inputs']
