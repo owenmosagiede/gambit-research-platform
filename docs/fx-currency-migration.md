@@ -130,7 +130,7 @@ operational controls; do not restart old code after activating the new registry.
 
 If interrupted, keep services stopped and rerun `apply` with the identical
 manifest/digest. Changed retained bytes or deletion candidates block resumption.
-The maintenance marker prevents fresh intake until completion. The deletion is
+The maintenance marker prevents intake, resume, recovery and batch dispatch until completion. The deletion is
 irreversible through this tool. Code rollback alone cannot undo this registry
 migration; any disaster recovery uses the existing operational backup process.
 

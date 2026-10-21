@@ -116,3 +116,22 @@ class CurrencyDeletionTests(unittest.TestCase):
         manifest=self.preview()
         self.assertTrue(any('Mixed' in b for b in manifest['blockers']))
         self.assertNotIn(path,manifest['delete'])
+
+    def test_maintenance_marker_blocks_resume_recovery_and_batch_dispatch(self):
+        from runtime.research_jobs import ResearchJobs
+        from runtime.research_batches import ResearchBatches
+        from research.contracts import ResearchBlocked
+        self.put(MARKER,{'sha256':'interrupted'})
+        jobs=ResearchJobs(self.root)
+        with self.assertRaises(ResearchBlocked):jobs.resume('a0000000-0000-4000-8000-000000000001')
+        with self.assertRaises(ResearchBlocked):jobs.get('a0000000-0000-4000-8000-000000000001')
+        self.assertEqual(jobs._pending(),[])
+        batches=ResearchBatches(jobs)
+        self.assertIsNone(batches.advance())
+        with self.assertRaises(ResearchBlocked):batches.control('a0000000-0000-4000-8000-000000000001','resume')
+
+    def test_uncommitted_retained_intake_reservation_blocks_migration(self):
+        request='a0000000-0000-4000-8000-000000000001'
+        self.put('storage/catalog/operations/experiment_intake/requests/'+request+'.json',
+            {'request_id':request,'canonical_request_id':request,'intent':{'scope':{'id':'EURUSD','version':'1.0.0'}}})
+        self.assertIn('Unverifiable request: '+request,self.preview()['blockers'])

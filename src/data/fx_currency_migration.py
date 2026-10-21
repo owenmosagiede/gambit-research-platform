@@ -146,6 +146,10 @@ def plan(root,release_ref):
     from runtime.research_jobs import ResearchJobs,ACTIVE
     jobs=ResearchJobs(root)
     request_ids={Path(p).stem for p in records if p.startswith(('storage/catalog/submissions/','storage/catalog/operations/jobs/'))}
+    for p,r in records.items():
+        if p.startswith('storage/catalog/operations/experiment_intake/requests/') and p not in selected:
+            if isinstance(r.get('canonical_request_id'),str):request_ids.add(r['canonical_request_id'])
+            else:blockers.append('Unverifiable retained intake reservation: '+p)
     for rid in sorted(request_ids):
         try:
             job=jobs._read_job(rid)
