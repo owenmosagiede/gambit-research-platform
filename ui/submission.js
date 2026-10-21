@@ -52,7 +52,11 @@
 
   function readJob(value) {
     const job = value && value.job;
-    if (!job || !current || job.request_id !== current.payload.request_id || !Object.prototype.hasOwnProperty.call(labels, job.status) ||
+    const receipt = job?.submission_receipt;
+    const linked = current && receipt?.request_id === current.payload.request_id &&
+      receipt.canonical_request_id === job.request_id && /^[0-9a-f]{64}$/.test(receipt.scientific_identity) &&
+      /^[0-9a-f]{64}$/.test(receipt.journal_sha256);
+    if (!job || !current || (job.request_id !== current.payload.request_id && !linked && job.request_id !== current.job?.request_id) || !Object.prototype.hasOwnProperty.call(labels, job.status) ||
         !text(job.stage) || typeof job.message !== "string" || ![null, "TS", "CS"].includes(job.mode) ||
         !job.progress || !count(job.progress.completed) || !count(job.progress.total) ||
         job.progress.completed > job.progress.total || !Array.isArray(job.horizons) ||
@@ -187,9 +191,19 @@
   function notice(message) { $("submission-notice").textContent = message; }
   function accepted(job) {
     current.job = job; current.uncertain = false; current.notRecorded = false; current.rejection = null; current.message = "";
-    notice(job.status === "succeeded" || job.status === "cancelled"
+    notice(job.intake_action === "view_results" ? "View existing trial/results — this experiment is already completed."
+      : job.intake_action === "recover_existing" ? "An existing trial needs recovery. Use its Resume action when available; no new experiment was queued."
+      : job.intake_action === "view_existing" ? "View existing trial/results — this experiment is already recorded."
+      : job.status === "succeeded" || job.status === "cancelled"
       ? "Submission finished. Its saved outcomes are in Trial Ledger."
       : "Submission recorded. Follow its trial card below.");
+    if (["view_existing", "view_results", "recover_existing"].includes(job.intake_action)) {
+      const link = el("a", "View existing trial/results");
+      link.href = ["succeeded", "cancelled", "failed", "blocked"].includes(job.status) ? "#ledger" : `#trial-${encodeURIComponent(job.request_id)}`;
+      if (["succeeded", "cancelled", "failed", "blocked"].includes(job.status)) link.addEventListener("click", () =>
+        window.dispatchEvent(new CustomEvent("research-ledger-focus", {detail:{request_id:job.request_id}})));
+      $("submission-notice").append(link);
+    }
     window.dispatchEvent(new CustomEvent("research-job-update", {detail:{job, intent: {
       feature: current.payload.feature, scope: current.payload.scope,
       target_family: current.payload.target_family, expected_direction: current.payload.expected_direction
@@ -274,7 +288,7 @@
   });
   window.addEventListener("research-queue-state", event => {
     if (!current || busy) return;
-    const found = event.detail?.items?.find(item => item.job.request_id === current.payload.request_id);
+    const found = event.detail?.items?.find(item => item.job.request_id === (current.job?.request_id || current.payload.request_id));
     if (!found) return;
     try {
       const job = readJob({job:found.job});

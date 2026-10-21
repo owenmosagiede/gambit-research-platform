@@ -90,5 +90,7 @@ rollback is deferred rather than interrupting that job. Resolve operational
 health, let the original version's jobs finish, then run the explicit rollback.
 
 Code changes legitimately alter research implementation identity. Old frozen
-failed/cancelled submissions may then be unable to resume; preserve their records
-and create a new submission if desired. Never rewrite their IDs or fingerprints.
+failed/cancelled submissions may then be unable to resume. Preserve their records
+and reconcile exact implementation compatibility before further intake. A new
+request UUID is not permission to repeat the same experiment. See
+`docs/experiment-intake.md`. Never rewrite historical IDs or fingerprints.

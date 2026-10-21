@@ -214,6 +214,14 @@ class ResearchJobs:
     def get(self,rid, *, _snapshot=None):
         path=self._submission_path(rid)
         with lock(self.root,'research-writer'):
+            from runtime.experiment_identity import IdentityIndex
+            index=IdentityIndex(self)
+            journal=index.journal(rid)
+            if journal:
+                try:return self._received(journal,index)
+                except Exception as exc:
+                    canonical_path=self._submission_path(journal['canonical_request_id'])
+                    return self._incident_job(self._incident(canonical_path,exc))
             incident=self._incident_path(path)
             if incident.exists():return self._incident_job(read_json(incident))
             try:job=self._read_job(rid,_snapshot)
@@ -267,7 +275,7 @@ class ResearchJobs:
     def _resume_blocker(self,rid):
         if self._submission(rid)['implementation'] != implementation():
             return {'code':'IMPLEMENTATION_CHANGED','message':
-                'This submission uses an older code version and cannot resume. Select the desired inputs and press Submit to create a new request. The original record is preserved.'}
+                'This submission uses an older code version and cannot resume. Recovery needs a compatible execution release. Reconcile the release before retrying; the original record is preserved.'}
         return None
     def _save(self,job):
         rid=job['request_id'];events=self._events(rid);sequence=len(events)
@@ -283,9 +291,53 @@ class ResearchJobs:
             job=self._read_job(rid)
             if job is None:raise ResearchError('Unknown execution')
             job.update(changes);return self._save(job)
+    def _ensure_recorded(self, original):
+        """Complete an interrupted publication without resolving new inputs."""
+        rid=original['request_id']
+        install_bytes(self._submission_path(rid),canonical(original)+b'\n')
+        job=self._read_job(rid)
+        if job is not None:return job
+        job={'request_id':rid,'attempt_id':str(uuid.uuid4()),'status':'queued','stage':'recorded',
+            'message':'Request recorded. Waiting for the research worker.', 'blockers':[],
+            'progress':{'completed':0,'total':5},
+            'horizons':[{'horizon':h,'p1_status':'pending','p2_status':'pending'} for h in HORIZONS],
+            'results':[],'mode':None,'created_at':original['created_at'],
+            'queued_at':original['created_at'],'cancel_requested':False}
+        return self._save(job)
+
+    def _received(self, journal, index):
+        rid=journal['canonical_request_id']
+        if not self._submission_path(rid).exists():
+            authority=index.journal(rid)
+            if not authority or not authority.get('submission'):
+                raise ResearchConflict('Canonical experiment is missing; reconciliation required')
+            original=authority['submission']
+        else:original=self._submission(rid)
+        if original['intent']!=journal['intent']:
+            raise ResearchConflict('Receipt and experiment differ; reconciliation required')
+        if index.entry(original)['scientific_identity']!=journal['scientific_identity']:
+            raise ResearchConflict('Receipt scientific identity differs; reconciliation required')
+        incident=self._incident_path(self._submission_path(rid))
+        if incident.exists():return self._incident_job(read_json(incident))
+        job=self._ensure_recorded(original)
+        value=self.public(job)
+        value['submission_receipt']=index.receipt(journal)
+        value['intake_action']=('view_results' if job['status']=='succeeded' else
+            'view_existing' if job['status'] in ACTIVE else 'recover_existing')
+        self.wake.set()
+        return value
+
     def submit(self,value, *, _batch_packet=None, _batch_duplicate_policy=None, _batch_reuse_id=None):
+        from runtime.experiment_identity import IdentityIndex, freeze, scientific_key, save, release_reviews
         request=normalize_submission(value);rid=request.pop('request_id');intent=request
         with lock(self.root,'research-writer'):
+            index=IdentityIndex(self)
+            journal=index.journal(rid)
+            if journal:
+                if journal['intent']!=intent:raise ResearchConflict('This request ID already has different inputs')
+                if _batch_packet is not None and scientific_key(_batch_packet)!=journal['scientific_identity']:
+                    raise ResearchConflict('Batch request belongs to different frozen inputs')
+                return self._received(journal,index),False
             path=self._submission_path(rid)
             incident=self._incident_path(path)
             if incident.exists():return self._incident_job(read_json(incident)),False
@@ -293,67 +345,49 @@ class ResearchJobs:
                 try:original=self._submission(rid)
                 except Exception as exc:return self._incident_job(self._incident(path,exc)),False
                 if original['intent']!=intent:raise ResearchConflict('This request ID already has different inputs')
-                if _batch_packet is not None:
-                    from runtime.research_batches import semantic_key
-                    if 'frozen_plan' not in original or semantic_key(original)!=semantic_key(_batch_packet):
-                        raise ResearchConflict('Deterministic batch ID belongs to different frozen inputs')
-                job=self._read_job(rid)
-                if job is not None:return self.public(job),False
-                # Recover a crash after durable intent but before its first event.
-            else:
-                if _batch_packet is not None:
-                    from runtime.research_batches import ResearchBatches
-                    packet=deepcopy(_batch_packet)
-                    if packet['intent']!=intent or packet['implementation']!=implementation():
-                        raise ResearchConflict('Batch frozen inputs or implementation differ')
-                    current_profile=load_profile(self.root)
-                    if self.adapter is None:
-                        from research import external_features, feature_applications
-                        _, capability=feature_applications.binding_for(self.root,intent['feature'])
-                        if capability['kind']==feature_applications.SINGLE_SERIES:
-                            current_profile=external_features.load_profile(self.root)
-                    if current_profile!=packet['research_spec']:
-                        raise ResearchConflict('Research Spec changed after preview; create a new batch')
-                    matches,ambiguous=ResearchBatches(self)._duplicates(packet)
-                    if ambiguous:raise ResearchConflict('Matching history has unresolved inputs; review before dispatch')
-                    reusable=[(r,j) for r,j in matches if j and j['status'] in ACTIVE|{'succeeded'}]
-                    if _batch_reuse_id is not None:
-                        reusable=[(r,j) for r,j in reusable if r==_batch_reuse_id]
-                        if not reusable:raise ResearchConflict('Previewed duplicate is no longer reusable; no replacement was submitted')
-                    if reusable and _batch_duplicate_policy=='reuse_exact':
-                        _,job=sorted(reusable,key=lambda x:(x[1]['status']!='succeeded',x[0]))[0]
-                        return self.public(job),False
-                    if matches:raise ResearchConflict('Exact duplicate requires review; no automatic retry of failed/cancelled research')
-                    original=dict(packet,schema_version='0.8.0',request_id=rid,
-                                  intent_fingerprint=digest(intent),created_at=now())
-                else:
-                    profile=load_profile(self.root)
-                    frozen_plan=None
-                    frozen_application=None
-                    if self.adapter is None:
-                        from research import inputs, external_features, feature_applications
-                        try:
-                            _, capability = feature_applications.binding_for(self.root, intent['feature'])
-                            if capability['kind'] == feature_applications.SINGLE_SERIES:
-                                profile=external_features.load_profile(self.root)
-                                frozen_plan=inputs.resolve_plan(self.root,intent,profile)
-                                frozen_application=frozen_plan['feature_application']
-                            else:
-                                scope=inputs.resolve_scope(self.root,intent['scope']['id'],intent['scope']['version'])
-                                frozen_application=feature_applications.resolve(self.root,intent['feature'],scope)
-                        except (ValueError,KeyError,TypeError,OSError) as exc:
-                            raise ResearchBlocked(getattr(exc,'blockers',[{'code':'FEATURE_APPLICATION_BLOCKED','message':str(exc)}])) from exc
-                    original={'schema_version':'0.8.0','request_id':rid,'intent':intent,'intent_fingerprint':digest(intent),
-                        'research_spec':profile,'implementation':implementation(),'created_at':now()}
-                    if frozen_plan is not None:original['frozen_plan']=frozen_plan
-                    if frozen_application is not None:original['feature_application']=frozen_application
+                if index.entry(original)['scientific_identity'] is None:
+                    raise ResearchConflict('Historical inputs were not frozen; reconciliation required')
+                if _batch_packet is not None and index.entry(original)['scientific_identity']!=scientific_key(_batch_packet):
+                    raise ResearchConflict('Batch UUID belongs to different historical inputs')
+                # Existing UUID retries retain their frozen legacy authority.
+                return self.public(self._ensure_recorded(original)),False
+            try:
+                packet=freeze(self,intent,implementation())
+            except ResearchBlocked:raise
+            except (ValueError,KeyError,TypeError,OSError) as exc:
+                raise ResearchBlocked(getattr(exc,'blockers',[{'code':'INPUT_METADATA_BLOCKED','message':str(exc)}])) from exc
+            if _batch_packet is not None:
+                if (_batch_packet['implementation']!=packet['implementation'] or
+                        scientific_key(_batch_packet)!=scientific_key(packet)):
+                    raise ResearchConflict('Exact inputs or implementation changed after preview; create a new preview')
+                packet=deepcopy(_batch_packet)
+            state=index.load()
+            matches,ambiguous=index.matches(packet,state)
+            if ambiguous:raise ResearchConflict('History or release compatibility requires reconciliation: '+', '.join(ambiguous))
+            if _batch_reuse_id is not None and not any(r==_batch_reuse_id for r,_ in matches):
+                raise ResearchConflict('Previewed duplicate is no longer reusable; no replacement was submitted')
+            if _batch_reuse_id is not None and any(j and j['status'] not in ACTIVE|{'succeeded'} for _,j in matches):
+                raise ResearchConflict('Previewed trial now needs recovery; review before dispatch')
+            if matches and _batch_duplicate_policy=='reject':
+                raise ResearchConflict('Exact matching experiment exists; review the existing trial')
+            canonical_id=matches[0][0] if matches else rid
+            original=None
+            if not matches:
+                original=dict(packet,schema_version='0.8.0',request_id=rid,
+                    intent_fingerprint=digest(intent),created_at=now())
                 original['record_sha256']=digest(original)
-                install_bytes(path,canonical(original)+b'\n')
-            job={'request_id':rid,'attempt_id':str(uuid.uuid4()),'status':'queued','stage':'recorded','message':'Request recorded. Waiting for the research worker.',
-                'blockers':[],'progress':{'completed':0,'total':5},'horizons':[{'horizon':h,'p1_status':'pending','p2_status':'pending'} for h in HORIZONS],
-                'results':[],'mode':None,'created_at':original['created_at'],'queued_at':original['created_at'],'cancel_requested':False}
-            job=self._save(job)
-        self.wake.set();return self.public(job),True
+            journal={'schema':'experiment_intake_v1','request_id':rid,'canonical_request_id':canonical_id,
+                'intent':intent,'scientific_identity':scientific_key(packet),'submission':original,
+                'requested_implementation':packet['implementation'],'release_reviews':release_reviews(),'created_at':now()}
+            # Durable reservation first. A crash at any following boundary can be
+            # completed using this journal, with no re-resolution or replacement.
+            index.invalidate()
+            journal=save(index.journal_path(rid),journal)
+            value=self._received(journal,index)
+            if original:state['entries'][rid]=index.entry(original)
+            index.publish(state)
+            if original:value['intake_action']='created'
+        return value,original is not None
     def cancel(self,rid):
         with lock(self.root,'research-writer'):
             request_id(rid)
@@ -383,6 +417,14 @@ class ResearchJobs:
     def _check(self,rid):
         if self._cancelled(rid):raise Cancelled()
     def _pending(self):
+        from runtime.experiment_identity import IdentityIndex
+        with lock(self.root,'research-writer'):
+            index=IdentityIndex(self);state=index.load()
+            if not state['issues']:
+                for rid in state.get('pending',[]):
+                    self._received(index.journal(rid),index)
+                if state.get('pending'):
+                    state['pending']=[];index.publish(state)
         directory=inside(self.root,'storage/catalog/submissions')
         paths={p.name:p for p in directory.glob('*.json')}
         # Missing accepted envelopes remain discoverable through their job projections.
@@ -399,6 +441,9 @@ class ResearchJobs:
                     original=self._submission(p.stem) if job is None else None
                 except Exception as exc:
                     self._incident(p,exc);continue
+                if job is None and not original.get('frozen_plan'):
+                    self._incident(p,ResearchConflict('Historical inputs were not frozen; reconciliation required'))
+                    continue
                 if job is None:
                     # Recover after releasing the writer lock, through normal Submit.
                     found.append({'request_id':p.stem,'original':original})
@@ -502,7 +547,7 @@ class ResearchJobs:
             self._update(rid,status='resolving',stage='preflight',message='Verifying the frozen Research Spec and exact input bindings.')
             blockers=profile_blockers(profile)
             if blockers:raise ResearchBlocked(blockers)
-            if submission['implementation']!=implementation():raise ResearchBlocked([{'code':'IMPLEMENTATION_CHANGED','message':'The installed implementation changed. Submit a new request; the original request retains its code fingerprint.'}])
+            if submission['implementation']!=implementation():raise ResearchBlocked([{'code':'IMPLEMENTATION_CHANGED','message':'The installed implementation changed. Reconcile execution compatibility; the original request retains its code fingerprint.'}])
             adapter=self.adapter
             if adapter is None:
                 from research import inputs as adapter

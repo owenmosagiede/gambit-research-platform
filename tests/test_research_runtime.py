@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import json,math,threading,unittest,uuid
-from research.contracts import digest,ref,canonical,profile_blockers,ResearchConflict,ResearchError
+from research.contracts import digest,ref,canonical,profile_blockers,ResearchConflict,ResearchError,ResearchBlocked
 from research.store import ResearchStore,install_bytes
 from runtime.research_jobs import ResearchJobs
 
@@ -84,16 +84,17 @@ class RuntimeTests(unittest.TestCase):
    self.assertAlmostEqual(float(r['results'][0]['metrics']['primary_effect']),.5,delta=.03)
  def test_pending_policy_never_resolves_or_prepares(self):
   p=profile();p['approval_state']='pending';self.set_profile(p)
-  _,job=self.execute();self.assertEqual(job['status'],'blocked');self.assertEqual(self.adapter.resolve_calls,0);self.assertFalse(self.adapter.preparations)
+  with self.assertRaises(ResearchBlocked):self.execute()
+  self.assertEqual(self.adapter.resolve_calls,0);self.assertFalse(self.adapter.preparations)
  def test_malformed_policy_is_blocked_before_preparation(self):
   for key,value,code in [('spacing',True,'KERNEL_COMPATIBILITY_UNRESOLVED'),('date','20170101','RESEARCH_PERIODS_UNRESOLVED')]:
    with self.subTest(key=key):
     p=profile()
     if key=='spacing':p['kernel']['spacing']=value
     else:p['periods']['P1']['start_inclusive']=value
-    self.set_profile(p);_,job=self.execute()
-    self.assertEqual(job['status'],'blocked')
-    self.assertIn(code,[b['code'] for b in job['blockers']]);self.assertEqual(self.adapter.resolve_calls,0)
+    self.set_profile(p)
+    with self.assertRaises(ResearchBlocked) as raised:self.execute()
+    self.assertIn(code,[b['code'] for b in raised.exception.blockers]);self.assertEqual(self.adapter.resolve_calls,0)
  def test_fingerprint_covers_preparation_and_data_contracts(self):
   from runtime.research_jobs import implementation
   files=implementation()['files']
@@ -143,8 +144,10 @@ class RuntimeTests(unittest.TestCase):
   jobs=ResearchJobs(self.root,adapter=self.adapter);r=intent();jobs.submit(r);self.adapter.on_prepare=lambda:jobs.cancel(r['request_id']);jobs.run_pending_once()
   self.assertEqual(jobs.get(r['request_id'])['status'],'cancelled');self.assertFalse((self.root/'storage/catalog/trial_ledger').exists())
  def test_changed_profile_does_not_change_frozen_request(self):
-  p=profile();p['approval_state']='pending';self.set_profile(p);jobs,job=self.execute();self.set_profile(profile());jobs.resume(job['request_id']);jobs.run_pending_once()
-  self.assertEqual(jobs.get(job['request_id'])['status'],'blocked');self.assertEqual(self.adapter.resolve_calls,0)
+  jobs=ResearchJobs(self.root,adapter=self.adapter,kernels=KernelSpy());request=intent();jobs.submit(request)
+  p=profile();p['version']='2.0.0';self.set_profile(p);jobs.run_pending_once()
+  self.assertEqual(jobs.get(request['request_id'])['status'],'succeeded')
+  self.assertEqual(jobs._submission(request['request_id'])['research_spec']['version'],'1.0.0');self.assertEqual(self.adapter.resolve_calls,1)
  def test_altered_trial_metric_detected(self):
   store=ResearchStore(self.root);r=store.put('trial',{'a':1},{'metrics':{'beta':1.0}});p=store.path('trial',r['id']);r['body']['metrics']['beta']='2';p.write_bytes(canonical(r)+b'\n')
   with self.assertRaisesRegex(ResearchError,'checksum'):store.find('trial',{'a':1})

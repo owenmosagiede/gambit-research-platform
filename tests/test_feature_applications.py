@@ -115,19 +115,21 @@ class NativeApplicationIntegrationTests(unittest.TestCase):
         changed['plan_id']=inputs._plan_id(changed)
         with self.assertRaises(apps.ApplicationBlocked):inputs._validate_plan(changed)
 
-    def test_native_submit_freezes_capability_without_preparing_or_full_planning(self):
+    def test_native_submit_freezes_metadata_plan_without_observations(self):
         import json,uuid
         from runtime.research_jobs import ResearchJobs
         f=self.fixture
+        f.profile['periods']={'P1':{'start_inclusive':'2020-01-01','end_exclusive':'2022-01-01'},'P2':{'start_inclusive':'2022-01-01','end_exclusive':'2024-04-23'}}
         (self.root/'config/research_execution.json').write_text(json.dumps(f.profile))
         jobs=ResearchJobs(self.root);self.addCleanup(jobs.close)
         request=dict(f.intent,request_id=str(uuid.uuid4()))
-        with patch('research.inputs.resolve_plan',side_effect=AssertionError('Full planning must stay in the worker')),patch('research.inputs.prepare_phase',side_effect=AssertionError('Submit must not prepare')):
+        with patch('research.inputs.read_materialization',side_effect=AssertionError('Submit must not read Feature observations')),patch('research.inputs._phase_target_rows',side_effect=AssertionError('Submit must not read Target observations')),patch('research.inputs.prepare_phase',side_effect=AssertionError('Submit must not prepare')):
             job,created=jobs.submit(request)
         self.assertTrue(created);self.assertEqual(job['status'],'queued')
         saved=jobs._submission(request['request_id'])
         self.assertEqual(saved['feature_application'],apps.resolve(self.root,f.intent['feature'],f.scope))
-        self.assertNotIn('frozen_plan',saved)
+        self.assertIn('frozen_plan',saved)
+        self.assertEqual(saved['frozen_plan']['feature_application'],saved['feature_application'])
 
     def test_missing_binding_rejected_before_job_is_written(self):
         import json,uuid
