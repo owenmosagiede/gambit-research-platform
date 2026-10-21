@@ -26,6 +26,10 @@
     return ref.id;
   }
   function actions(value) {
+    if (value.read_only) {
+      detail.append(node("p", "Historical batch: its time-series research is retained. Retired cross-sectional research was removed. This batch cannot be relaunched.", "field-note"));
+      return;
+    }
     const controls = node("div", undefined, "queue-heading"), state = value.state.state;
     const button = (id, title, disabled, fn) => {
       const b = node("button", title); b.id = id; b.type = "button"; b.disabled = disabled || busy || !fresh;
@@ -75,7 +79,7 @@
     const running = ["resolving", "preparing", "p1", "p2"].reduce((sum, key) => sum + n(key), 0);
     detail.append(node("h3", value.name), node("p", labels[value.state.state] || value.state.state),
       node("p", `${n("succeeded")} of ${value.unique_experiments} experiments completed · ${running} running · ${n("queued")} queued · ${n("failed") + n("blocked") + n("cancelled")} need review · ${n("excluded")} excluded`),
-      node("p", `${value.previewed} selections checked · ${value.approved ? "Launch approved" : "Launch not approved"}. Completed execution does not mean statistical validation.`, "field-note"));
+      node("p", `${value.previewed} selections checked · ${value.read_only ? "Retained historical batch" : value.approved ? "Launch approved" : "Launch not approved"}. Completed execution does not mean statistical validation.`, "field-note"));
     const timestamps = [value.created_at, value.state.updated_at, ...value.items.flatMap(item => [item.job?.updated_at, item.job?.preparation_progress?.updated_at])]
       .filter(t => t && Number.isFinite(Date.parse(t))).sort((a,b) => Date.parse(b) - Date.parse(a));
     detail.append(node("p", `Last saved update: ${date(timestamps[0])}. Counts come from saved submissions and survive worker restarts.`, "field-note"));

@@ -2,6 +2,9 @@
 from pathlib import Path
 import tempfile
 import unittest
+import json
+import uuid
+from copy import deepcopy
 from unittest.mock import patch
 from data.fx_currency_catalog import add
 from data.feature_store import FeatureStore
@@ -26,6 +29,113 @@ class CurrencyDeletionTests(unittest.TestCase):
         self.ts_trial=self.store.put('trial',{'relationship':ref(self.ts)},{})
     def preview(self):return plan(self.root,reference(self.release))
     def put(self,path,value):install_bytes(self.root/path,canonical(value)+b'\n')
+
+    def completed_batch(self, ts_first=False):
+        from runtime.research_batches import ResearchBatches
+        from runtime.research_jobs import ResearchJobs
+        from test_research_runtime import Adapter, KernelSpy, profile, intent
+        class CanonicalAdapter(Adapter):
+            def resolve_plan(self, root, request, policy):
+                synthetic=deepcopy(request)
+                mode='TS' if request['scope']['id']=='EURUSD' else 'CS'
+                synthetic['scope']['id']='SCOPE_'+mode
+                plan=super().resolve_plan(root,synthetic,policy)
+                plan['intent']=request;plan['scope']['id']=request['scope']['id']
+                plan.pop('plan_id');plan['plan_id']='PLAN_'+digest(plan)
+                return plan
+        (self.root/'config').mkdir(exist_ok=True)
+        (self.root/'config/research_execution.json').write_text(json.dumps(profile()))
+        jobs=ResearchJobs(self.root,adapter=CanonicalAdapter(),kernels=KernelSpy())
+        self.addCleanup(jobs.close)
+        batches=ResearchBatches(jobs);bid=str(uuid.uuid4())
+        scopes=['EURUSD','FX_G10'] if ts_first else ['FX_G10','EURUSD']
+        request={'batch_id':bid,'name':'Synthetic mixed completed batch',
+            'features':[intent()['feature']], 'scopes':[{'id':s,'version':'1.0.0'} for s in scopes],
+            'target_family':'price_return','expected_direction':'POSITIVE','duplicate_policy':'reuse_exact'}
+        batches.create(request)
+        for _ in range(4):batches.advance()
+        status=batches.status(bid)
+        self.assertTrue(status['preview_complete'])
+        batches.approve(bid,{'preview_sha256':status['preview_sha256'],'exclude_blocked':False})
+        for _ in range(12):
+            jobs.run_pending_once()
+            if batches.status(bid)['state']['state']=='completed':break
+        self.assertEqual(batches.status(bid)['state']['state'],'completed')
+        return batches,bid
+
+    def test_completed_mixed_batch_preserves_ts_bytes_and_read_only_history(self):
+        from research.contracts import ResearchConflict
+        batches,bid=self.completed_batch()  # TS index 1 must NOT be renumbered.
+        base=f'storage/catalog/operations/research_batches/{bid}/'
+        before=files(self.root);manifest=self.preview()
+        self.assertEqual(manifest['blockers'],[])
+        self.assertEqual(set(manifest['replace']),{base+'manifest.json'})
+        replacement=manifest['replace'][base+'manifest.json']
+        self.assertEqual(replacement['reconciliation']['retained_indices'],[1])
+        self.assertIn(base+'rows/0.json',manifest['delete'])
+        self.assertIn(base+'dispatch/0.json',manifest['delete'])
+        for p in replacement['reconciliation']['retained_files']:
+            self.assertNotIn(p,manifest['delete'])
+        apply(self.root,manifest,manifest['sha256'])
+        after=files(self.root)
+        for p in manifest['inventory']:
+            if p not in manifest['delete'] and p not in manifest['replace']:
+                self.assertEqual(before[p],after[p],p)
+        status=batches.status(bid)
+        self.assertTrue(status['read_only']);self.assertFalse(status['approved'])
+        self.assertEqual(status['job_counts'],{'succeeded':1})
+        self.assertEqual(status['items'][0]['index'],1)
+        self.assertEqual(status['items'][0]['intent']['scope']['id'],'EURUSD')
+        for action in ('pause','resume'):
+            with self.assertRaisesRegex(ResearchConflict,'read-only'):batches.control(bid,action)
+        with self.assertRaisesRegex(ResearchConflict,'read-only'):
+            batches.approve(bid,{'preview_sha256':status['preview_sha256'],'exclude_blocked':False})
+        batches.advance()
+        self.assertTrue(apply(self.root,manifest,manifest['sha256'])['reused'])
+
+    def test_mixed_reconciliation_rejects_unfinished_or_corrupt_evidence(self):
+        from runtime.research_batches import save
+        batches,bid=self.completed_batch(ts_first=True);directory=batches.directory(bid)
+        original=(directory/'state.json').read_bytes()
+        save(directory/'state.json',{'state':'paused'},mutable=True)
+        self.assertTrue(any('completed before reconciliation' in b for b in self.preview()['blockers']))
+        (directory/'state.json').write_bytes(original)
+        (directory/'approval.json').write_text('{}')
+        self.assertTrue(any('corrupt batch evidence' in b for b in self.preview()['blockers']))
+
+    def test_mixed_reconciliation_rejects_unknown_files_and_forged_dispatch(self):
+        from runtime.research_batches import save,checked
+        batches,bid=self.completed_batch();directory=batches.directory(bid)
+        extra=directory/'extra.json';extra.write_text('{}')
+        self.assertTrue(any('Unknown or missing batch files' in b for b in self.preview()['blockers']))
+        extra.unlink()
+        dispatch=checked(directory/'dispatch/1.json');dispatch['request_id']=str(uuid.uuid4())
+        save(directory/'dispatch/1.json',dispatch,mutable=True)
+        self.assertTrue(any('original request' in b for b in self.preview()['blockers']))
+
+    def test_reconciled_manifest_forgery_and_retained_row_drift_are_rejected(self):
+        batches,bid=self.completed_batch();manifest=self.preview()
+        path=next(iter(manifest['replace']))
+        manifest['replace'][path]['request']['name']='Forged'
+        manifest['sha256']=digest({k:v for k,v in manifest.items() if k!='sha256'})
+        with self.assertRaisesRegex(ValueError,'changed'):apply(self.root,manifest,manifest['sha256'])
+        manifest=self.preview()
+        (batches.directory(bid)/'rows/1.json').write_text('{}')
+        with self.assertRaisesRegex(ValueError,'changed'):apply(self.root,manifest,manifest['sha256'])
+
+    def test_interrupted_reconciliation_resumes_with_original_ts_evidence(self):
+        import data.fx_currency_migration as migration
+        batches,bid=self.completed_batch();manifest=self.preview();original=migration.install_bytes
+        target=batches.directory(bid)/'manifest.json'
+        def interrupted(path,raw,**kwargs):
+            result=original(path,raw,**kwargs)
+            if path==target:raise OSError('interrupted after replacement')
+            return result
+        with patch.object(migration,'install_bytes',side_effect=interrupted):
+            with self.assertRaisesRegex(OSError,'after replacement'):apply(self.root,manifest,manifest['sha256'])
+        self.assertTrue((self.root/MARKER).exists())
+        self.assertTrue(apply(self.root,manifest,manifest['sha256'])['completed'])
+        self.assertEqual(batches.status(bid)['job_counts'],{'succeeded':1})
 
     def test_only_old_cs_history_and_owned_artifacts_are_selected(self):
         manifest=self.preview();self.assertEqual(manifest['blockers'],[])
