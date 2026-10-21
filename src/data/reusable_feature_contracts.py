@@ -14,6 +14,7 @@ INPUT_CONTRACT={
     'unit_binding':'quote_currency_per_base_currency','temporal_precision':'date',
     'observation_clock':'scheduled_weekdays','calendar_id':'RESEARCH_WEEKDAYS','calendar_version':'1.0.0',
     'historical_availability':'unknown_preserved_null'}
+CURRENCY_INPUT_CONTRACT={**INPUT_CONTRACT,'source_profile':'fx_currency_price.1.0.0'}
 PREFIXES={RECIPE_KIND:'FEATURE_RECIPE_',REGISTRATION_KIND:'FEATURE_RECIPE_REGISTRATION_'}
 
 
@@ -38,7 +39,7 @@ def validate_record(record):
         fields={'kind','input_contract','steps','output_node','output_contract','history_mode','history_policy',
                 'execution_policy','evaluation_policy','calculation_geometry'}
         c.object_fields(body,fields,path='reusable recipe body')
-        if body['kind']!='reusable_fx_feature_recipe' or body['input_contract']!=INPUT_CONTRACT:
+        if body['kind']!='reusable_fx_feature_recipe' or body['input_contract'] not in (INPUT_CONTRACT,CURRENCY_INPUT_CONTRACT):
             raise c.ContractError('Unsupported reusable FX input contract')
         if body['history_mode']!='resolved_state' or body['calculation_geometry']!='independent_per_instrument':
             raise c.ContractError('Unsupported reusable calculation profile')

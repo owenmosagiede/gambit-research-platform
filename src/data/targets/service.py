@@ -79,7 +79,7 @@ def _implementation(store, calculation, schedule):
     package=Path(__file__).resolve().parent
     project=package.parents[2]
     files=[*sorted(package.glob('*.py')),
-        project/'src/data/pit_selection.py',project/'src/data/transformations/contracts.py',
+        project/'src/data/transformations/fx_currency.py',project/'src/data/transformations/fx.py',project/'src/data/pit_selection.py',project/'src/data/transformations/contracts.py',
         project/'src/data/transformations/identity.py',project/'src/contracts/experiment.py',
         project/'src/data/alfred_onboarding.py',project/'src/data/feature_store.py',
         project/'src/data/feature_store_contracts.py',

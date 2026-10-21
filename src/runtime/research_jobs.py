@@ -328,6 +328,8 @@ class ResearchJobs:
         return value
 
     def submit(self,value, *, _batch_packet=None, _batch_duplicate_policy=None, _batch_reuse_id=None):
+        from data.fx_currency_migration import check_intake
+        check_intake(self.root)
         from runtime.experiment_identity import IdentityIndex, freeze, scientific_key, save, release_reviews
         request=normalize_submission(value);rid=request.pop('request_id');intent=request
         with lock(self.root,'research-writer'):

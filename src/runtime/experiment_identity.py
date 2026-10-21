@@ -51,11 +51,16 @@ def scientific_key(packet):
 def freeze(jobs, intent, impl):
     from research import inputs, external_features, feature_applications
     from research.contracts import load_profile, profile_blockers, ResearchBlocked
+    from data.fx_currency_migration import check_intake
+    check_intake(jobs.root,intent)
     profile = load_profile(jobs.root)
     if jobs.adapter is None:
         _, capability = feature_applications.binding_for(jobs.root, intent['feature'])
         if capability['kind'] == feature_applications.SINGLE_SERIES:
             profile = external_features.load_profile(jobs.root)
+        elif capability['kind'] == feature_applications.CURRENCY_QUOTE:
+            from data.fx_currency_release import load_profile as currency_profile
+            profile=currency_profile(jobs.root)
     blockers = profile_blockers(profile)
     if blockers:
         raise ResearchBlocked(blockers)

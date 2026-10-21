@@ -143,7 +143,7 @@ def _implementation(store, recipe):
     names=('src/data/targets/store.py','src/data/verified_inputs.py','src/data/fx_feature_store.py','src/data/fx_feature_contracts.py','src/data/fx_feature_recipes.py',
         'src/data/feature_store.py','src/data/lineage_packs.py','src/data/transformations/engine.py','src/data/transformations/numeric.py',
         'src/data/transformations/registry.py','src/data/transformations/contracts.py','src/data/transformations/identity.py',
-        'src/data/targets/fx.py','src/data/transformations/fx.py','src/data/fx_records.py',
+        'src/data/fx_currency_features.py','src/data/transformations/fx_currency.py','src/data/targets/fx.py','src/data/transformations/fx.py','src/data/fx_records.py',
         'src/data/fx_onboarding.py','src/data/alfred_onboarding.py','src/data/targets/contracts.py',
         'src/data/targets/scheduling.py','specs/schemas/platform.schema.json',
         'specs/schemas/fx.schema.json','specs/schemas/onboarding.schema.json')

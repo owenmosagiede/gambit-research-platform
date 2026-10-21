@@ -11,6 +11,7 @@ from data.transformations.contracts import normalize_reference, token
 from data.transformations.identity import reference, digest, canonical_bytes
 from research.store import inside, install_bytes
 
+CURRENCY_QUOTE = "currency_quote_input"
 PER_MEMBER = "per_instrument_input"
 SINGLE_SERIES = "selected_single_series"
 ENTITY_MAPPED = "entity_mapped_series"
@@ -24,6 +25,15 @@ CONTRACTS = {
         "orientation": "preserve_recipe_and_target_quotation_no_sign_conversion",
         "comparability": "existing_fx_input_contract_and_research_rules",
         "alignment": "existing_approved_retrospective_date_match",
+    },
+    CURRENCY_QUOTE: {
+        "id":"APPLICATION_CURRENCY_QUOTE_INPUT", "version":"1.0.0",
+        "adapter":"fx_currency_recipe_v1", "definition_type":"feature_recipe_definition",
+        "scope_modes":{"universe":"CS"},
+        "input_binding":"each_currency_price_in_common_quote",
+        "orientation":"construct_price_before_feature_and_target",
+        "comparability":"currency_against_quote_reference",
+        "alignment":"existing_approved_retrospective_date_match",
     },
     SINGLE_SERIES: {
         "id": "APPLICATION_SELECTED_SINGLE_SERIES", "version": "1.0.0",
@@ -91,9 +101,12 @@ def install_binding(root, record, kind):
     actual = load_definition(root, {"id": record["id"], "version": record["version"]})
     if reference(actual) != reference(record) or record["record_type"] != value["definition_type"]:
         raise ApplicationBlocked("APPLICATION_INPUT_MISMATCH", "Feature definition does not match application contract")
-    if kind == PER_MEMBER:
+    if kind in (PER_MEMBER,CURRENCY_QUOTE):
         from data.reusable_feature_contracts import validate_record
         validate_record(record)
+        profile='fx_currency_price.1.0.0' if kind==CURRENCY_QUOTE else 'fx_price.1.0.0'
+        if record['body']['input_contract']['source_profile']!=profile:
+            raise ApplicationBlocked('APPLICATION_INPUT_MISMATCH','Price orientation does not match application')
     else:
         from research.external_features import definition
         definition(root, {"id": record["id"], "version": record["version"]})
@@ -136,14 +149,30 @@ def resolve(root, selection, scope):
         raise ApplicationBlocked("INVALID_APPLICATION_SCOPE", "Scope must contain explicit, unique members")
     mode = value["scope_modes"].get(scope.get("kind"))
     if value["adapter"] is None or mode is None:
+        if value["kind"]==CURRENCY_QUOTE:
+            raise ApplicationBlocked("UNSUPPORTED_FEATURE_SCOPE","Currency-reference Features require one of the seven currency CS universes.")
         raise ApplicationBlocked("UNSUPPORTED_FEATURE_SCOPE", "Selected single-series Features support individual instrument TS only; universe broadcasting is unsupported")
+    _basis(value,scope)
     return {"binding": deepcopy(binding), "contract": value, "mode": mode,
             "scope_kind": scope["kind"], "entity_mapping": None}
+
+
+def _basis(value,scope):
+    currency=scope.get('research_basis')=='currency_against_quote_reference'
+    if currency:
+        from data.transformations.fx_currency import members,REFERENCES
+        quote=scope.get('reference_currency')
+        if quote not in REFERENCES or scope.get('members')!=members(quote):
+            raise ApplicationBlocked('ORIENTATION_MISMATCH','Currency Scope must freeze all currencies against its declared quote')
+        normalize_reference(scope['price_catalog'])
+    if (value['kind']==CURRENCY_QUOTE)!=currency:
+        raise ApplicationBlocked('ORIENTATION_MISMATCH','Feature and Scope must use the same price orientation')
 
 
 def validate_frozen(value, feature, scope, mode):
     """Validate frozen semantics without consulting a mutable registry."""
     expected = contract(value["contract"]["kind"])
+    _basis(expected,scope)
     if (value["contract"] != expected or expected["adapter"] is None
             or value["binding"] != {"schema_version": "1.0.0", "feature": feature, "contract": contract_ref(expected)}
             or value["mode"] != mode or value["scope_kind"] != scope["kind"]

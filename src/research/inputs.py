@@ -250,7 +250,16 @@ def resolve_plan(root, intent, profile):
         raise InputsBlocked('Profile cutoff differs from the approved completion configuration')
     if batch['horizons'] != list(HORIZONS) or batch['representation'] != 'simple':
         raise InputsBlocked('Price Return must bind the approved five-horizon simple-return family')
-    current_rows = list_instruments(root)
+    oriented=scope.get('research_basis')=='currency_against_quote_reference'
+    if oriented:
+        from data.fx_currency_catalog import resolve_prices
+        catalog,currency_rows=resolve_prices(root,scope['price_catalog'])
+        if (profile['target_selection'].get('selection_scope')!='currency_price_catalog'
+                or profile['target_selection'].get('price_catalog')!=scope['price_catalog']
+                or batch!=catalog['body']['return_policy']):
+            raise InputsBlocked('Currency Research Spec must pin this exact currency price catalog')
+        current_rows=list(currency_rows.values())
+    else:current_rows = list_instruments(root)
     current = {item['instrument_id']: item for item in current_rows}
     if len(current) != len(current_rows):
         raise InputsBlocked('Current instrument registry contains conflicting identities')
@@ -258,7 +267,7 @@ def resolve_plan(root, intent, profile):
     projector = None if external_selection else legacy_recipe_projector(root, recipe)
     selected = profile['target_selection'].get('materializations', {})
     source_pins = profile['target_selection'].get('source_snapshots', {})
-    registry_pins = profile['target_selection'].get('selection_scope') == 'registered_fx_registry'
+    registry_pins = profile['target_selection'].get('selection_scope') in ('registered_fx_registry','currency_price_catalog')
     allowed_pins = set(current) if registry_pins else set(scope['members'])
     if (not isinstance(selected, dict) or set(selected) - allowed_pins
             or any(not isinstance(values, dict) or set(values) - {str(h) for h in HORIZONS}
@@ -312,6 +321,8 @@ def resolve_plan(root, intent, profile):
     if blockers:
         raise InputsBlocked('Selected Scope has unresolved members; no member was silently dropped', reasons=blockers)
     frozen_scope = {key: deepcopy(scope[key]) for key in ('id', 'version', 'kind', 'reference', 'membership_snapshot', 'members')}
+    if oriented:
+        frozen_scope.update({k:deepcopy(scope[k]) for k in ('research_basis','reference_currency','price_catalog')})
     periods=deepcopy(profile['periods'])
     if periods['P1']['start_inclusive'] is None and profile.get('discovery_start_rule')=='scope_structural_start_v1':
         periods['P1']['start_inclusive']=max(starts)

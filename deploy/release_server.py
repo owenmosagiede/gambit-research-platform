@@ -122,6 +122,15 @@ class Machine:
             job = jobs._read_job(rid)
             if job is None: raise RuntimeError('Submission has no authoritative job event')
             if job['status'] in ACTIVE: active.append(rid)
+        # Preview/approved/paused batches also freeze an implementation. They
+        # must be completed or explicitly reconciled before a code release.
+        from runtime.research_batches import checked
+        batches=self.root/'storage/catalog/operations/research_batches'
+        for manifest in sorted(batches.glob('*/manifest.json')):
+            checked(manifest)
+            state=manifest.parent/'state.json'
+            if not state.exists() or checked(state).get('state')!='completed':
+                active.append('batch:'+manifest.parent.name)
         return active
 
     def idle(self):
