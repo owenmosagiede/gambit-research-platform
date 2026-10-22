@@ -1,0 +1,18 @@
+[Unit]
+Description=Recover Gambit after interrupted currency migration
+After=local-fs.target
+# Application startup is gated by the persistent maintenance file.
+# Do not order before services this recovery process starts synchronously.
+RequiresMountsFor=/srv/gambit
+[Service]
+Type=oneshot
+User=root
+Group=gambit
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/gambit/venv/bin/python -B /opt/gambit/migration-control/fx_migration_control.py recover --attempt /var/lib/gambit-fx-migration/current
+MemoryMax=512M
+MemorySwapMax=0
+TimeoutStartSec=300
+UMask=0027
+[Install]
+WantedBy=multi-user.target

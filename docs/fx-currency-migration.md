@@ -166,3 +166,102 @@ Local validation uses synthetic temporary stores. Production deletion counts and
 any historical-schema/mixed-batch blockers can only be established by a plan on
 the authoritative cloud store. This PR does not execute a production purge or
 certify old queued jobs under the new implementation.
+
+## Bounded-memory planning and supervised retry
+
+The planner no longer retains decoded JSON for the entire store. It streams file
+hashes, reads one record at a time with its frozen checksum, and builds a disposable
+SQLite ownership/reference index. A second pass indexes only exact references to
+known ownership identities; observation values are not a second research archive.
+Shared payload checks and dependency propagation still examine the complete catalog.
+The v2 manifest schema, canonical bytes and deletion/reconciliation rules are unchanged.
+File commitments remain in memory; peak memory must be measured for the intended scale.
+Manifest hashing/output stream canonical bytes instead of copying the entire structure.
+Apply's retained-inventory pass hashes files without parsing their scientific records.
+
+Before another production attempt, run the full release suite and both scale cases:
+
+```sh
+python tools/run_release_checks.py --output /safe/release-checks.json
+python tools/benchmark_fx_migration.py --records 284674 --output /safe/scale-production.json
+python tools/benchmark_fx_migration.py --records 569348 --output /safe/scale-double.json
+```
+
+These benchmarks use generated lineage-like records, exercise plan/recompute/apply
+and canonical manifest round-trips, and require peak RSS below 2 GiB. They isolate
+catalog processing by mocking scientific replay; the full suite separately performs
+real price/Feature/Target validation. Also run the benchmark under Linux systemd with
+`MemoryMax=2G` and `MemorySwapMax=0` before production acceptance. Record cgroup peak
+memory and swap use, not just process RSS. Allow scratch disk for generated records
+and the index; do not run a large fixture if it would exhaust free disk.
+
+The optional Linux fault-injection tool requires explicit `--allow-systemd`, creates
+uniquely named **synthetic test units**, and never stops or starts production services:
+
+```sh
+python tools/check_fx_migration_recovery_linux.py --allow-systemd \
+  --controller-dir /reviewed/source/deploy --output /safe/recovery-tests.json
+```
+
+It restarts real, uniquely named synthetic application services using the recovery
+unit template, checks the persistent startup gate, and verifies actual SIGKILL and
+cgroup OOM recovery and the rule that a durable
+mutation marker takes precedence over a stale pre-apply phase.
+
+### Separate operational installation
+
+`deploy/fx_migration_control.py`, its two systemd units, and the web/worker
+`migration.conf` drop-ins are **separately reviewed service changes**. The standard
+code deployment does not install them. Install the controller in
+`/opt/gambit/migration-control`, using the existing pinned release-control modules;
+install the units/drop-ins in `/etc/systemd/system`, reload systemd, and enable only
+the recovery service for boot. Its oneshot unit must not be ordered before the
+application units: it starts those units synchronously and would deadlock. The
+persistent maintenance condition provides startup gating independently. Do not enable or automatically start the migration
+worker. Compare every installed file's hash with the reviewed source artifact.
+
+The worker has a 2 GiB memory limit, no swap, and no automatic restart. Its
+`OnFailure` recovery unit runs outside the worker cgroup. Both application units
+are gated by `/var/lib/gambit-fx-migration/maintenance`, including at boot. The
+recovery handler removes that gate only after confirming no durable mutation or
+activation exists and that the original registry commitment still matches. If
+apply may have started it retains the gate, stops intake/worker, and records
+`recovery_required`. It never rolls back deleted data or starts a second apply.
+
+Use a new attempt directory under `/var/lib/gambit-fx-migration`, with root ownership,
+mode 0750 and group `gambit`; its parent must also be traversable by that group.
+Set `current` to that directory only while both migration units are inactive and no
+systemd job for either remains. Preserve previous status/recovery receipts. Put:
+
+- `release.json`: the exact already-staged release reference.
+- `request.json`: the original frozen source snapshots, return policy and request text.
+- `attempt.json`: `code_sha256` (the reviewed live `src`/`tools` file hashes) and
+  `review_timeout_seconds` (1–3600). Do not create an approval in advance.
+
+Preflight checks code identity, a successful backup within 36 hours, idle queue,
+and intact legacy registry before stopping writers. `resume-plan` verifies the
+original source/policy pins and performs full release validation without rebuilding
+prices, Features or Targets. No replay check is skipped or replaced with a cache.
+Progress logs identify price, Feature, Target, hashing and indexing phases.
+
+Start `gambit-fx-migration.service` only for the approved maintenance window. It
+writes the fresh manifest and waits for exact review. Inspect blockers, all 18
+retired Scope IDs, 86 protected TS files, retained shared dependencies, and the
+mixed-batch replacement before writing `approval.json` containing only
+`{"sha256":"EXACT_REVIEWED_MANIFEST_HASH"}`. The runner rechecks code, backup and
+queue before apply; apply independently recomputes the entire plan. Review timeout
+causes failure and independent pre-apply recovery. A stale previous manifest is
+never reused after production has resumed.
+
+After apply, verification runs as the application account: retained file hashes,
+deleted-file absence, replacement bytes, active release, 43 singleton TS Scopes,
+7 universes of 18 members, all 22,680 Feature bindings and a full sample Target read.
+Only then is the maintenance gate removed and services restarted. Paced health
+checks respect the health service's start limit. Completion requires health success.
+
+If a worker dies after mutation begins, preserve its manifest and completion/marker
+files. Resume only that exact manifest through the migration tool's existing recovery
+path, verify it as the application account, and restart only after verification.
+Do not rerun staging or overwrite original scientific data. Source/policy drift,
+unknown ownership, stale backup, active research or failed resource acceptance is a
+blocker to retry, not grounds to weaken a check.
