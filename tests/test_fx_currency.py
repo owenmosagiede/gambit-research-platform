@@ -92,7 +92,7 @@ class CurrencyReleaseTests(unittest.TestCase):
         cls.release=stage(cls.root,cls.sources,cls.policy,'ISOLATED TEST: implement currency migration and delete legacy CS history')
 
     def test_complete_migration_and_frozen_inputs(self):
-        from data.fx_currency_migration import plan,apply
+        from data.fx_currency_migration import plan,apply,check_staged_request,verify_applied
         from data.fx_currency_release import load_profile
         from data.scopes import list_scopes,resolve_scope
         from data.fx_currency_features import records
@@ -100,10 +100,18 @@ class CurrencyReleaseTests(unittest.TestCase):
         from research.feature_applications import resolve,ApplicationBlocked
         # Staging does not expose the seven new Scopes prematurely.
         self.assertEqual(list_scopes(self.root)['scope_count'],61)
+        request={'source_snapshots':self.sources,'return_policy':self.policy}
+        self.assertEqual(check_staged_request(self.root,reference(self.release),request),self.release)
+        changed=deepcopy(request);changed['return_policy']['representation']='log'
+        with self.assertRaisesRegex(ValueError,'frozen'):check_staged_request(self.root,reference(self.release),changed)
         manifest=plan(self.root,reference(self.release))
         self.assertEqual(manifest['blockers'],[])
         self.assertEqual(len(manifest['protected_ts']),86)
         apply(self.root,manifest,manifest['sha256'])
+        verified=verify_applied(self.root,manifest)
+        self.assertEqual(verified['active_ts_scopes'],43)
+        self.assertEqual(verified['active_cs_scopes'],7)
+        self.assertTrue(verified['sample_target_read'])
         result=list_scopes(self.root)
         self.assertEqual(result['issues'],[])
         self.assertEqual(result['scope_count'],50)

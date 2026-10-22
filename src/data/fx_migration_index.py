@@ -11,6 +11,18 @@ from data.alfred_onboarding import stable_read,strict_json
 BASE='storage/catalog/operations/fx_currency_migration'
 
 
+def file_commitment(path):
+    path=Path(path)
+    if path.is_symlink():raise ValueError('Symbolic file is unsupported: '+str(path))
+    before=path.stat();sha=hashlib.sha256();size=0
+    with path.open('rb') as f:
+        for block in iter(lambda:f.read(1024*1024),b''):sha.update(block);size+=len(block)
+    after=path.stat()
+    if (before.st_ino,before.st_size,before.st_mtime_ns)!=(after.st_ino,after.st_size,after.st_mtime_ns):
+        raise ValueError('Inventory changed during read: '+str(path))
+    return {'sha256':sha.hexdigest(),'bytes':size}
+
+
 def inventory(root):
     """Keep compact commitments only; never decode records during apply hashing."""
     root=Path(root).resolve();files={}
@@ -22,13 +34,7 @@ def inventory(root):
             for name in sorted(names):
                 p=Path(directory)/name;relative=p.relative_to(root).as_posix()
                 if not p.is_file() or relative.startswith(BASE+'/') or p.suffix=='.lock':continue
-                before=p.stat();sha=hashlib.sha256();size=0
-                with p.open('rb') as f:
-                    for block in iter(lambda:f.read(1024*1024),b''):sha.update(block);size+=len(block)
-                after=p.stat()
-                if (before.st_ino,before.st_size,before.st_mtime_ns)!=(after.st_ino,after.st_size,after.st_mtime_ns):
-                    raise ValueError('Inventory changed during read: '+relative)
-                files[relative]={'sha256':sha.hexdigest(),'bytes':size}
+                files[relative]=file_commitment(p)
     return files
 
 

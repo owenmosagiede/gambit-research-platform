@@ -17,6 +17,7 @@ from data.targets.store import TargetStore
 from research.store import lock,install_bytes,inside,FOLDERS
 from research.contracts import canonical,digest,ResearchBlocked
 from data.fx_migration_manifest import manifest_digest,install_manifest
+from data.fx_migration_index import file_commitment
 
 RETIRED={r[0] for r in UNIVERSES}
 BASE='storage/catalog/operations/fx_currency_migration'
@@ -183,9 +184,9 @@ def _plan_indexed(root,release_ref,index):
     for sha in index.removed_blobs():
         for path in (Path(root)/'storage/payloads/sha256'/sha[:2]).glob(sha+'.*'):
             if path.is_symlink():raise ValueError('Symlink payload is unsupported')
-            raw=stable_read(path)
-            if hashlib.sha256(raw).hexdigest()!=sha:raise ValueError('Deletion payload checksum mismatch')
-            payloads[path.relative_to(root).as_posix()]={'sha256':sha,'bytes':len(raw)}
+            binding=file_commitment(path)
+            if binding['sha256']!=sha:raise ValueError('Deletion payload checksum mismatch')
+            payloads[path.relative_to(root).as_posix()]=binding
     deletions={p:files[p] for p in sorted(selected)};deletions.update(payloads)
     result={'schema':'fx_currency_deletion_v2','release':release_ref,'inventory':files,'delete':deletions,
         'replace':replacements,
@@ -237,8 +238,7 @@ def apply(root,manifest,expected_sha256):
             path=inside(root,p)
             if (Path(root)/p).is_symlink():raise ValueError('Deletion path became a symlink')
             if path.exists():
-                raw=stable_read(path)
-                if {'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}!=v:raise ValueError('Deletion bytes changed: '+p)
+                if file_commitment(path)!=v:raise ValueError('Deletion bytes changed: '+p)
         install_bytes(marker,canonical({'sha256':expected_sha256})+b'\n')
         # Recovery retains only hashes of deleted data and the retained-TS view;
         # it never stores copies of discarded CS definitions or research.
