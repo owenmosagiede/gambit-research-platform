@@ -203,7 +203,9 @@ python tools/check_fx_migration_recovery_linux.py --allow-systemd \
   --controller-dir /reviewed/source/deploy --output /safe/recovery-tests.json
 ```
 
-It verifies actual SIGKILL and cgroup OOM recovery, and the rule that a durable
+It restarts real, uniquely named synthetic application services using the recovery
+unit template, checks the persistent startup gate, and verifies actual SIGKILL and
+cgroup OOM recovery and the rule that a durable
 mutation marker takes precedence over a stale pre-apply phase.
 
 ### Separate operational installation
@@ -213,7 +215,9 @@ mutation marker takes precedence over a stale pre-apply phase.
 code deployment does not install them. Install the controller in
 `/opt/gambit/migration-control`, using the existing pinned release-control modules;
 install the units/drop-ins in `/etc/systemd/system`, reload systemd, and enable only
-the recovery service for boot. Do not enable or automatically start the migration
+the recovery service for boot. Its oneshot unit must not be ordered before the
+application units: it starts those units synchronously and would deadlock. The
+persistent maintenance condition provides startup gating independently. Do not enable or automatically start the migration
 worker. Compare every installed file's hash with the reviewed source artifact.
 
 The worker has a 2 GiB memory limit, no swap, and no automatic restart. Its

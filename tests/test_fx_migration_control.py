@@ -92,6 +92,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('MemoryMax=2G',unit);self.assertIn('MemorySwapMax=0',unit)
         recovery=(PROJECT/'deploy/systemd/gambit-fx-migration-recovery.service').read_text()
         self.assertIn('WantedBy=multi-user.target',recovery)
+        # A oneshot ordered Before the services it synchronously starts deadlocks.
+        self.assertFalse(any(line.startswith('Before=') and any(u in line.split('=',1)[1].split() for u in control.UNITS) for line in recovery.splitlines()))
         for name in control.UNITS:
             gate=(PROJECT/'deploy/systemd'/f'{name}.d/migration.conf').read_text()
             self.assertIn('ConditionPathExists=!/var/lib/gambit-fx-migration/maintenance',gate)

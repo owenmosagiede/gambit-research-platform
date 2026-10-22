@@ -1,7 +1,8 @@
 [Unit]
 Description=Recover Gambit after interrupted currency migration
 After=local-fs.target
-Before=gambit-web.service gambit-worker.service
+# Application startup is gated by the persistent maintenance file.
+# Do not order before services this recovery process starts synchronously.
 RequiresMountsFor=/srv/gambit
 [Service]
 Type=oneshot
