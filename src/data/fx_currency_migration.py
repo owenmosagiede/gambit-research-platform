@@ -143,6 +143,9 @@ def _plan_indexed(root,release_ref,index):
     if INDEX in files:selected.add(INDEX)  # Rebuildable mixed lookup; immutable TS authority is retained.
     # Fail closed for any other research consumer pointing at a deleted identity.
     index.select(selected)
+    for p,r in index.metadata():
+        if p not in selected and not r['_body_is_mapping']:
+            raise ValueError('Unsupported retained record body: '+p)
     for p in index.related():
         # The unchanged TS membership policy intentionally embeds the original
         # grouping specification. It is dependency evidence, not CS trial history.

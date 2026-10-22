@@ -26,6 +26,18 @@ class PlannerEquivalenceTests(baseline.CurrencyDeletionTests):
         self.assertEqual(expected,actual)
         return actual
 
+    def test_malformed_retained_body_cannot_be_silently_ignored(self):
+        p=self.root/'storage/catalog/auxiliary/note.json';p.parent.mkdir(parents=True)
+        p.write_text('{"id":"NOTE","body":["unrelated"]}')
+        with self.assertRaises(AttributeError):legacy.plan(self.root,reference(self.release))
+        with self.assertRaisesRegex(ValueError,'retained record body'):plan(self.root,reference(self.release))
+
+    def test_selected_nonobject_body_keeps_legacy_selection_semantics(self):
+        from data.fx_currency_migration import CORE
+        p=self.root/CORE[0]/'synthetic.json';p.parent.mkdir(parents=True,exist_ok=True)
+        p.write_text('{"id":"SYNTHETIC","schema_version":"0.8.0","scope":"FX_G10","body":["test"]}')
+        self.preview()
+
 class IndexTests(unittest.TestCase):
     def test_streaming_canonical_matches_scientific_contract(self):
         for value in [{'z':[1,2.5,None,True,'é'], 'a':{'nested':-0.0}}, {}, [], (1,'x')]:

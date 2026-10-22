@@ -96,6 +96,7 @@ class MigrationIndex:
         metadata={k:record[k] for k in ('id','record_type','schema_version','layer','canonical_request_id') if k in record}
         body=record.get('body',{});definition=record.get('definition',{})
         if record.get('layer')=='membership' and not isinstance(definition,dict):raise ValueError('Invalid membership definition')
+        metadata['_body_is_mapping']=isinstance(body,dict)
         metadata['body']={'kind':body.get('kind') if isinstance(body,dict) else None}
         metadata['definition']={'id':definition.get('id') if isinstance(definition,dict) else None}
         self.db.execute('INSERT OR REPLACE INTO records VALUES(?,?)',(path,json.dumps(metadata)))
