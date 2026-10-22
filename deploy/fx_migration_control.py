@@ -101,7 +101,8 @@ def recover(machine,folder):
             return
         if 'scopes' not in state:raise RuntimeError('Missing pre-maintenance registry commitment')
         if machine.scope_commitment()!=state['scopes']:raise RuntimeError('Registry changed; automatic restart refused')
-        machine.idle()
+        # A request may have raced with stopping intake. Before mutation it is
+        # safe to restore the unchanged services even if that request is active.
         (folder.parent/'maintenance').unlink(missing_ok=True)
         restart(machine);machine.health()
         save(folder,'restored',scopes=state['scopes'],previous_phase=state['phase'],health_passed=True,migration_complete=False)

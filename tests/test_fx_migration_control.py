@@ -64,6 +64,12 @@ class RecoveryTests(unittest.TestCase):
         self.m.dead=True;self.m.scopes={'EURUSD':'changed'}
         with self.assertRaises(RuntimeError):control.recover(self.m,self.folder)
         self.assertEqual(self.m.events,[]);self.assertTrue((self.base/'maintenance').exists())
+    def test_preapply_submit_race_restores_unchanged_services(self):
+        self.m.busy=True
+        self.m.live[control.UNITS[1]]='active'
+        control.recover(self.m,self.folder)
+        self.assertEqual(self.status()['phase'],'restored')
+        self.assertFalse(any(action=='stop' for action,u in self.m.events))
     def test_marker_takes_precedence_over_stale_preapply_phase(self):
         self.m.mutated=True
         control.recover(self.m,self.folder)
@@ -106,3 +112,24 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(json.loads((folder/'status.json').read_text())['phase'],'awaiting_review')
             control.recover(m,folder)
             self.assertEqual(json.loads((folder/'status.json').read_text())['phase'],'restored')
+
+    def test_success_requires_verification_before_service_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp);folder=base/'attempt';folder.mkdir();m=FakeMachine(base)
+            (folder/'attempt.json').write_text(json.dumps({'code_sha256':{'code':'pinned'}}))
+            actions=[]
+            def child(folder,action):
+                actions.append(action)
+                self.assertTrue((base/'maintenance').exists())
+                self.assertTrue(all(v=='inactive' for v in m.live.values()))
+                if action=='resume-plan':
+                    from data.fx_migration_manifest import manifest_digest
+                    proposal={'blockers':[]};proposal['sha256']=manifest_digest(proposal)
+                    (folder/'manifest.json').write_text(json.dumps(proposal))
+                    (folder/'approval.json').write_text(json.dumps({'sha256':proposal['sha256']}))
+                elif action=='apply':m.mutated=True
+            m.child=child
+            control.run(m,folder)
+            self.assertEqual(actions,['resume-plan','apply','verify'])
+            self.assertEqual(json.loads((folder/'status.json').read_text())['phase'],'completed')
+            self.assertFalse((base/'maintenance').exists())
