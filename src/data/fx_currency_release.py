@@ -1,4 +1,5 @@
 """Explicit staging of a complete currency release; activation belongs to migration."""
+import logging
 from copy import deepcopy
 from pathlib import Path
 from data.feature_store import FeatureStore
@@ -62,7 +63,9 @@ def validate_release(root,release):
     store=FeatureStore(root)
     if store.resolve(reference(release))!=release or release['body'].get('kind')!='fx_currency_release':
         raise ValueError('Invalid currency release')
+    logging.getLogger(__name__).info('Currency validation: prices started')
     catalog,instruments=resolve_prices(root,release['body']['price_catalog'],verify_rows=True)
+    logging.getLogger(__name__).info('Currency validation: prices passed')
     profile=profile_for(root,release);selection=profile['target_selection']
     if (selection.get('selection_scope')!='currency_price_catalog' or selection['price_catalog']!=reference(catalog)
             or selection['source_snapshots']!={s:r['price_snapshot'] for s,r in instruments.items()}
@@ -98,7 +101,8 @@ def validate_release(root,release):
         _,application=binding_for(root,expected)
         if application['kind']!=CURRENCY_QUOTE:raise ValueError('Currency application differs')
     seen=set()
-    for binding in features['bindings']:
+    for position,binding in enumerate(features['bindings'],1):
+        if position%1000==0:logging.getLogger(__name__).info('Currency validation: Feature %s/%s',position,len(features['bindings']))
         key=(binding['configuration_id'],binding['instrument_id'])
         if key in seen:raise ValueError('Duplicate currency binding')
         seen.add(key)
@@ -108,13 +112,17 @@ def validate_release(root,release):
                 or binding['source_view']!=expected['body']['recipe']['sources'][0]['source_view']):
             raise ValueError('Currency source-bound Feature differs')
     if seen!={(v,s) for v in variants for s in instruments}:raise ValueError('Incomplete currency bindings')
+    target_count=0
     for symbol,pins in selection['materializations'].items():
         if set(pins)!={'1','7','21','63','252'}:raise ValueError('Missing Target horizon')
         for horizon,binding in pins.items():
+            target_count+=1
+            logging.getLogger(__name__).info('Currency validation: Target %s/630 started',target_count)
             result=read_materialization(root,binding['id']);manifest=result['manifest']
             if (reference(manifest)!=binding or manifest['price_snapshot']!=instruments[symbol]['price_snapshot']
                     or manifest['input_key']['batch_policy']!=catalog['body']['return_policy']
                     or manifest['input_key']['knowledge_cutoff']!=selection['knowledge_cutoff']
                     or result['definition']['body']['horizon']['amount']!=int(horizon)):
                 raise ValueError('Currency Target semantics differ')
+            logging.getLogger(__name__).info('Currency validation: Target %s/630 passed',target_count)
     return release

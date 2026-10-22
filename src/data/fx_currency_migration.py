@@ -16,6 +16,7 @@ from data.feature_store import FeatureStore
 from data.targets.store import TargetStore
 from research.store import lock,install_bytes,inside,FOLDERS
 from research.contracts import canonical,digest,ResearchBlocked
+from data.fx_migration_manifest import manifest_digest,install_manifest
 
 RETIRED={r[0] for r in UNIVERSES}
 BASE='storage/catalog/operations/fx_currency_migration'
@@ -74,56 +75,52 @@ def _blobs(value):
 
 
 def _inventory(root):
-    root=Path(root).resolve();files={};records={}
-    for folder in ('definitions','storage/catalog','config'):
-        directory=root/folder
-        for path in sorted(directory.rglob('*')):
-            relative=path.relative_to(root).as_posix()
-            if path.is_symlink():raise ValueError('Migration refuses symbolic links: '+relative)
-            if not path.is_file() or relative.startswith(BASE+'/') or path.suffix=='.lock':continue
-            # Configuration hashes detect drift; credentials are never parsed or emitted.
-            raw=stable_read(path);files[relative]={'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
-            if path.suffix=='.json' and folder!='config':records[relative]=strict_json(raw)
-    return files,records
+    from data.fx_migration_index import inventory,Records
+    files=inventory(root)
+    return files,Records(root,files)
 
 
 def plan(root,release_ref):
     from data.fx_currency_release import validate_release
     store=FeatureStore(root);release=store.resolve(release_ref)
     validate_release(root,release)
-    files,records=_inventory(root);selected=set();blockers=[]
+    from data.fx_migration_index import MigrationIndex
+    with MigrationIndex(root) as index:
+        return _plan_indexed(root,release_ref,index)
+
+
+def _plan_indexed(root,release_ref,index):
+    files,records=index.files,index.records;selected=set();blockers=[]
     from data.fx_batch_reconciliation import reconcile
     replacements,reconciled,batch_blockers=reconcile(Path(root),files,records,RETIRED,set(PAIR_IDS))
     blockers.extend(batch_blockers)
     # Ownership is evaluated against the reviewed retained-TS operational view.
     # The inventory continues to pin the ORIGINAL bytes until apply.
-    records.update(replacements)
+    index.replace(replacements)
     eligible={p for p in records if p.startswith(CORE+OPERATIONAL)}
-    scopes={p:_scopes(r) for p,r in records.items()}
-    strings={p:_strings(r) for p,r in records.items()}
     for p in eligible:
-        record=records[p]
+        record=records[p];scope=index.scope(p)
         if p.startswith(CORE) and record.get('schema_version')!='0.8.0':
             blockers.append('Unsupported historical research schema: '+p)
-        if scopes[p]&RETIRED:
-            if scopes[p]-RETIRED:blockers.append('Mixed retired/retained Scope ownership: '+p)
+        if scope&RETIRED:
+            if scope-RETIRED:blockers.append('Mixed retired/retained Scope ownership: '+p)
             else:selected.add(p)
-    for p,r in records.items():
+    for p,r in index.metadata():
         kind=str(r.get('record_type',''))
         if (p not in eligible and not p.startswith(ARTIFACTS) and p.startswith('storage/catalog/')
                 and any(word in kind for word in ('trial','experiment','admission','validation','research_'))
-                and (scopes[p]&RETIRED or r.get('schema_version') not in ('0.8.0',))):
+                and (index.scope(p)&RETIRED or r.get('schema_version') not in ('0.8.0',))):
             blockers.append('Unsupported historical consumer: '+p)
         if p.startswith('definitions/scopes/') and r.get('id') in RETIRED:selected.add(p)
         if r.get('layer')=='membership' and r.get('definition',{}).get('id') in RETIRED:
             selected.add(p)
     # Propagate request/event/relationship/trial dependencies, never Feature/price ownership.
     while True:
-        ids=set().union(*(_identities(records[p]) for p in selected)) if selected else set()
-        additions={p for p in eligible-selected if strings[p]&ids}
+        index.select(selected)
+        additions=index.related() & (eligible-selected)
         for p in additions:
-            if scopes[p]-RETIRED:blockers.append('Retained Scope record references retired CS history: '+p)
-        additions={p for p in additions if not scopes[p]-RETIRED}
+            if index.scope(p)-RETIRED:blockers.append('Retained Scope record references retired CS history: '+p)
+        additions={p for p in additions if not index.scope(p)-RETIRED}
         if not additions:break
         selected|=additions
     # Delete whole old-only batch directories, including checksummed previews/packets.
@@ -133,27 +130,29 @@ def plan(root,release_ref):
         prefix=batchbase+bid+'/'
         if prefix in reconciled:continue
         paths={p for p in records if p.startswith(prefix)}
-        if any(scopes[p]-RETIRED for p in paths):blockers.append('Mixed batch must be reconciled explicitly: '+bid)
+        if any(index.scope(p)-RETIRED for p in paths):blockers.append('Mixed batch must be reconciled explicitly: '+bid)
         else:selected|=paths
     # Shared artifacts are retained; only artifacts exclusively referenced by deleted records qualify.
-    removed_refs=set().union(*(strings[p] for p in selected)) if selected else set()
-    kept_refs=set().union(*(strings[p] for p in records.keys()-selected if p!=INDEX and not p.startswith(ARTIFACTS)))
-    for p,r in records.items():
-        if p.startswith(ARTIFACTS) and r.get('id') in removed_refs and r.get('id') not in kept_refs:selected.add(p)
+    index.select(selected)
+    artifacts=set()
+    for p,r in index.metadata():
+        if (p.startswith(ARTIFACTS) and index.referenced(r.get('id'),True,ARTIFACTS,INDEX)
+                and not index.referenced(r.get('id'),False,ARTIFACTS,INDEX)):artifacts.add(p)
+    selected.update(artifacts)
     if INDEX in files:selected.add(INDEX)  # Rebuildable mixed lookup; immutable TS authority is retained.
     # Fail closed for any other research consumer pointing at a deleted identity.
-    deleted_ids=set().union(*(_identities(records[p]) for p in selected if p in records))
-    for p in records.keys()-selected:
+    index.select(selected)
+    for p in index.related():
         # The unchanged TS membership policy intentionally embeds the original
         # grouping specification. It is dependency evidence, not CS trial history.
         shared_spec=records[p].get('body',{}).get('kind')=='fixed_fx_scope_specification'
-        if not shared_spec and strings[p]&deleted_ids:
+        if not shared_spec:
             blockers.append('Retained consumer references deletion: '+p)
     # Verify authoritative queue history, not just mutable job summaries.
     from runtime.research_jobs import ResearchJobs,ACTIVE
     jobs=ResearchJobs(root)
     request_ids={Path(p).stem for p in records if p.startswith(('storage/catalog/submissions/','storage/catalog/operations/jobs/'))}
-    for p,r in records.items():
+    for p,r in index.metadata():
         if p.startswith('storage/catalog/operations/experiment_intake/requests/') and p not in selected:
             if isinstance(r.get('canonical_request_id'),str):request_ids.add(r['canonical_request_id'])
             else:blockers.append('Unverifiable retained intake reservation: '+p)
@@ -162,15 +161,15 @@ def plan(root,release_ref):
             job=jobs._read_job(rid)
             if job is None or job['status'] in ACTIVE:blockers.append('Unresolved or active request: '+rid)
         except (ValueError,KeyError,TypeError,OSError):blockers.append('Unverifiable request: '+rid)
-    for p,r in records.items():
+    for p,r in index.metadata():
         if p.startswith(batchbase) and p.endswith('/manifest.json') and p not in selected:
             state_path=p.removesuffix('manifest.json')+'state.json'
             if records.get(state_path,{}).get('state')!='completed':
                 blockers.append('Retained unfinished batch requires explicit reconciliation before release: '+p)
     # TS definitions and memberships must exist and remain exactly byte-identical.
-    ts={r.get('id') for p,r in records.items() if p.startswith('definitions/scopes/') and r.get('body',{}).get('kind')=='instrument'}
+    ts={r.get('id') for p,r in index.metadata() if p.startswith('definitions/scopes/') and r.get('body',{}).get('kind')=='instrument'}
     if ts!=set(PAIR_IDS):blockers.append('All 43 canonical TS Scopes must exist before migration')
-    protected={p:files[p] for p,r in records.items() if (p.startswith('definitions/scopes/') and r.get('id') in PAIR_IDS)
+    protected={p:files[p] for p,r in index.metadata() if (p.startswith('definitions/scopes/') and r.get('id') in PAIR_IDS)
         or (r.get('layer')=='membership' and r.get('definition',{}).get('id') in PAIR_IDS)}
     if len(protected)!=86:blockers.append('Each TS Scope requires exactly one retained membership snapshot')
     from data.scopes import resolve_scope
@@ -180,10 +179,8 @@ def plan(root,release_ref):
             if scope['kind']!='instrument' or scope['members']!=[symbol]:raise ValueError('TS membership differs')
         except (ValueError,KeyError,TypeError,OSError):blockers.append('Retained TS closure is unverifiable: '+symbol)
     # Only owned, unshared payloads are removed. All other data remains outside this purge.
-    removed_blobs=set().union(*(_blobs(records[p]) for p in selected if p in records))
-    kept_blobs=set().union(*(_blobs(r) for p,r in records.items() if p not in selected))
     payloads={}
-    for sha in sorted(removed_blobs-kept_blobs):
+    for sha in index.removed_blobs():
         for path in (Path(root)/'storage/payloads/sha256'/sha[:2]).glob(sha+'.*'):
             if path.is_symlink():raise ValueError('Symlink payload is unsupported')
             raw=stable_read(path)
@@ -193,12 +190,12 @@ def plan(root,release_ref):
     result={'schema':'fx_currency_deletion_v2','release':release_ref,'inventory':files,'delete':deletions,
         'replace':replacements,
         'protected_ts':protected,'retired_scopes':sorted(RETIRED),'blockers':sorted(set(blockers))}
-    result['sha256']=digest(result)
+    result['sha256']=manifest_digest(result)
     return result
 
 
 def apply(root,manifest,expected_sha256):
-    if (manifest.get('sha256')!=expected_sha256 or digest({k:v for k,v in manifest.items() if k!='sha256'})!=expected_sha256
+    if (manifest.get('sha256')!=expected_sha256 or manifest_digest({k:v for k,v in manifest.items() if k!='sha256'})!=expected_sha256
             or manifest.get('schema')!='fx_currency_deletion_v2' or manifest.get('blockers')):
         raise ValueError('A complete, unchanged, unblocked deletion manifest is required')
     from data.fx_currency_release import validate_release
@@ -221,7 +218,8 @@ def apply(root,manifest,expected_sha256):
         else:
             # Recompute eligibility as well as hashes; a caller cannot forge a broader deletion list.
             if plan(root,manifest['release'])!=manifest:raise ValueError('Deletion plan or inventory changed; re-plan')
-        files,_=_inventory(root)
+        from data.fx_migration_index import inventory
+        files=inventory(root)
         changed=set(manifest['delete'])|set(manifest['replace'])
         expected={p:v for p,v in manifest['inventory'].items() if p not in changed}
         actual={p:v for p,v in files.items() if p not in changed}
@@ -244,7 +242,7 @@ def apply(root,manifest,expected_sha256):
         install_bytes(marker,canonical({'sha256':expected_sha256})+b'\n')
         # Recovery retains only hashes of deleted data and the retained-TS view;
         # it never stores copies of discarded CS definitions or research.
-        install_bytes(inside(root,BASE+'/manifest.json'),canonical(manifest)+b'\n')
+        install_manifest(inside(root,BASE+'/manifest.json'),manifest)
         for p,value in sorted(manifest['replace'].items()):
             install_bytes(inside(root,p),canonical(value)+b'\n',mutable=True)
         for p in sorted(manifest['delete']):
@@ -268,3 +266,53 @@ def reference_for_active(root):
     from data.transformations.identity import reference
     value=active_release(root)
     return reference(value) if value else None
+
+
+def check_staged_request(root,release_ref,request):
+    """Reuse an existing staged release only with the original frozen inputs."""
+    from data.fx_currency_catalog import active_release
+    if inside(root,MARKER).exists() or active_release(root):raise ValueError('Existing activation requires recovery')
+    store=FeatureStore(root);release=store.resolve(release_ref)
+    if release['body'].get('kind')!='fx_currency_release':raise ValueError('Expected currency release')
+    catalog=store.resolve(release['body']['price_catalog'])['body']
+    if (catalog['source_snapshots']!=request['source_snapshots'] or catalog['return_policy']!=request['return_policy']):
+        raise ValueError('Staged release differs from frozen source/policy request')
+    # Full scientific replay remains mandatory in plan(); this check is no cache.
+    return release
+
+
+def verify_applied(root,manifest):
+    """Verify retained bytes and registry as the application account after apply."""
+    from data.fx_migration_index import inventory
+    from data.fx_currency_catalog import active_release
+    from data.transformations.identity import reference
+    from data.scopes import list_scopes
+    if manifest_digest({k:v for k,v in manifest.items() if k!='sha256'})!=manifest['sha256'] or manifest['blockers']:
+        raise ValueError('Invalid verification manifest')
+    if inside(root,MARKER).exists():raise ValueError('Migration is unfinished')
+    done=strict_json(stable_read(inside(root,BASE+'/completed.json')))
+    if done!={'sha256':manifest['sha256'],'release':manifest['release']}:raise ValueError('Completion receipt differs')
+    current=inventory(root);changed=set(manifest['delete'])|set(manifest['replace'])
+    for name,expected in manifest['inventory'].items():
+        if name not in changed and current.get(name)!=expected:raise ValueError('Retained inventory changed: '+name)
+    for name in manifest['delete']:
+        if inside(root,name).exists():raise ValueError('Deleted file remains: '+name)
+    for name,value in manifest['replace'].items():
+        if stable_read(inside(root,name))!=canonical(value)+b'\n':raise ValueError('Replacement differs: '+name)
+    release=active_release(root)
+    if not release or reference(release)!=manifest['release']:raise ValueError('Active release differs')
+    scopes=list_scopes(root);ts=[s for s in scopes['scopes'] if s['kind']=='instrument'];cs=[s for s in scopes['scopes'] if s['kind']=='universe']
+    if (scopes['issues'] or len(ts)!=43 or len(cs)!=7 or {s['id'] for s in ts}!=set(PAIR_IDS)
+            or any(s['members']!=[s['id']] for s in ts) or {s['id'] for s in cs}!=set(SCOPE_IDS)
+            or any(len(s['members'])!=18 for s in cs)):raise ValueError('Final scope membership differs')
+    from data.fx_currency_features import records,context
+    from data.fx_currency_release import profile_for
+    from data.targets.fx import read_materialization
+    store,catalog,policy=context(root)
+    if len(records(root))!=180 or len(catalog['body']['bindings'])!=22680:raise ValueError('Feature bindings incomplete')
+    for binding in catalog['body']['bindings']:store.resolve(binding['feature'])
+    targets=profile_for(root,release)['target_selection']['materializations']
+    if len(targets)!=126 or sum(len(v) for v in targets.values())!=630:raise ValueError('Target bindings incomplete')
+    read_materialization(root,targets[sorted(targets)[0]]['1']['id'])
+    return {'completed':True,'active_ts_scopes':43,'active_cs_scopes':7,'retained_files_verified':len(manifest['inventory'])-len(set(manifest['inventory'])&changed),
+        'deleted_files_absent':len(manifest['delete']),'feature_bindings_read':22680,'target_bindings':630,'sample_target_read':True,'sha256':manifest['sha256']}

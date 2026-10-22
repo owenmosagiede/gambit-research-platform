@@ -1,0 +1,19 @@
+[Unit]
+Description=Gambit reviewed currency data migration
+After=network-online.target
+RequiresMountsFor=/srv/gambit
+OnFailure=gambit-fx-migration-recovery.service
+[Service]
+Type=exec
+User=root
+Group=gambit
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/gambit/venv/bin/python -B /opt/gambit/migration-control/fx_migration_control.py run --attempt /var/lib/gambit-fx-migration/current
+MemoryMax=2G
+MemorySwapMax=0
+OOMPolicy=kill
+KillMode=control-group
+Restart=no
+UMask=0027
+PrivateTmp=true
