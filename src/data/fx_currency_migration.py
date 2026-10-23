@@ -58,6 +58,7 @@ def _scopes(value):
 
 
 def _identities(value):
+    if not isinstance(value,dict):return set()
     # Only ownership keys: source/Feature references are not ownership.
     return {value[k] for k in ('id','request_id','canonical_request_id','attempt_id','batch_id')
             if isinstance(value.get(k),str)}
@@ -81,16 +82,18 @@ def _inventory(root):
     return files,Records(root,files)
 
 
-def plan(root,release_ref):
+def plan(root,release_ref,*,retirement=None):
     from data.fx_currency_release import validate_release
     store=FeatureStore(root);release=store.resolve(release_ref)
-    validate_release(root,release)
     from data.fx_migration_index import MigrationIndex
-    with MigrationIndex(root) as index:
-        return _plan_indexed(root,release_ref,index)
+    from data.fx_preparation_retirement import watch_options
+    with MigrationIndex(root,**watch_options(retirement)) as index:
+        result=_plan_indexed(root,release_ref,index,retirement=retirement)
+        if not result["blockers"]:validate_release(root,release)
+        return result
 
 
-def _plan_indexed(root,release_ref,index):
+def _plan_indexed(root,release_ref,index,*,retirement=None):
     files,records=index.files,index.records;selected=set();blockers=[]
     from data.fx_batch_reconciliation import reconcile
     replacements,reconciled,batch_blockers=reconcile(Path(root),files,records,RETIRED,set(PAIR_IDS))
@@ -133,6 +136,11 @@ def _plan_indexed(root,release_ref,index):
         paths={p for p in records if p.startswith(prefix)}
         if any(index.scope(p)-RETIRED for p in paths):blockers.append('Mixed batch must be reconciled explicitly: '+bid)
         else:selected|=paths
+    preparation=set()
+    if retirement is not None:
+        from data.fx_preparation_retirement import retirement_selection
+        preparation,retirement_blockers=retirement_selection(root,index,retirement)
+        blockers.extend(retirement_blockers);selected.update(preparation)
     # Shared artifacts are retained; only artifacts exclusively referenced by deleted records qualify.
     index.select(selected)
     artifacts=set()
@@ -149,7 +157,8 @@ def _plan_indexed(root,release_ref,index):
     for p in index.related():
         # The unchanged TS membership policy intentionally embeds the original
         # grouping specification. It is dependency evidence, not CS trial history.
-        shared_spec=records[p].get('body',{}).get('kind')=='fixed_fx_scope_specification'
+        value=records[p]
+        shared_spec=isinstance(value,dict) and isinstance(value.get('body',{}),dict) and value.get('body',{}).get('kind')=='fixed_fx_scope_specification'
         if not shared_spec:
             blockers.append('Retained consumer references deletion: '+p)
     # Verify authoritative queue history, not just mutable job summaries.
@@ -184,7 +193,7 @@ def _plan_indexed(root,release_ref,index):
         except (ValueError,KeyError,TypeError,OSError):blockers.append('Retained TS closure is unverifiable: '+symbol)
     # Only owned, unshared payloads are removed. All other data remains outside this purge.
     payloads={}
-    for sha in index.removed_blobs():
+    for sha in index.removed_blobs(retirement['prefix'] if retirement else ''):
         for path in (Path(root)/'storage/payloads/sha256'/sha[:2]).glob(sha+'.*'):
             if path.is_symlink():raise ValueError('Symlink payload is unsupported')
             binding=file_commitment(path)
@@ -194,6 +203,7 @@ def _plan_indexed(root,release_ref,index):
     result={'schema':'fx_currency_deletion_v2','release':release_ref,'inventory':files,'delete':deletions,
         'replace':replacements,
         'protected_ts':protected,'retired_scopes':sorted(RETIRED),'blockers':sorted(set(blockers))}
+    if retirement is not None:result['preparation_retirement']=retirement
     result['sha256']=manifest_digest(result)
     return result
 
@@ -216,12 +226,15 @@ def apply(root,manifest,expected_sha256):
             if not stack.enter_context(lock(root,name,nonblocking=True)):raise ValueError('Stop active writers before migration')
         stack.enter_context(FeatureStore(root).writer());stack.enter_context(TargetStore(root).writer())
         release=FeatureStore(root).resolve(manifest['release'])
+        if manifest.get('preparation_retirement'):
+            from data.fx_preparation_retirement import runtime_blockers
+            if runtime_blockers():raise ValueError('Preparation runtime must be inactive before retirement')
         if marker.exists():
             validate_release(root,release)
             if strict_json(stable_read(marker))!={'sha256':expected_sha256}:raise ValueError('Another migration is in progress')
         else:
             # Recompute eligibility as well as hashes; a caller cannot forge a broader deletion list.
-            if plan(root,manifest['release'])!=manifest:raise ValueError('Deletion plan or inventory changed; re-plan')
+            if plan(root,manifest['release'],retirement=manifest.get('preparation_retirement'))!=manifest:raise ValueError('Deletion plan or inventory changed; re-plan')
         from data.fx_migration_index import inventory
         files=inventory(root)
         changed=set(manifest['delete'])|set(manifest['replace'])

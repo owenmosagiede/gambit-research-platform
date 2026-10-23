@@ -3,6 +3,7 @@ from collections.abc import Mapping
 import hashlib
 import logging
 import os
+import re
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -51,8 +52,8 @@ class Records(Mapping):
 
 
 class MigrationIndex:
-    def __init__(self,root):
-        self.root=root
+    def __init__(self,root,*,watched_values=(),watched_name=None):
+        self.root=root;self.watched_values=set(watched_values);self.watched_name=watched_name
     def __enter__(self):
         self.temp=tempfile.TemporaryDirectory(prefix='gambit-migration-index-')
         try:
@@ -69,6 +70,7 @@ class MigrationIndex:
                 CREATE TABLE blobs(path TEXT,value TEXT,PRIMARY KEY(path,value)) WITHOUT ROWID;
                 CREATE INDEX blobs_value ON blobs(value,path);
                 CREATE TABLE selected(path TEXT PRIMARY KEY) WITHOUT ROWID;
+                CREATE TABLE dependencies(path TEXT,value TEXT,PRIMARY KEY(path,value)) WITHOUT ROWID;
             ''')
             logging.getLogger(__name__).info('Migration inventory: hashing files')
             self.files=inventory(self.root);self.records=Records(self.root,self.files)
@@ -81,6 +83,12 @@ class MigrationIndex:
             for n,path in enumerate(self.records):
                 self.add_references(path,self.records[path])
                 if n%1000==0:self.db.commit()
+            # Configuration and operational logs can also name preparation inputs.
+            for path in self.files:
+                if path.endswith('.json') and not path.startswith('config/'):continue
+                if self.watched_name or self.watched_values:
+                    raw=stable_read(Path(self.root)/path,self.files[path]['sha256'])
+                    self.watch(path,[raw.decode('utf-8',errors='replace')],text=True)
             self.db.commit()
             logging.getLogger(__name__).info('Migration inventory: index ready')
             return self
@@ -92,10 +100,19 @@ class MigrationIndex:
     def add(self,path,record,*,references=True):
         import json
         from data.fx_currency_migration import _strings,_scopes,_identities,_blobs
+        if isinstance(record,list):
+            # These frozen operator tables own no identities. Their nested
+            # references, scopes and payload references still enter the index.
+            pattern=r'storage/catalog/operations/momentum-preparation-\d{4}-\d{2}-\d{2}/(?:instrument-preparation-matrix|scope-coverage-matrix|progress/[0-9a-f]{64}/scope-coverage)\.json'
+            if not re.fullmatch(pattern,path) or not all(isinstance(row,dict) for row in record):
+                raise ValueError('Unsupported catalog list: '+path)
+            fields={}
+        elif isinstance(record,dict):fields=record
+        else:raise ValueError('Unsupported catalog root: '+path)
         # Retain only attributes used by eligibility checks, never full records.
-        metadata={k:record[k] for k in ('id','record_type','schema_version','layer','canonical_request_id') if k in record}
-        body=record.get('body',{});definition=record.get('definition',{})
-        if record.get('layer')=='membership' and not isinstance(definition,dict):raise ValueError('Invalid membership definition')
+        metadata={k:fields[k] for k in ('id','record_type','schema_version','layer','canonical_request_id') if k in fields}
+        body=fields.get('body',{});definition=fields.get('definition',{})
+        if fields.get('layer')=='membership' and not isinstance(definition,dict):raise ValueError('Invalid membership definition')
         metadata['_body_is_mapping']=isinstance(body,dict)
         metadata['body']={'kind':body.get('kind') if isinstance(body,dict) else None}
         metadata['definition']={'id':definition.get('id') if isinstance(definition,dict) else None}
@@ -108,6 +125,8 @@ class MigrationIndex:
         from data.fx_currency_migration import _strings
         self.db.execute('DELETE FROM refs WHERE path=?',(path,))
         values=list(_strings(record))
+        self.watch(path,values)
+        if self.watched_name or self.watched_values:self.watch_keys(path,record)
         # Only exact strings equal to a catalog ownership identity can affect
         # closure, artifact sharing or retained-consumer checks. This two-pass
         # semijoin avoids indexing millions of irrelevant observation values.
@@ -115,6 +134,20 @@ class MigrationIndex:
             part=values[start:start+200]
             found=[r[0] for r in self.db.execute('SELECT DISTINCT value FROM owners WHERE value IN ('+','.join('?' for _ in part)+')',part)]
             self.db.executemany('INSERT OR IGNORE INTO refs VALUES(?,?)',((path,v) for v in found))
+    def watch(self,path,values,*,text=False):
+        if not self.watched_values and not self.watched_name:return
+        for value in values:
+            matches=self.watched_values.intersection([value,*re.findall(r'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])',value)])
+            if self.watched_name and self.watched_name in value:matches.add(self.watched_name)
+            self.db.executemany('INSERT OR IGNORE INTO dependencies VALUES(?,?)',((path,v) for v in matches))
+    def watch_keys(self,path,value):
+        if isinstance(value,dict):
+            self.watch(path,value.keys())
+            for v in value.values():self.watch_keys(path,v)
+        elif isinstance(value,list):
+            for v in value:self.watch_keys(path,v)
+    def dependencies(self):
+        return list(self.db.execute('SELECT path,value FROM dependencies ORDER BY path,value'))
     def replace(self,replacements):
         from data.fx_currency_migration import _identities
         for p,r in replacements.items():
@@ -137,7 +170,9 @@ class MigrationIndex:
                 AND NOT EXISTS(SELECT 1 FROM selected s WHERE s.path=r.path) LIMIT 1'''
             args=(value,index,len(artifact_prefix),artifact_prefix)
         return self.db.execute(query,args).fetchone() is not None
-    def removed_blobs(self):
+    def removed_blobs(self,excluded_prefix=""):
+        # Preparation tables reference published payloads; they never own them.
         return (r[0] for r in self.db.execute('''SELECT DISTINCT b.value FROM blobs b JOIN selected s ON s.path=b.path
-            WHERE NOT EXISTS(SELECT 1 FROM blobs k WHERE k.value=b.value AND NOT EXISTS
-                (SELECT 1 FROM selected x WHERE x.path=k.path)) ORDER BY b.value'''))
+            WHERE (?='' OR substr(b.path,1,length(?))!=?)
+            AND NOT EXISTS(SELECT 1 FROM blobs k WHERE k.value=b.value AND NOT EXISTS
+                (SELECT 1 FROM selected x WHERE x.path=k.path)) ORDER BY b.value''',(excluded_prefix,excluded_prefix,excluded_prefix)))
