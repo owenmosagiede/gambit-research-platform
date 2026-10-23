@@ -145,7 +145,7 @@ def _plan_indexed(root,release_ref,index,*,retirement=None):
     index.select(selected)
     artifacts=set()
     for p,r in index.metadata():
-        if (p.startswith(ARTIFACTS) and index.referenced(r.get('id'),True,ARTIFACTS,INDEX)
+        if (p.startswith(ARTIFACTS) and index.referenced(r.get('id'),True,ARTIFACTS,INDEX,excluded_paths=preparation)
                 and not index.referenced(r.get('id'),False,ARTIFACTS,INDEX)):artifacts.add(p)
     selected.update(artifacts)
     if INDEX in files:selected.add(INDEX)  # Rebuildable mixed lookup; immutable TS authority is retained.
@@ -193,7 +193,7 @@ def _plan_indexed(root,release_ref,index,*,retirement=None):
         except (ValueError,KeyError,TypeError,OSError):blockers.append('Retained TS closure is unverifiable: '+symbol)
     # Only owned, unshared payloads are removed. All other data remains outside this purge.
     payloads={}
-    for sha in index.removed_blobs(retirement['prefix'] if retirement else ''):
+    for sha in index.removed_blobs(excluded_paths=preparation):
         for path in (Path(root)/'storage/payloads/sha256'/sha[:2]).glob(sha+'.*'):
             if path.is_symlink():raise ValueError('Symlink payload is unsupported')
             binding=file_commitment(path)

@@ -17,8 +17,11 @@ SCHEMA='obsolete_momentum_preparation_retirement_v1'
 
 
 def validate_request(request):
-    if not isinstance(request,dict) or set(request)!={'schema','prefix','files','bundle_sha256'}:
+    required={'schema','prefix','files','bundle_sha256'}
+    if not isinstance(request,dict) or not required<=set(request) or set(request)-required-{'operational_files'}:
         raise ValueError('Invalid preparation retirement request')
+    from data.fx_operational_retirement import validate_operational_files
+    validate_operational_files(request.get('operational_files',{}))
     if request['schema']!=SCHEMA or request['prefix']!=PREFIX or not isinstance(request['files'],dict) or not request['files']:
         raise ValueError('Only the reviewed obsolete preparation bundle can be retired')
     for path,binding in request['files'].items():
@@ -43,7 +46,9 @@ def watch_options(request):
     validate_request(request)
     values={b['sha256'] for b in request['files'].values()}|{request['bundle_sha256']}
     values.update(p[len(PREFIX):].split('/')[1] for p in request['files'] if p.startswith(PREFIX+'progress/'))
-    return {'watched_values':values,'watched_name':NAME}
+    operational=request.get('operational_files',{})
+    values.update(b['sha256'] for b in operational.values())
+    return {'watched_values':values,'watched_name':NAME,'watched_paths':tuple(operational)}
 
 
 def runtime_blockers():
@@ -85,10 +90,11 @@ def retirement_selection(root,index,request):
     blockers=runtime_blockers()
     actual={p:v for p,v in index.files.items() if p.startswith(PREFIX)}
     if actual!=request['files']:blockers.append('Preparation inventory differs: missing, changed or extra files')
+    selected=set(request['files'])|set(request.get('operational_files',{}))
     # Incoming references to paths, input hashes, file hashes, or operation IDs
     # block retirement even if they belong to history selected elsewhere.
     for path,value in index.dependencies():
-        if not path.startswith(PREFIX):blockers.append('External consumer of preparation bundle: '+path+' -> '+value)
+        if path not in selected: blockers.append('External consumer of preparation bundle: '+path+' -> '+value)
     try:
         records=index.records
         manifest=records[PREFIX+INPUTS[0]];matrix=records[PREFIX+INPUTS[1]];scopes=records[PREFIX+INPUTS[2]]
@@ -107,8 +113,10 @@ def retirement_selection(root,index,request):
         receipt=records.get(PREFIX+'target-preflight-receipt.json')
         if receipt is not None and (receipt.get('research_executed') is not False or receipt.get('bundle_sha256')!=request['bundle_sha256']):
             raise ValueError('Preparation preflight receipt differs')
+        from data.fx_operational_retirement import validate_operational_evidence
+        validate_operational_evidence(root,index,request.get('operational_files',{}))
     except (KeyError,TypeError,AttributeError,ValueError) as exc:
         blockers.append('Unverifiable preparation evidence: '+str(exc))
     # Never broaden deletion on a failed check. Outgoing data references do not
     # transfer ownership of published Features, Targets, prices, or results.
-    return (set(request['files']) if not blockers else set()),blockers
+    return (selected if not blockers else set()),blockers

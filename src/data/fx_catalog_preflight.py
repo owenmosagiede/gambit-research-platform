@@ -4,6 +4,7 @@ import hashlib
 import os
 import time
 import uuid
+import logging
 from data.fx_migration_index import MigrationIndex,inventory,HEARTBEAT
 from data.fx_migration_manifest import manifest_digest
 from data.fx_currency_migration import _plan_indexed,MARKER
@@ -55,15 +56,18 @@ def catalog_preflight(root,release_ref,*,retirement=None):
         first=idle_heartbeat(root)
         report['volatile_projection']={'path':HEARTBEAT,'before':first,'reason':'One-second health heartbeat; strict healthy-idle schema, no dependency-bearing diagnostics'}
         with MigrationIndex(root,online=True,**watch_options(retirement)) as index:
+            logging.getLogger(__name__).info('Catalog preflight: validating retirement, queue and retained research')
             result=_plan_indexed(root,release_ref,index,retirement=retirement)
             report.update(inventory_files=len(index.files),inventory_sha256=manifest_digest(index.files),
                 candidate_deletions=len(result['delete']),candidate_replacements=len(result['replace']),
                 protected_ts_files=len(result['protected_ts']),blockers=result['blockers'],
                 preparation_files_selected=sum(p.startswith(retirement['prefix']) for p in result['delete']) if retirement else 0,
+                operational_files_selected=sum(p in result['delete'] for p in retirement.get('operational_files',{})) if retirement else 0,
                 preparation_dependencies=[{'path':p,'reference':v} for p,v in index.dependencies()
-                    if retirement and not p.startswith(retirement['prefix'])])
+                    if retirement and p not in set(retirement['files'])|set(retirement.get('operational_files',{}))])
             # Online writers are allowed. Drift means this diagnostic is not a
             # stable catalog view and must be explained before scientific replay.
+            logging.getLogger(__name__).info('Catalog preflight: selection has %s blockers; checking final inventory',len(report['blockers']))
             if inventory(root,online=True)!=index.files:report['blockers'].append('Catalog changed during online preflight; repeat on a stable view')
             last=idle_heartbeat(root);report['volatile_projection']['after']=last
             if (first['pid'],first['session_id'])!=(last['pid'],last['session_id']):
