@@ -10,6 +10,7 @@ import tempfile
 from data.alfred_onboarding import stable_read,strict_json
 
 BASE='storage/catalog/operations/fx_currency_migration'
+HEARTBEAT='storage/catalog/operations/worker_service.json'
 
 
 def file_commitment(path):
@@ -24,7 +25,7 @@ def file_commitment(path):
     return {'sha256':sha.hexdigest(),'bytes':size}
 
 
-def inventory(root):
+def inventory(root,*,online=False):
     """Keep compact commitments only; never decode records during apply hashing."""
     root=Path(root).resolve();files={}
     for folder in ('definitions','storage/catalog','config'):
@@ -35,6 +36,7 @@ def inventory(root):
             for name in sorted(names):
                 p=Path(directory)/name;relative=p.relative_to(root).as_posix()
                 if not p.is_file() or relative.startswith(BASE+'/') or p.suffix=='.lock':continue
+                if online and relative==HEARTBEAT:continue
                 files[relative]=file_commitment(p)
     return files
 
@@ -48,12 +50,13 @@ class Records(Mapping):
     def __getitem__(self,path):
         if path in self.overlay:return self.overlay[path]
         if path not in self.files or not path.endswith('.json') or path.startswith('config/'):raise KeyError(path)
-        return strict_json(stable_read(self.root/path,self.files[path]['sha256']))
+        try:return strict_json(stable_read(self.root/path,self.files[path]['sha256']))
+        except ValueError as exc:raise ValueError('Catalog record changed or invalid: '+path+': '+str(exc)) from exc
 
 
 class MigrationIndex:
-    def __init__(self,root,*,watched_values=(),watched_name=None):
-        self.root=root;self.watched_values=set(watched_values);self.watched_name=watched_name
+    def __init__(self,root,*,watched_values=(),watched_name=None,online=False):
+        self.root=root;self.online=online;self.watched_values=set(watched_values);self.watched_name=watched_name
     def __enter__(self):
         self.temp=tempfile.TemporaryDirectory(prefix='gambit-migration-index-')
         try:
@@ -73,7 +76,7 @@ class MigrationIndex:
                 CREATE TABLE dependencies(path TEXT,value TEXT,PRIMARY KEY(path,value)) WITHOUT ROWID;
             ''')
             logging.getLogger(__name__).info('Migration inventory: hashing files')
-            self.files=inventory(self.root);self.records=Records(self.root,self.files)
+            self.files=inventory(self.root,online=self.online);self.records=Records(self.root,self.files)
             logging.getLogger(__name__).info('Migration inventory: %s file commitments; indexing ownership',len(self.files))
             for n,path in enumerate(self.records):
                 self.add(path,self.records[path],references=False)

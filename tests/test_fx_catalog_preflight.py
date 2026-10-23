@@ -1,5 +1,8 @@
 """Synthetic list references, narrow preparation retirement, and online preflight."""
 import json
+import os
+import time
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 import unittest
@@ -16,7 +19,12 @@ from test_scopes import files
 
 
 class PreparationTests(unittest.TestCase):
-    setUp=baseline.CurrencyDeletionTests.setUp
+    def setUp(self):
+        baseline.CurrencyDeletionTests.setUp(self)
+        from data.fx_migration_index import HEARTBEAT
+        self.heartbeat={'workspace':str(self.root),'pid':os.getpid(),'session_id':str(uuid.uuid4()),'monotonic_ns':time.monotonic_ns(),
+            'health':{'healthy':True,'state':'idle','worker_alive':True,'supervisor_alive':True,'restart_count':0,'restart_limit':3,'last_error':None,'last_diagnostic':None}}
+        self.put(HEARTBEAT,self.heartbeat)
     put=baseline.CurrencyDeletionTests.put
     def bundle(self):
         self.put(PREFIX+INPUTS[0],{'scopes':[{'id':s} for s in sorted(RETIRED|set(PAIR_IDS))]})
@@ -129,6 +137,39 @@ class PreparationTests(unittest.TestCase):
         request['files'][path.relative_to(self.root).as_posix()]=file_commitment(path)
         result=self.preflight(request)
         self.assertFalse(result['catalog_ready']);self.assertEqual(result['preparation_files_selected'],0)
+
+    def test_online_heartbeat_updates_are_explicit_but_offline_hashes_still_pin_it(self):
+        from data.fx_migration_index import HEARTBEAT
+        request,_=self.bundle()
+        original=inventory
+        def changing(root,**kwargs):
+            self.heartbeat['monotonic_ns']=time.monotonic_ns()
+            (self.root/HEARTBEAT).write_text(json.dumps(self.heartbeat))
+            return original(root,**kwargs)
+        with patch('data.fx_catalog_preflight.inventory',side_effect=changing):result=self.preflight(request)
+        self.assertTrue(result['catalog_ready'],result['blockers'])
+        self.assertNotEqual(result['volatile_projection']['before']['sha256'],result['volatile_projection']['after']['sha256'])
+        manifest=self.retirement_plan(request)
+        self.assertIn(HEARTBEAT,manifest['inventory'])
+        changing(self.root)
+        with patch('data.fx_preparation_retirement.runtime_blockers',return_value=[]),self.assertRaisesRegex(ValueError,'changed'):
+            apply(self.root,manifest,manifest['sha256'])
+
+    def test_unhealthy_active_or_dependency_bearing_heartbeat_never_gets_ignored(self):
+        from data.fx_migration_index import HEARTBEAT
+        from copy import deepcopy
+        request,_=self.bundle()
+        for field,value in [('state','running'),('last_diagnostic',{'reference':request['bundle_sha256']}),('healthy',False),('unreviewed_field','anything')]:
+            candidate=deepcopy(self.heartbeat);candidate['health'][field]=value
+            (self.root/HEARTBEAT).write_text(json.dumps(candidate))
+            result=self.preflight(request)
+            self.assertFalse(result['catalog_ready']);self.assertIn(HEARTBEAT,' '.join(result['blockers']))
+
+    def test_catalog_checksum_error_names_the_exact_record(self):
+        from data.fx_migration_index import Records
+        file='storage/catalog/auxiliary/checksum.json';self.put(file,{'id':'ORIGINAL'})
+        records=Records(self.root,inventory(self.root));(self.root/file).write_text('{"id":"CHANGED"}')
+        with self.assertRaisesRegex(ValueError,file+': source checksum mismatch'):records[file]
 
 
 if __name__=='__main__':unittest.main()
