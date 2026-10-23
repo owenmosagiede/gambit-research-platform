@@ -28,6 +28,17 @@ def code_files(root):
         if p.is_file() and '__pycache__' not in p.parts and p.name!='.DS_Store'}
 
 
+def preparation_request(folder,request):
+    """An optional retirement input must be explicitly pinned in the attempt."""
+    path=folder/'preparation-retirement.json';expected=request.get('preparation_retirement_sha256')
+    if expected is None:
+        if path.exists():raise ValueError('Unpinned preparation retirement request')
+        return None
+    if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+        raise ValueError('Preparation retirement request differs from reviewed attempt')
+    return path
+
+
 class MigrationMachine(Machine):
     def health(self):
         deadline=time.monotonic()+45
@@ -44,7 +55,10 @@ class MigrationMachine(Machine):
         return state['MainPID']=='0' and state['ActiveState'] in ('inactive','failed')
     def child(self,folder,action):
         args=['/opt/gambit/venv/bin/python','-B',str(self.root/'tools/migrate_fx_currency.py'),'--root',str(self.root),action]
-        if action=='resume-plan':args+=['--release',str(folder/'release.json'),'--request',str(folder/'request.json'),'--output',str(folder/'manifest.json')]
+        if action=='resume-plan':
+            args+=['--release',str(folder/'release.json'),'--request',str(folder/'request.json'),'--output',str(folder/'manifest.json')]
+            retirement=preparation_request(folder,read(folder/'attempt.json'))
+            if retirement is not None:args+=['--retire-preparation',str(retirement)]
         else:
             args+=['--manifest',str(folder/'manifest.json')]
             if action=='apply':args+=['--expected-sha256',read(folder/'approval.json')['sha256']]
@@ -110,6 +124,7 @@ def recover(machine,folder):
 
 def run(machine,folder):
     request=read(folder/'attempt.json')
+    preparation_request(folder,request)
     if (folder/'status.json').exists():raise RuntimeError('Use a new attempt directory; never overwrite recovery evidence')
     if (folder/'approval.json').exists():raise RuntimeError('Approval must bind the newly computed plan')
     timeout=request.get('review_timeout_seconds',3600)

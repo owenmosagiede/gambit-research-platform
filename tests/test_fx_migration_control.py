@@ -135,3 +135,21 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(actions,['resume-plan','apply','verify'])
             self.assertEqual(json.loads((folder/'status.json').read_text())['phase'],'completed')
             self.assertFalse((base/'maintenance').exists())
+
+
+class RetirementInputTests(unittest.TestCase):
+    def test_optional_request_must_be_pinned_and_is_forwarded(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp);request={}
+            self.assertIsNone(control.preparation_request(folder,request))
+            path=folder/'preparation-retirement.json';path.write_text('{"synthetic":true}')
+            with self.assertRaisesRegex(ValueError,'Unpinned'):control.preparation_request(folder,request)
+            request['preparation_retirement_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(control.preparation_request(folder,request),path)
+            (folder/'attempt.json').write_text(json.dumps(request))
+            machine=object.__new__(control.MigrationMachine);machine.root=folder/'root'
+            with patch.object(control.subprocess,'run') as run:machine.child(folder,'resume-plan')
+            self.assertEqual(run.call_args.args[0][-2:],['--retire-preparation',str(path)])
+            path.write_text('{}')
+            with self.assertRaisesRegex(ValueError,'differs'):control.preparation_request(folder,request)
