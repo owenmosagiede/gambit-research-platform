@@ -1,15 +1,19 @@
-"""Real HTTP, independent worker, real statistics, browser-independent batch intake."""
+"""Retired batch HTTP surfaces cannot write or dispatch; experiments remain live."""
+import http.client
 import json
-from pathlib import Path
-import time
 import unittest
 
-from runtime.research_batches import ResearchBatches
+from api.application import ApplicationRoutes, ASSETS
+from api.catalog_cache import CatalogCache
 from services.research_worker import WebResearchJobs, external_health
-from test_research_runtime import Adapter
-from test_research_batches import manifest
+from test_research_runtime import Adapter, intent
+from test_signal_library_api import inventory
 import test_separate_services as services_fixture
 from test_separate_services import worker_main
+
+BID = '10000000-0000-4000-8000-000000000002'
+PATHS = ['/api/batches', '/api/batches/' + BID,
+         *['/api/batches/' + BID + '/' + action for action in ('approve', 'pause', 'resume')]]
 
 
 class BatchHTTPTests(unittest.TestCase):
@@ -20,68 +24,95 @@ class BatchHTTPTests(unittest.TestCase):
     request = services_fixture.SeparateServicesTests.request
     wait = services_fixture.SeparateServicesTests.wait
 
-    def test_approved_batch_finishes_after_initiating_web_process_exits(self):
-        worker = self.start(worker_main, self.root); web = self.web()
+    def assert_retired(self, result):
+        code, body = result
+        self.assertEqual(code, 410, body)
+        self.assertEqual(body['error']['code'], 'BATCH_RETIRED')
+        self.assertIs(body['recorded'], False)
+
+    def test_all_batch_routes_are_retired_without_research_writes(self):
+        self.web()
+        historical = self.root / 'storage/catalog/operations/research_batches' / BID / 'manifest.json'
+        historical.parent.mkdir(parents=True)
+        historical.write_text('{"historical":"unchanged"}')
+        before = inventory(self.root)
+        for path in PATHS + ['/api/batches/' + BID + '/unknown', '/api/batches?ignore=1']:
+            with self.subTest(path=path):
+                self.assert_retired(self.request('GET', path))
+                self.assert_retired(self.request('POST', path, {'malformed': 'batch is never parsed'}))
+        self.assertEqual(inventory(self.root), before)
+        self.assertFalse((self.root / 'storage/catalog/submissions').exists())
+
+    def test_shared_routes_never_access_jobs_or_parse_batch_payloads(self):
+        class NoJobs:
+            def __getattr__(self, name):
+                raise AssertionError('Retired route accessed jobs: ' + name)
+        before = inventory(self.root)
+        for path in PATHS:
+            for method in ('GET', 'HEAD', 'POST'):
+                route = ApplicationRoutes(self.root, NoJobs(), CatalogCache(), method, path)
+                route.write(b'not JSON') if method == 'POST' else route.read(method == 'HEAD')
+                self.assert_retired((route.response[0], json.loads(route.response[1])))
+        self.assertEqual(inventory(self.root), before)
+
+    def test_retired_asset_is_not_exposed_and_head_has_no_body(self):
+        self.web()
+        self.assertNotIn('/batches.js', ASSETS)
+        self.assertEqual(self.request('GET', '/batches.js')[0], 404)
+        c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        try:
+            c.request('HEAD', '/api/batches')
+            response = c.getresponse()
+            self.assertEqual(response.status, 410)
+            self.assertEqual(response.read(), b'')
+        finally:
+            c.close()
+
+    def test_retirement_preserves_exact_origin_checks(self):
+        self.web()
+        before = inventory(self.root)
+        for origin in (None, 'https://other.example'):
+            c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+            try:
+                headers = {'Content-Type': 'application/json'}
+                if origin: headers['Origin'] = origin
+                c.request('POST', '/api/batches', '{}', headers)
+                response = c.getresponse()
+                self.assertEqual(response.status, 403)
+                self.assertEqual(json.loads(response.read())['error']['code'], 'INVALID_ORIGIN')
+            finally:
+                c.close()
+        self.assertEqual(inventory(self.root), before)
+
+    def test_similar_non_batch_prefixes_keep_normal_unknown_route_behavior(self):
+        self.web()
+        before = inventory(self.root)
+        for path in ('/api/batches-summary', '/api/batches_other', '/api/batches2/resume'):
+            self.assertEqual(self.request('GET', path)[0], 404)
+            code, response = self.request('POST', path, {})
+            self.assertEqual(code, 405)
+            self.assertNotEqual(response['error']['code'], 'BATCH_RETIRED')
+        self.assertEqual(inventory(self.root), before)
+
+    def test_individual_experiment_still_runs_in_independent_worker(self):
+        worker = self.start(worker_main, self.root)
+        web = self.web()
         self.wait(lambda: external_health(self.root)['healthy'])
-        m = manifest()
-        code, result = self.request('POST', '/api/batches', m)
-        self.assertEqual(code, 202, result)
-        path = '/api/batches/' + m['batch_id']
-        result = self.wait(lambda: (s if (s := self.request('GET', path)[1]).get('preview_complete') else None))
-        self.assertEqual(result['preview_counts'], {'new': 2})
-        self.assertFalse(list((self.root/'storage/catalog/trial_ledger/records').glob('*.json')))
-        self.assertEqual(self.request('POST', path+'/approve', {'preview_sha256':'0'*64,'exclude_blocked':False})[0],409)
-        approval = {'preview_sha256':result['preview_sha256'], 'exclude_blocked':False}
-        self.assertEqual(self.request('POST', path+'/approve', approval)[0],202)
-        self.assertEqual(self.request('POST', path+'/approve', approval)[0],202)
+        request = intent(mode='TS')
+        self.assertEqual(self.request('POST', '/api/experiments', request)[0], 202)
         self.wait(lambda: (self.root/'entered').exists())
         web.terminate(); web.join(3)
         self.assertTrue(worker.is_alive())
         (self.root/'release').touch()
-        batches = ResearchBatches(WebResearchJobs(self.root, adapter=Adapter()))
-        done = self.wait(lambda: (s if (s := batches.status(m['batch_id']))['state']['state']=='completed' else None),timeout=35)
-        self.assertEqual(done['job_counts'], {'succeeded':2})
+        jobs = WebResearchJobs(self.root, adapter=Adapter())
+        self.wait(lambda: jobs.get(request['request_id'])['status'] == 'succeeded')
         self.web()
-        code, result = self.request('GET', path)
-        self.assertEqual(code,200); self.assertEqual(result['job_counts'],{'succeeded':2})
-        code, results = self.request('GET', '/api/research-results/'+m['features'][0]['id'])
-        self.assertEqual(code,200); self.assertEqual(len(results['relationships']),10)
-        self.assertEqual({r['mode'] for r in results['relationships']},{'TS','CS'})
-        self.assertTrue(any(any(t['stage']=='P2' for t in r['results']) for r in results['relationships']))
-        self.assertEqual(len(list((self.root/'storage/catalog/submissions').glob('*.json'))),2)
-        print('Batch HTTP evidence: preview ran no kernels; exact approval; independent worker; TS+CS; 10 horizon outcomes; P2 evidence; web restart; 2 unique submissions.')
+        code, results = self.request('GET', '/api/research-results/' + request['feature']['id'])
+        self.assertEqual(code, 200)
+        self.assertEqual(len(results['relationships']), 5)
+        self.assertEqual(self.request('POST', '/api/experiments', request)[0], 200)
+        self.assertEqual(len(list((self.root/'storage/catalog/submissions').glob('*.json'))), 1)
 
-    def test_ui_api_and_batch_intake_race_across_processes(self):
-        from concurrent.futures import ThreadPoolExecutor
-        import uuid
-        from test_research_runtime import intent
-        self.web()
-        jobs=WebResearchJobs(self.root,adapter=Adapter());batches=ResearchBatches(jobs)
-        m=manifest(scopes=[intent()['scope']]);batches.create(m);batches.advance()
-        status=batches.status(m['batch_id'])
-        batches.approve(m['batch_id'],{'preview_sha256':status['preview_sha256'],'exclude_blocked':False})
-        requests=[intent() for _ in range(8)]
-        def submit(r):return r,self.request('POST','/api/experiments',r)
-        with ThreadPoolExecutor(max_workers=9) as pool:
-            dispatch=pool.submit(batches.advance)
-            results=list(pool.map(submit,requests));dispatch.result()
-        ids={value['job']['request_id'] for _,(code,value) in results if code in (200,202)}
-        self.assertEqual(len(ids),1)
-        self.assertTrue(all(code in (200,202) for _,(code,_) in results),results)
-        self.assertEqual(len(list((self.root/'storage/catalog/submissions').glob('*.json'))),1)
-        for request,(code,value) in results:
-            status,retry=self.request('GET','/api/experiments/'+request['request_id'])
-            self.assertEqual(status,200);self.assertEqual(retry['job']['request_id'],value['job']['request_id'])
-        batch=batches.status(m['batch_id'])
-        self.assertIn(batch['items'][0]['dispatch']['request_id'],ids)
-        self.assertFalse(list((self.root/'storage/catalog/trial_ledger/records').glob('*.json')))
 
-    def test_invalid_routes_payloads_and_retry_identity(self):
-        self.web(); m=manifest()
-        self.assertEqual(self.request('POST','/api/batches',m)[0],202)
-        self.assertEqual(self.request('POST','/api/batches',m)[0],202)
-        self.assertEqual(self.request('POST','/api/batches',dict(m,name='changed'))[0],409)
-        self.assertEqual(self.request('POST','/api/batches/'+m['batch_id']+'/resume',{'extra':True})[0],400)
-        self.assertEqual(self.request('GET','/api/batches/'+m['batch_id']+'?ignore=1')[0],400)
-        self.assertEqual(self.request('GET','/api/batches')[0],200)
-        self.assertFalse(list((self.root/'storage/catalog/submissions').glob('*.json')))
+if __name__ == '__main__':
+    unittest.main()

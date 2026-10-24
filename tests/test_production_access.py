@@ -78,22 +78,28 @@ class ProductionAccessTests(unittest.TestCase):
         for route in routes:
             with self.subTest(viewer_route=route): self.assertEqual(self.client.get(route).status_code,403)
         self.assertFalse((self.root/'storage').exists())
-    def test_batch_requires_owner_csrf_and_explicit_cloud_activation(self):
-        from test_research_batches import manifest
-        from runtime.research_batches import ResearchBatches
-        m=manifest();token=self.login()
-        self.assertEqual(self.post(m,path='/api/batches').status_code,403)
-        self.assertEqual(self.post(m,token,path='/api/batches').status_code,202)
-        batches=ResearchBatches(self.jobs)
-        for _ in range(2): batches.advance()
-        s=batches.status(m['batch_id']);body={'preview_sha256':s['preview_sha256'],'exclude_blocked':False}
-        path='/api/batches/'+m['batch_id']+'/approve'
-        with override_settings(ALLOW_SUBMISSIONS=False):
-            self.assertEqual(self.post(body,token,path=path).status_code,503)
-            self.assertEqual(self.post({},token,path='/api/batches/'+m['batch_id']+'/resume').status_code,503)
-        self.assertFalse((batches.directory(m['batch_id'])/'approval.json').exists())
-        self.assertEqual(self.post(body,token,path=path).status_code,202)
-        self.assertFalse(list((self.root/'storage/catalog/submissions').glob('*.json')))
+    def test_batch_retirement_keeps_owner_csrf_origin_without_starting_services(self):
+        token=self.login()
+        path='/api/batches/10000000-0000-4000-8000-000000000002'
+        self.assertEqual(self.post({},path='/api/batches').status_code,403)
+        response=self.client.post(path+'/approve',data='{}',content_type='application/json',
+            HTTP_X_CSRFTOKEN=token,HTTP_ORIGIN='https://other.example')
+        self.assertEqual(response.status_code,403)
+        self.assertEqual(response.json()['error']['code'],'INVALID_ORIGIN')
+        before={str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        with patch('web.views.services',side_effect=AssertionError('Retired route started services')):
+            for enabled in (False,True):
+                with override_settings(ALLOW_SUBMISSIONS=enabled):
+                    for endpoint in ('/api/batches',path,path+'/approve',path+'/pause',path+'/resume'):
+                        for response in (self.client.get(endpoint),self.post({'ignored':'payload'},token,path=endpoint)):
+                            self.assertEqual(response.status_code,410)
+                            self.assertEqual(response.json()['error']['code'],'BATCH_RETIRED')
+                            self.assertIs(response.json()['recorded'],False)
+        after={str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        self.assertEqual(after,before)
+        self.assertEqual(self.client.get('/batches.js').status_code,404)
+        self.assertEqual(self.client.get('/api/batches-summary').status_code,404)
+        self.assertEqual(self.post({},token,path='/api/batches-summary').status_code,405)
 
     def test_public_has_no_private_bundle_or_research_metadata(self):
         for route in ('/', '/about/', '/login/', '/healthz', '/public/site.css', '/public/gambit-app-mark.svg'):

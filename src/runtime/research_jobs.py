@@ -329,7 +329,7 @@ class ResearchJobs:
         self.wake.set()
         return value
 
-    def submit(self,value, *, _batch_packet=None, _batch_duplicate_policy=None, _batch_reuse_id=None):
+    def submit(self,value):
         from data.fx_currency_migration import check_intake
         check_intake(self.root)
         from runtime.experiment_identity import IdentityIndex, freeze, scientific_key, save, release_reviews
@@ -340,8 +340,6 @@ class ResearchJobs:
             journal=index.journal(rid)
             if journal:
                 if journal['intent']!=intent:raise ResearchConflict('This request ID already has different inputs')
-                if _batch_packet is not None and scientific_key(_batch_packet)!=journal['scientific_identity']:
-                    raise ResearchConflict('Batch request belongs to different frozen inputs')
                 return self._received(journal,index),False
             path=self._submission_path(rid)
             incident=self._incident_path(path)
@@ -352,8 +350,6 @@ class ResearchJobs:
                 if original['intent']!=intent:raise ResearchConflict('This request ID already has different inputs')
                 if index.entry(original)['scientific_identity'] is None:
                     raise ResearchConflict('Historical inputs were not frozen; reconciliation required')
-                if _batch_packet is not None and index.entry(original)['scientific_identity']!=scientific_key(_batch_packet):
-                    raise ResearchConflict('Batch UUID belongs to different historical inputs')
                 # Existing UUID retries retain their frozen legacy authority.
                 return self.public(self._ensure_recorded(original)),False
             try:
@@ -361,20 +357,9 @@ class ResearchJobs:
             except ResearchBlocked:raise
             except (ValueError,KeyError,TypeError,OSError) as exc:
                 raise ResearchBlocked(getattr(exc,'blockers',[{'code':'INPUT_METADATA_BLOCKED','message':str(exc)}])) from exc
-            if _batch_packet is not None:
-                if (_batch_packet['implementation']!=packet['implementation'] or
-                        scientific_key(_batch_packet)!=scientific_key(packet)):
-                    raise ResearchConflict('Exact inputs or implementation changed after preview; create a new preview')
-                packet=deepcopy(_batch_packet)
             state=index.load()
             matches,ambiguous=index.matches(packet,state)
             if ambiguous:raise ResearchConflict('History or release compatibility requires reconciliation: '+', '.join(ambiguous))
-            if _batch_reuse_id is not None and not any(r==_batch_reuse_id for r,_ in matches):
-                raise ResearchConflict('Previewed duplicate is no longer reusable; no replacement was submitted')
-            if _batch_reuse_id is not None and any(j and j['status'] not in ACTIVE|{'succeeded'} for _,j in matches):
-                raise ResearchConflict('Previewed trial now needs recovery; review before dispatch')
-            if matches and _batch_duplicate_policy=='reject':
-                raise ResearchConflict('Exact matching experiment exists; review the existing trial')
             canonical_id=matches[0][0] if matches else rid
             original=None
             if not matches:
@@ -463,9 +448,6 @@ class ResearchJobs:
             if 'original' in job:
                 self.submit(dict(job['original']['intent'],request_id=job['request_id']))
                 found[i]=self._read_job(job['request_id'])
-        if not found and not self.stop_event.is_set():
-            from runtime.research_batches import ResearchBatches
-            ResearchBatches(self).advance()
         return [job['request_id'] for job in sorted(found,key=self.queue_key)]
 
     def _worker_ready(self,state):
@@ -477,8 +459,11 @@ class ResearchJobs:
     def _loop(self):
         while not self.stop_event.is_set():
             # Idle is healthy; lock contention is explicit and never spawns a second executor.
-            if (inside(self.root,'storage/catalog/submissions').exists() or inside(self.root,'storage/catalog/operations/jobs').exists()
-                    or inside(self.root,'storage/catalog/operations/research_batches').exists()):
+            # A durable intake journal is an explicit submission even when a
+            # crash prevented publication of its envelope and job projection.
+            if any(inside(self.root,path).exists() for path in (
+                    'storage/catalog/submissions', 'storage/catalog/operations/jobs',
+                    'storage/catalog/operations/experiment_intake/requests')):
                 with lock(self.root,'research-executor',nonblocking=True) as claimed:
                     if claimed:
                         pending=self._pending()

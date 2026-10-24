@@ -194,14 +194,81 @@ class ReleaseTests(unittest.TestCase):
 if __name__=='__main__':unittest.main()
 
 class BatchReleaseGateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.bid='a0000000-0000-4000-8000-000000000001'
+        self.folder=self.root/'storage/catalog/operations/research_batches'/self.bid
+        self.machine=server.Machine(self.root)
+
+    def record(self,state='paused',schema='research_batch_v1'):
+        from legacy_batch_fixture import save
+        save(self.folder/'manifest.json',{'schema':schema,'batch_id':self.bid})
+        if state is not None:save(self.folder/'state.json',{'state':state})
+
     def test_paused_batch_blocks_code_release_without_jobs(self):
-        from runtime.research_batches import save
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            folder=root/'storage/catalog/operations/research_batches/fixture'
-            save(folder/'manifest.json',{'schema':'research_batch_v1','batch_id':'fixture'})
-            save(folder/'state.json',{'state':'paused'})
-            machine=server.Machine(root)
-            self.assertEqual(machine.queue(),['batch:fixture'])
-            save(folder/'state.json',{'state':'completed'},mutable=True)
-            self.assertEqual(machine.queue(),[])
+        from legacy_batch_fixture import save
+        self.record();before={str(path):path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+        self.assertEqual(self.machine.queue(),['batch:'+self.bid])
+        self.assertEqual(before,{str(path):path.read_bytes() for path in self.root.rglob('*') if path.is_file()})
+        save(self.folder/'state.json',{'state':'completed'},mutable=True)
+        self.assertEqual(self.machine.queue(),[])
+
+    def test_every_unfinished_state_and_missing_state_blocks(self):
+        from legacy_batch_fixture import save
+        self.record(state=None)
+        self.assertEqual(self.machine.queue(),['batch:'+self.bid])
+        for state in ('previewing','ready','approved','dispatching','paused','needs_attention'):
+            with self.subTest(state=state):
+                save(self.folder/'state.json',{'state':state},mutable=True)
+                self.assertEqual(self.machine.queue(),['batch:'+self.bid])
+
+    def test_completed_retained_ts_history_is_readable_without_scheduler(self):
+        from unittest.mock import patch
+        self.record('completed','research_batch_retained_ts_v1')
+        with patch.dict(sys.modules,{'runtime.research_batches':None}):
+            self.assertEqual(self.machine.queue(),[])
+
+    def test_orphaned_or_corrupt_batch_history_fails_closed(self):
+        from research.contracts import ResearchError
+        self.folder.mkdir(parents=True)
+        (self.folder/'state.json').write_text('{}')
+        with self.assertRaisesRegex(ResearchError,'Incomplete'):self.machine.queue()
+        (self.folder/'manifest.json').write_text('{}')
+        with self.assertRaisesRegex(ResearchError,'checksum'):self.machine.queue()
+
+    def test_unknown_schema_state_and_wrong_identity_fail_closed(self):
+        from research.contracts import ResearchError
+        from legacy_batch_fixture import save
+        self.record('completed')
+        for field,value in (('schema','unknown_batch_v9'),('batch_id','a0000000-0000-4000-8000-000000000002')):
+            manifest={'schema':'research_batch_v1','batch_id':self.bid};manifest[field]=value
+            save(self.folder/'manifest.json',manifest,mutable=True)
+            with self.assertRaisesRegex(ResearchError,'identity or schema'):self.machine.queue()
+        save(self.folder/'manifest.json',{'schema':'research_batch_v1','batch_id':self.bid},mutable=True)
+        save(self.folder/'state.json',{'state':'retired'},mutable=True)
+        with self.assertRaisesRegex(ResearchError,'Unknown legacy batch state'):self.machine.queue()
+
+    def test_symlink_or_unexpected_namespace_file_fails_closed(self):
+        from research.contracts import ResearchError
+        self.folder.parent.mkdir(parents=True)
+        target=self.root/'external';target.mkdir()
+        self.folder.symlink_to(target,target_is_directory=True)
+        with self.assertRaisesRegex(ResearchError,'Unexpected'):self.machine.queue()
+        self.folder.unlink();self.folder.write_text('orphan evidence')
+        with self.assertRaisesRegex(ResearchError,'Unexpected'):self.machine.queue()
+
+    def test_legacy_preview_keeps_original_approval_hash_without_writes(self):
+        from data.legacy_batch_evidence import preview
+        from legacy_batch_fixture import save
+        from research.contracts import digest
+        manifest=save(self.folder/'manifest.json',{'schema':'research_batch_v1','batch_id':self.bid,
+            'request':{'estimate_basis':{'description':'Synthetic calibration','seconds_per_experiment':[1,3],
+                                       'bytes_per_experiment':[5,8]}}})
+        for index,disposition in enumerate(('new','reuse','blocked')):
+            save(self.folder/'rows'/f'{index}.json',{'index':index,'disposition':disposition,
+                'scheduled_member_rows':{'P1':10,'P2':20}})
+        before={str(path):path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+        # Captured from the pre-retirement ResearchBatches._preview implementation.
+        self.assertEqual(digest(preview(self.folder,manifest)),
+            '7bbc65ba729c09090c03bd0585d9ec5fdd44332bd09627bc4b4950cab450a44a')
+        self.assertEqual(before,{str(path):path.read_bytes() for path in self.root.rglob('*') if path.is_file()})

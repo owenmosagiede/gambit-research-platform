@@ -1,1 +1,19 @@
-{"schema":"research_release_reviews_v1","reviews":[]}
+{
+  "schema": "research_release_reviews_v1",
+  "reviews": [
+    {
+      "from": "f0ce07ab3da287782ffb5d3eb5da91f4cac3022d384e3533e68c58299bc35855",
+      "to": "f68a27114766ff1b98e73f95894b69186c2527b685e7beb85d8dcbfafd6cdc38",
+      "decision": "equivalent",
+      "evidence": "docs/batch-retirement-release.md",
+      "tests": [
+        "test_batch_retirement_release",
+        "test_research_batches",
+        "test_experiment_identity",
+        "test_research_runtime",
+        "test_research_recovery",
+        "test_release_workflow"
+      ]
+    }
+  ]
+}

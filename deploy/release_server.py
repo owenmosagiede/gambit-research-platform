@@ -124,13 +124,8 @@ class Machine:
             if job['status'] in ACTIVE: active.append(rid)
         # Preview/approved/paused batches also freeze an implementation. They
         # must be completed or explicitly reconciled before a code release.
-        from runtime.research_batches import checked
-        batches=self.root/'storage/catalog/operations/research_batches'
-        for manifest in sorted(batches.glob('*/manifest.json')):
-            checked(manifest)
-            state=manifest.parent/'state.json'
-            if not state.exists() or checked(state).get('state')!='completed':
-                active.append('batch:'+manifest.parent.name)
+        from data.legacy_batch_evidence import pending
+        active.extend(pending(self.root))
         return active
 
     def idle(self):

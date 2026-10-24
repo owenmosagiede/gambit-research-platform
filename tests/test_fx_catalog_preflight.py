@@ -35,7 +35,7 @@ class PreparationTests(unittest.TestCase):
 
     def operational_bundle(self):
         from data.fx_operational_retirement import PROGRESS,PILOT,PILOT_FILES
-        from runtime.research_batches import checked
+        from data.legacy_batch_evidence import checked
         request,_=self.bundle();batches,bid=self.completed_batch();directory=batches.directory(bid)
         manifest=checked(directory/'manifest.json');preview=batches.status(bid)
         preview.pop('read_only');preview.pop('reconciliation')
