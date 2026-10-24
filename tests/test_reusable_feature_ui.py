@@ -72,7 +72,17 @@ def choose_feature(item):
 
 
 def choose_scope(identifier):
-    return {'action': 'select', 'element': 'scope', 'value': {'id': identifier, 'version': '1.0.0'}}
+    return {'action': 'select', 'element': 'scope', 'value': {'id': identifier, 'version': '1.0.0'},
+            'binding': scope_binding(identifier)}
+
+
+def scope_binding(identifier):
+    return {'id': identifier, 'version': '1.0.0', 'reference': ref(identifier),
+            'definition_binding': ref(identifier), 'membership_snapshot': ref('MEMBERSHIP_' + identifier)}
+
+
+def feature_catalog(items):
+    return {'schema_version': '1.0.0', 'feature_count': len(items), 'features': items, 'issues': []}
 
 
 def ui(items, steps=(), *, responses=None, hold=(), fail_catalog=False, catalog=None):
@@ -102,20 +112,24 @@ const context = {document: {getElementById: id => ids[id], createElement: tag =>
   AbortController, CustomEvent: class { constructor(type, data = {}) { this.type = type; this.detail = data.detail; } },
   fetch: async (url, options) => {
     requests.push({url, method: options.method}); signals.push(options.signal);
+    if (input.hold.includes(url)) return new Promise((resolve, reject) => pending.push({url, resolve, reject}));
     if (url === "/api/feature-library") {
       if (input.fail_catalog) throw new Error("Unavailable");
       return output(input.catalog);
     }
-    if (input.hold.includes(url)) return new Promise((resolve, reject) => pending.push({url, resolve, reject}));
     return output(responses[url] ?? null);
   }};
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const snapshots = [];
+function bindScope(binding) {
+  ids.scope.dataset = binding ? {scopeReference: JSON.stringify(binding.definition_binding),
+    membershipSnapshot: JSON.stringify(binding.membership_snapshot), scopeResolution: JSON.stringify(binding)} : {};
+}
 const read = node => ({tag:node.tag, text:node.textContent, value:node.value, disabled:node.disabled,
   label:node.label, title:node.title, children:node.children.map(read)});
 function snapshot() {
   const item = ids.feature;
-  snapshots.push(JSON.parse(JSON.stringify({disabled:item.disabled, value:item.value, dataset:item.dataset,
+    snapshots.push(JSON.parse(JSON.stringify({disabled:item.disabled, value:item.value, title:item.title, dataset:item.dataset,
     options:item.children.map(read), validity:item.validity, busy:ids["feature-coverage"].attributes["aria-busy"],
     panelHidden:ids["feature-coverage"].hidden, status:ids["feature-status"].textContent,
     coverageStatus:ids["feature-coverage-status"].textContent, body:read(ids["feature-coverage-body"]),
@@ -126,9 +140,21 @@ function snapshot() {
   vm.runInNewContext(fs.readFileSync(input.script, "utf8"), context);
   await flush(); snapshot();
   for (const step of input.steps) {
-    if (step.action === "select") { ids[step.element].value = JSON.stringify(step.value); ids[step.element].listeners.change(); }
+    if (step.action === "select") {
+      ids[step.element].value = JSON.stringify(step.value);
+      if (step.element === "scope") bindScope(step.binding);
+      ids[step.element].listeners.change();
+    }
     else if (step.action === "retry") ids[step.element || "feature-coverage-retry"].listeners.click();
     else if (step.action === "scope-reset") { ids.scope.value = ""; context.window.dispatchEvent(new context.CustomEvent("scope-state-change")); }
+    else if (step.action === "scope-binding") {
+      bindScope(step.binding); context.window.dispatchEvent(new context.CustomEvent("scope-state-change"));
+    }
+    else if (step.action === "refresh") {
+      if (step.catalog) input.catalog = step.catalog;
+      if (step.hold) input.hold.push("/api/feature-library");
+      context.window.dispatchEvent(new context.CustomEvent("experiment-catalog-refresh"));
+    }
     else if (step.action === "stored-details") {
       const find = node => node.tag === "button" ? node : node.children.map(find).find(Boolean);
       find(ids["feature-coverage-body"]).listeners.click();
@@ -138,7 +164,7 @@ function snapshot() {
     else if (step.action === "settle") {
       const request = pending[step.index];
       if (step.error) request.reject(new Error("Unavailable"));
-      else request.resolve(output(step.value ?? responses[request.url]));
+      else request.resolve(output(step.value ?? (request.url === "/api/feature-library" ? input.catalog : responses[request.url])));
     }
     await flush(); snapshot();
   }
@@ -147,8 +173,7 @@ function snapshot() {
 '''
     payload = {'script': str(PROJECT / 'ui/features.js'), 'steps': list(steps), 'hold': list(hold),
                'fail_catalog': fail_catalog,
-               'catalog': catalog if catalog is not None else {
-                   'schema_version': '1.0.0', 'feature_count': len(items), 'features': items, 'issues': []},
+               'catalog': catalog if catalog is not None else feature_catalog(items),
                'responses': responses or {path(item): resolution(item) for item in items}}
     result = subprocess.run([node, '-e', harness], input=json.dumps(payload), text=True,
                             capture_output=True, check=True)
@@ -175,14 +200,113 @@ class ReusableFeatureUiTests(unittest.TestCase):
         self.assertTrue(all(not item['disabled'] for item in view['options'][1:]))
         self.assertNotIn('AUDUSD', ' '.join(item['text'] for item in view['options']))
         self.assertEqual(len({item['value'] for item in view['options'][1:]}), 181)
-        self.assertEqual(view['options'][180]['text'], 'Log Level → Skip-Recent Difference (k=180, s=5)')
+        self.assertEqual(view['options'][180]['text'], 'Reusable FX recipe 179 · Log Level → Skip-Recent Difference (k=180, s=5)')
         self.assertEqual(view['options'][181]['text'], 'CES existing Feature')
         self.assertEqual(view['requests'], [{'url': '/api/feature-library', 'method': 'GET'}])
+        self.assertEqual(view['dataset']['catalogCount'], '181')
+        self.assertIn('181 registered Features', view['status'])
 
     def test_internal_log_basis_is_rendered_without_invented_log_step(self):
         view = ui([feature(0, basis_log=True)])[0]
-        self.assertEqual(view['options'][1]['text'], 'Downside Semivolatility (basis=log, w=21)')
+        self.assertEqual(view['options'][1]['text'], 'Reusable FX recipe 0 · Downside Semivolatility (basis=log, w=21)')
         self.assertNotIn('Log Level', view['options'][1]['text'])
+
+    def test_currency_and_single_pair_recipe_names_remain_distinct(self):
+        ts, cs = feature(0), feature(1)
+        ts['name'] = 'TS Momentum · 63 weekdays'
+        cs['name'] = 'Currency CS Momentum · 63 weekdays'
+        cs['transformations'] = deepcopy(ts['transformations'])
+        view = ui([ts, cs])[0]
+        labels = [option['text'] for option in view['options'][1:]]
+        self.assertNotEqual(*labels)
+        for item, label in zip((ts, cs), labels):
+            self.assertIn(item['name'], label)
+            self.assertIn('Skip-Recent Difference', label)
+
+    def test_refresh_preserves_only_the_exact_feature_reference(self):
+        for case in ('unchanged', 'renamed', 'changed_hash', 'retired'):
+            with self.subTest(case=case):
+                item = deepcopy(self.recipe)
+                if case == 'renamed':
+                    item['name'] = 'Current registered name'
+                if case == 'changed_hash':
+                    item['reference']['content_sha256'] = 'f' * 64
+                catalog = feature_catalog([] if case == 'retired' else [item])
+                views = ui([self.recipe], [choose_feature(self.recipe), choose_scope('AUDUSD'),
+                                          {'action': 'refresh', 'catalog': catalog, 'hold': True},
+                                          {'action': 'settle', 'index': 0}])
+                pending, current = views[-2:]
+                self.assertEqual(pending['dataset'], {})
+                self.assertEqual(pending['value'], '')
+                self.assertEqual(pending['title'], '')
+                self.assertEqual(pending['body']['children'], [])
+                self.assertTrue(pending['panelHidden'])
+                if case in ('unchanged', 'renamed'):
+                    self.assertEqual(json.loads(current['dataset']['featureReference']), self.recipe['reference'])
+                    self.assertIn('featureResolution', current['dataset'])
+                else:
+                    self.assertEqual(current['value'], '')
+                    self.assertNotIn('featureReference', current['dataset'])
+                    self.assertNotIn('featureResolution', current['dataset'])
+                self.assertTrue(all(request['method'] == 'GET' for request in current['requests']))
+
+    def test_scope_refresh_during_catalog_load_keeps_loading_state_without_old_bindings(self):
+        views = ui([self.recipe], [choose_feature(self.recipe), choose_scope('AUDUSD'),
+                                  {'action': 'refresh', 'hold': True},
+                                  {'action': 'scope-binding', 'binding': None}])
+        pending = views[-1]
+        self.assertEqual(pending['dataset'], {})
+        self.assertTrue(pending['disabled'])
+        self.assertIn('Loading registered Features', pending['status'])
+        self.assertEqual(pending['body']['children'], [])
+
+    def test_retirement_refresh_cannot_be_undone_by_late_coverage_or_catalog(self):
+        steps = [choose_scope('AUDUSD'), choose_feature(self.recipe),
+                 {'action': 'refresh', 'catalog': feature_catalog([]), 'hold': True},
+                 {'action': 'refresh', 'catalog': feature_catalog([])},
+                 {'action': 'settle', 'index': 2, 'value': feature_catalog([])},
+                 {'action': 'settle', 'index': 1, 'value': feature_catalog([self.recipe])},
+                 {'action': 'settle', 'index': 0}]
+        views = ui([self.recipe], steps, hold=[path(self.recipe)])
+        latest = views[-3]
+        self.assertEqual(latest['dataset'], {'catalogCount': '0'})
+        self.assertEqual(latest['value'], '')
+        self.assertEqual(latest['dataset'], views[-2]['dataset'])
+        self.assertEqual(latest['dataset'], views[-1]['dataset'])
+        self.assertEqual(latest['options'], views[-1]['options'])
+        self.assertTrue(views[-1]['aborted'][1])
+        self.assertTrue(views[-1]['aborted'][2])
+
+    def test_same_scope_value_requires_current_verified_binding_after_refresh(self):
+        changed = scope_binding('AUDUSD')
+        changed['membership_snapshot'] = ref('MEMBERSHIP_NEW')
+        new_response = resolution(self.recipe)
+        new_response['scope']['membership_snapshot'] = changed['membership_snapshot']
+        steps = [choose_feature(self.recipe), choose_scope('AUDUSD'),
+                 {'action': 'scope-binding', 'binding': None},
+                 {'action': 'respond', 'path': path(self.recipe), 'value': new_response},
+                 {'action': 'scope-binding', 'binding': changed}]
+        views = ui([self.recipe], steps)
+        cleared, restored = views[3], views[-1]
+        self.assertNotIn('featureResolution', cleared['dataset'])
+        self.assertTrue(cleared['panelHidden'])
+        self.assertEqual(len(cleared['requests']), 2)
+        self.assertEqual(json.loads(restored['dataset']['featureResolution'])['scope']['membership_snapshot'],
+                         changed['membership_snapshot'])
+        self.assertEqual(len(restored['requests']), 3)
+
+    def test_unverified_scope_and_stale_membership_resolution_fail_closed(self):
+        unverified = choose_scope('AUDUSD'); unverified.pop('binding')
+        view = ui([self.recipe], [choose_feature(self.recipe), unverified])[-1]
+        self.assertEqual(len(view['requests']), 1)
+        self.assertNotIn('featureResolution', view['dataset'])
+        self.assertTrue(view['panelHidden'])
+        changed = scope_binding('AUDUSD')
+        changed['membership_snapshot'] = ref('MEMBERSHIP_NEW')
+        view = ui([self.recipe], [choose_feature(self.recipe), choose_scope('AUDUSD'),
+                                  {'action': 'scope-binding', 'binding': changed}])[-1]
+        self.assertNotIn('featureResolution', view['dataset'])
+        self.assertTrue(view['validity'])
 
     def test_registered_selection_before_scope_does_not_claim_readiness_or_request_preparation(self):
         view = ui([self.recipe], [choose_feature(self.recipe)])[-1]
@@ -309,7 +433,7 @@ class ReusableFeatureUiTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs):
                 view = ui([], **kwargs)[0]
                 self.assertTrue(view['disabled'])
-                self.assertEqual(view['dataset'], {})
+                self.assertEqual(view['dataset'], {} if kwargs else {'catalogCount': '0'})
                 self.assertEqual(len(view['options']), 1)
                 self.assertEqual(view['requests'], [{'url': '/api/feature-library', 'method': 'GET'}])
 
@@ -324,7 +448,8 @@ class ReusableFeatureUiTests(unittest.TestCase):
         self.assertIn('id="feature-coverage"', html)
         for identifier in ['feature', 'target', 'scope', 'expected-direction']:
             self.assertIn(f'<select id="{identifier}"', html)
-        self.assertIn('id="experiment-submit"', html)
+        self.assertNotIn('id="experiment-submit"', html)
+        self.assertIn('id="experiment-contract"', html)
 
 
 if __name__ == '__main__':

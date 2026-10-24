@@ -9,7 +9,9 @@
   let generation = 0;
   let controller = null;
   let retrySelection = false;
-  const bindingKeys = ["scopeReference", "membershipSnapshot", "resolvedMembers", "experimentScope", "scopeDependency"];
+  let refreshSelection = null;
+  const bindingKeys = ["scopeReference", "membershipSnapshot", "resolvedMembers", "experimentScope", "scopeDependency", "scopeResolution"];
+  const catalogKeys = ["catalogCount", "universeCount", "instrumentCount"];
   const readinessCounts = ["stored_price_member_count", "retrospective_ready_member_count",
     "historical_replay_ready_member_count", "live_ready_member_count"];
   const text = value => typeof value === "string" && value.trim().length > 0;
@@ -19,6 +21,10 @@
     a.id === b.id && a.version === b.version && a.content_sha256 === b.content_sha256;
   const choice = item => JSON.stringify({id: item.id, version: item.version});
   const selected = () => entries.find(item => choice(item) === select.value);
+  const catalogNote = () => entries.length
+    ? `${entries.filter(item => item.kind === "universe").length} universes · ` +
+      `${entries.filter(item => item.kind === "instrument").length} individual pairs. Choose a registered Scope.`
+    : "No registered scopes are available.";
 
   function notifySelectionChanged() {
     // Other selectors may depend on Scope. Programmatic resets do not emit a
@@ -105,7 +111,7 @@
       `Live: ${ready.live_ready_member_count}/${item.member_count}.`;
     return coverage + (item.kind === "universe" ? " Fixed research group; broker eligibility is unverified." : "");
   }
-  function populate() {
+  function populate(previous) {
     const placeholder = option(entries.length ? "Select a scope" : "No registered scopes", "", true);
     placeholder.selected = true;
     select.replaceChildren(placeholder);
@@ -122,7 +128,15 @@
       select.append(group);
     }
     select.disabled = entries.length === 0;
-    status.textContent = entries.length ? "Choose a registered instrument or universe." : "No registered scopes are available.";
+    select.dataset.catalogCount = String(entries.length);
+    select.dataset.universeCount = String(entries.filter(item => item.kind === "universe").length);
+    select.dataset.instrumentCount = String(entries.filter(item => item.kind === "instrument").length);
+    // Reuse a choice only when both immutable definition and frozen membership
+    // remain exact. Current labels or a reused id/version alone are insufficient.
+    const retained = previous && entries.find(item => sameReference(item.reference, previous.reference) &&
+      sameReference(item.membership_snapshot, previous.membership_snapshot));
+    if (retained) select.value = choice(retained);
+    status.textContent = catalogNote();
     notifySelectionChanged();
   }
   async function resolveSelection() {
@@ -130,7 +144,7 @@
     const {request, active} = begin(item ? "Resolving selected scope…" : "Choose a registered scope.");
     retrySelection = Boolean(item);
     if (!item) {
-      status.textContent = "Choose a registered instrument or universe.";
+      status.textContent = catalogNote();
       select.setAttribute("aria-busy", "false");
       return;
     }
@@ -144,6 +158,7 @@
       select.dataset.resolvedMembers = JSON.stringify(value.members);
       select.dataset.experimentScope = JSON.stringify(value.experiment_scope);
       select.dataset.scopeDependency = JSON.stringify(value.dependency);
+      select.dataset.scopeResolution = JSON.stringify(value);
       select.setCustomValidity("");
       status.textContent = readinessNote(value);
     } catch (error) {
@@ -157,7 +172,10 @@
     }
   }
   async function load() {
+    const previous = selected() || refreshSelection;
+    refreshSelection = previous;
     const {request, active} = begin("Loading registered scopes…");
+    for (const key of catalogKeys) delete select.dataset[key];
     entries = [];
     retrySelection = false;
     select.disabled = true;
@@ -169,16 +187,24 @@
       const value = readCatalog(await fetchValue("/api/scope-library", active));
       if (request !== generation) return;
       entries = value.scopes;
-      populate();
+      refreshSelection = null;
+      populate(previous);
       clearBinding("Choose a registered scope.");
+      if (selected()) {
+        const resolving = resolveSelection(), resolutionRequest = generation;
+        await resolving;
+        if (resolutionRequest !== generation) return;
+      }
       if (value.issues.length) {
         status.textContent += " Some registry records are unavailable.";
         retry.textContent = "Retry loading scopes";
         retry.hidden = false;
+        retrySelection = false;
       }
     } catch (error) {
       if (request !== generation) return;
       entries = [];
+      refreshSelection = null;
       select.replaceChildren(option("Scopes unavailable", "", true));
       select.disabled = true;
       clearBinding("Registered scopes are unavailable.");
@@ -191,5 +217,6 @@
   }
   select.addEventListener("change", resolveSelection);
   retry.addEventListener("click", () => retrySelection && selected() ? resolveSelection() : load());
+  window.addEventListener("experiment-catalog-refresh", load);
   load();
 })();

@@ -20,20 +20,25 @@
   <script src="/batches.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#experiment-inputs">Skip to experiment inputs</a>
+  <a class="skip-link" href="#experiment-inputs">Skip to experiment contract</a>
   <div class="app-layout">
     <aside class="library" aria-label="Workspace navigation">
       <div class="brand"><img src="/brand/gambit-wordmark-reverse.svg" width="160" height="35" alt="Gambit Systems"><p>Research platform</p></div>
       <nav class="page-navigation" aria-label="Workspace">
-        <a href="#experiment" data-page="experiment" aria-current="page">Experiment</a>
+        <a href="#experiment" data-page="experiment" aria-current="page">Experiment contract</a>
         <a href="#pit" data-page="pit">PIT Data Library</a>
         <a href="#signals" data-page="signals">Signal Library</a>
         <a href="#ledger" data-page="ledger">Trial Ledger</a>
       </nav>
     </aside>
     <main id="experiment-inputs" tabindex="-1">
-      <header class="page-header"><p class="section-label">Research</p><h1>New experiment</h1></header>
-    <form aria-label="Experiment inputs">
+      <header class="page-header">
+        <p class="section-label">Research reference · Read only</p><h1>Experiment contract</h1>
+        <p class="page-description">Understand the inputs required to submit an experiment through research tooling. Explore the current catalog below; this page does not submit or control research.</p>
+      </header>
+      <div class="contract-heading"><h2>Required inputs</h2><button id="contract-refresh" class="text-button" type="button">Refresh available inputs</button></div>
+      <p id="contract-catalog-status" class="field-note" role="status" aria-live="polite">Choices come from the registered catalog. They refresh when you return to this page.</p>
+    <div id="experiment-contract" class="experiment-contract-inputs" role="group" aria-label="Experiment inputs">
       <div>
         <label for="feature">Feature</label>
         <select id="feature" name="feature" required disabled aria-describedby="feature-status">
@@ -67,25 +72,32 @@
           <option value="POSITIVE">Positive</option>
           <option value="NEGATIVE">Negative</option>
         </select>
+        <p class="field-note">Positive: higher Feature values predict higher returns. Negative: higher values predict lower returns.</p>
       </div>
-      <div class="form-actions">
-        <button id="experiment-submit" aria-describedby="submit-availability" class="submit-button" type="submit" disabled>Submit</button>
-      </div>
-    </form>
-      <p id="submit-availability" class="field-note" role="status" aria-live="polite" hidden></p>
-      <button id="submission-check" class="text-button" type="button" hidden>Check previous submission status</button>
+    </div>
+      <section class="contract-reference" aria-labelledby="contract-example-title">
+        <div class="contract-heading"><h2 id="contract-example-title">Submission format</h2><span class="status-pill">Reference only</span></div>
+        <p class="field-note">Request body for <code>POST /api/experiments</code>, sent by authenticated research tooling.</p>
+        <p id="contract-selection-status" class="field-note" role="status" aria-live="polite">Choose inputs to inspect an example. No request is sent.</p>
+        <pre class="contract-example"><code id="contract-example"></code></pre>
+        <dl class="contract-rules">
+          <div><dt>Exact identities</dt><dd>Feature and Scope require a registered ID and version. Display names are not identifiers. The service checks their compatibility and freezes the selected membership and data references.</dd></div>
+          <div><dt>One request, five horizons</dt><dd>Price Return includes 1, 7, 21, 63 and 252 scheduled weekdays. There is no separate horizon field. An individual pair selects TS; a currency universe selects CS with a common quote reference.</dd></div>
+          <div><dt>Request identity</dt><dd>Use a new canonical UUID for a new request. If a response is uncertain, check its saved status and retry with the same UUID and identical inputs. A new UUID does not override duplicate-experiment checks.</dd></div>
+          <div><dt>Research method</dt><dd>The service chooses and freezes the applicable Research Spec. P1 is discovery; admitted candidates proceed to P2 validation. Acceptance into the queue does not establish a research result.</dd></div>
+        </dl>
+      </section>
       <section class="research-readiness" aria-label="Research readiness">
-        <p id="research-readiness-status" class="field-note" role="status" aria-live="polite">Checking research readiness…</p>
+        <p id="research-readiness-status" class="field-note" role="status" aria-live="polite">Checking research service status…</p>
         <p id="research-method-summary" class="field-note"></p>
         <p id="research-specification" class="field-note"></p>
         <ul id="research-readiness-blockers" class="research-blockers" hidden></ul>
         <ul id="research-operational-incidents" class="research-blockers" aria-label="Operational failures" hidden></ul>
-        <button id="research-readiness-retry" class="text-button" type="button" hidden>Check readiness again</button>
+        <button id="research-readiness-retry" class="text-button" type="button">Refresh service status</button>
       </section>
-      <p id="submission-notice" class="field-note" role="status" aria-live="polite"></p>
       <section id="trial-queue" class="trial-queue" aria-labelledby="trial-queue-title">
         <div class="queue-heading"><div><p class="section-label">Observability</p><h2 id="trial-queue-title">Trial queue</h2></div><span class="status-pill">Sequential execution</span></div>
-        <p class="page-description">Submit another experiment while research runs. Each card is one submission across all five horizons. Waiting jobs run in submission order. Remove resolved items from Needs attention in this browser; their records stay in the Trial Ledger.</p>
+        <p class="page-description">Follow experiments submitted through research tooling. Each card covers all five horizons; waiting jobs run in submission order. This monitor cannot start, cancel or resume research. Hiding a resolved item affects this browser only.</p>
         <p id="queue-status" class="field-note" role="status" aria-live="polite">Loading saved submissions…</p>
         <button id="queue-refresh" type="button" class="text-button">Refresh queue</button>
         <p id="queue-action-status" class="field-note" role="status" aria-live="polite"></p>

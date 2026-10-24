@@ -12,8 +12,8 @@
   const labels = {rejected:"Submission rejected", submitting:"Saving submission", unconfirmed:"Receipt unconfirmed", queued: "Queued", resolving: "Checking inputs", preparing: "Preparing observations",
     p1: "In P1", p2: "In P2", blocked: "Blocked", failed: "Execution failed", succeeded: "Completed", cancelled: "Cancelled"};
   let timer = null, loading = false, active = true, last = null, rendered = null, ledgerRendered = null;
-  let client = window.researchSubmissionState || null, focusedRequest = null;
-  const actions = new Map(), publishedResults = new Map();
+  let focusedRequest = null;
+  const publishedResults = new Map();
   const dismissalKey = "research-platform.queue-dismissals.v1";
   const attention = new Set(["blocked", "failed"]);
   let dismissed = {};
@@ -48,16 +48,6 @@
     return {Feature: selectedName("feature", intent.feature), Target: "Price Return · all five horizons",
       Scope: selectedName("scope", intent.scope), "Expected Direction": intent.expected_direction === "POSITIVE" ? "Positive" : "Negative"};
   }
-  function visibleItems(value) {
-    const items = [...value.items];
-    if ((client?.uncertain || client?.rejection) && !items.some(item => item.job.request_id === client.payload.request_id)) {
-      const p = client.payload;
-      items.push({client_only:true, selection:client.selection, intent:p, job:{request_id:p.request_id,
-        status:client.busy ? "submitting" : client.rejection ? "rejected" : "unconfirmed", message:client.message, progress:{completed:0,total:5},
-        horizons:[], results:[], blockers:[], mode:null}});
-    }
-    return items;
-  }
   const outcome = value => ({pending:"Pending", admitted:"Admitted", rejected:"Rejected", not_admitted:"Not admitted", not_run:"Not run", VALIDATED:"Validated", FAILED:"Failed", UNRESOLVED:"Unresolved"}[value] || value);
   function addDetails(card, item) {
     const j = item.job;
@@ -82,61 +72,18 @@
     }
     if (j.operational_failure) card.append(node("p", "Operational failure; this is not a statistical rejection. Saved evidence is preserved."));
     if (j.results.length) { const link=node("a", `${j.results.length} saved result links · View Signal Library`, "text-button"); link.href="#signals"; card.append(link); }
-    const state = actions.get(j.request_id);
-    if (state) card.append(node("p", state.message, "card-action-status"));
-    const button = (label, fn, disabled=false) => { const b=node("button",label,"text-button"); b.type="button"; b.disabled=disabled; b.addEventListener("click",fn); card.append(b); };
-    if (item.client_only) {
-      if (!client.busy) {
-        button("Check receipt", () => window.dispatchEvent(new CustomEvent("research-submission-recover",{detail:{request_id:j.request_id,resend:false}})));
-        button("Check and retry", () => window.dispatchEvent(new CustomEvent("research-submission-recover",{detail:{request_id:j.request_id,resend:true}})));
-      }
-    } else if (state?.unknown) button("Check status", () => act(item,"status"),state.busy);
-    else {
-      if (["queued","resolving","preparing","p1","p2"].includes(j.status)) button("Cancel", () => act(item,"cancel"),state?.busy);
-      if (["blocked","failed","cancelled"].includes(j.status) && j.resumable !== false) button("Resume", () => act(item,"resume"),state?.busy || !last?.worker.healthy);
-    }
   }
   function redraw() { if (last) { render(last); renderLedger(); updateStatus(); } else render({items:[]}); }
-  async function act(item, action) {
-    const rid = item.job.request_id;
-    if (actions.get(rid)?.busy) return;
-    actions.set(rid,{busy:true,unknown:action==="status",message:action === "status" ? "Checking saved status…" : `${action === "cancel" ? "Requesting cancellation" : "Requesting resume"}…`}); redraw();
-    const controller = new AbortController(), deadline=window.setTimeout(() => controller.abort(),20000);
-    try {
-      const response=await fetch(`/api/experiments/${encodeURIComponent(rid)}${action === "status" ? "" : "/"+action}`,{
-        method:action === "status" ? "GET" : "POST",mode:"same-origin",credentials:"same-origin",cache:"no-store",signal:controller.signal,
-        ...(action === "status" ? {} : {headers:{"Content-Type":"application/json"},body:"{}"})});
-      const value=await response.json();
-      if (!response.ok) {
-        actions.set(rid,{unknown:response.status !== 409,message:value.error?.message || `Server returned HTTP ${response.status}. Check status before trying again.`});
-      } else {
-        validate({items:[{job:value.job,intent:item.intent}],issues:[],worker:{}});
-        if (value.job.request_id !== rid) throw Error("Wrong submission response");
-        item.job=value.job;
-        const saved=last?.items.find(row=>row.job.request_id===rid); if (saved) saved.job=value.job;
-        actions.delete(rid);
-        window.dispatchEvent(new CustomEvent("research-queue-state",{detail:last}));
-      }
-    } catch (_error) { actions.set(rid,{unknown:true,message:"The response could not be confirmed. Check status before repeating the action."}); }
-    finally { window.clearTimeout(deadline); rendered=null; ledgerRendered=null; redraw(); }
-  }
   function render(value) {
     board.replaceChildren();
     for (const [key, title, states] of groups) {
-      const rows = visibleItems(value).filter(item => states.includes(item.job.status) && !isDismissed(item));
+      const rows = value.items.filter(item => states.includes(item.job.status) && !isDismissed(item));
       const column = node("section", undefined, "queue-column"), heading = node("h3", title);
       heading.append(node("span", String(rows.length), "queue-count")); column.append(heading);
       for (const item of rows) {
-        const job = item.job, names = item.selection || (item.intent ? selection(item.intent) : null);
+        const job = item.job, names = item.intent ? selection(item.intent) : null;
         const card = node("article", undefined, "queue-card"); card.dataset.requestId = job.request_id;
-        if (key === "attention" && item.client_only) {
-          const remove = node("button", "×", "queue-remove"); remove.type = "button";
-          remove.setAttribute("aria-label", `Dismiss local submission notice ${job.request_id}`);
-          remove.title = "Dismiss local notice · checks unknown receipts first; never deletes research";
-          remove.disabled = client.busy;
-          remove.addEventListener("click", () => window.dispatchEvent(new CustomEvent("research-submission-dismiss", {detail:{request_id:job.request_id}})));
-          card.append(remove);
-        } else if (key === "attention" && job.attempt_id) {
+        if (key === "attention" && job.attempt_id) {
           const remove = node("button", "×", "queue-remove"); remove.type = "button";
           remove.setAttribute("aria-label", `Remove resolved submission ${job.request_id} from queue`);
           remove.title = "Remove from queue · saved records stay in Trial Ledger";
@@ -145,7 +92,7 @@
         card.append(node("span", job.request_id, "queue-id"), node("h4", names ? names.Feature : "Submission evidence unavailable"));
         if (names) card.append(node("p", `${names.Scope} · ${names.Target} · ${names["Expected Direction"]}`));
         card.append(node("p", `${labels[job.status]}${item.queue_position ? ` · Waiting position ${item.queue_position}` : ""}`),
-          node("p", item.client_only ? "No execution is confirmed for this request." : `${job.progress.completed} of ${job.progress.total} work items completed`), node("p", job.message));
+          node("p", `${job.progress.completed} of ${job.progress.total} work items completed`), node("p", job.message));
         if (job.status === "succeeded") card.append(node("p", "Execution complete. Scientific outcomes are listed separately for each horizon."));
         addDetails(card, item);
         column.append(card);
@@ -169,7 +116,7 @@
     notice.textContent = "Removed from this browser’s queue. Saved records remain in Trial Ledger.";
   }
   function updateStatus() {
-    const visible = visibleItems(last).filter(item => !["succeeded", "cancelled"].includes(item.job.status) && !isDismissed(item)).length;
+    const visible = last.items.filter(item => !["succeeded", "cancelled"].includes(item.job.status) && !isDismissed(item)).length;
     status.textContent = `${visible} queue item${visible === 1 ? "" : "s"}. Completed submissions are in Trial Ledger. ` +
       (last.worker.healthy ? "Worker available. " : "Worker unavailable; saved jobs are retained. ") +
       (last.issues.length ? `${last.issues.length} record(s) could not be verified: ${last.issues.map(i => i.request_id).join(", ")}.` : "Updates automatically.");
@@ -258,7 +205,7 @@
         }
       }
       // Keep buttons and scroll positions stable when the saved queue is unchanged.
-      const signature = JSON.stringify([client, [...actions], dismissed, last.items.map(item => [item, item.intent ? selection(item.intent) : null])]);
+      const signature = JSON.stringify([dismissed, last.items.map(item => [item, item.intent ? selection(item.intent) : null])]);
       if (signature !== rendered) { render(last); rendered = signature; }
       renderLedger();
       updateStatus();
@@ -281,14 +228,6 @@
     if (event.key !== dismissalKey && event.key !== null) return;
     dismissed = {}; readDismissals(); rendered = null; ledgerRendered = null;
     if (last) { render(last); renderLedger(); updateStatus(); }
-  });
-  window.addEventListener("research-submission-state", event => { client=event.detail; rendered=null; redraw(); });
-  window.addEventListener("research-job-update", event => {
-    const item=event.detail;
-    if (!last) last={items:[],issues:[],worker:{healthy:true}};
-    const index=last.items.findIndex(row=>row.job.request_id===item.job.request_id);
-    if (index<0) last.items.push(item); else last.items[index]={...last.items[index],...item};
-    rendered=null; ledgerRendered=null; redraw();
   });
   window.addEventListener("research-ledger-focus", event => {
     focusedRequest = event.detail?.request_id;

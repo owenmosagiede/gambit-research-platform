@@ -29,12 +29,12 @@ const context={document:{getElementById:id=>ids[id],createElement:tag=>new Eleme
  fetch:async(url,options)=>{calls.push({url,method:options.method,body:options.body});const value=input.responses[Math.min(offset++,input.responses.length-1)];if(value.error&&!value.http)throw Error('network');return {ok:!value.http,status:value.http||200,json:async()=>value};}};
 const walk=n=>[n,...n.children.flatMap(walk)];const tree=n=>({text:n.textContent,tag:n.tag,children:n.children.map(tree)});const views=[];
 const flush=()=>new Promise(r=>setImmediate(r));
-function snap(){views.push({board:tree(ids['queue-board']),ledger:tree(ids['ledger-items']),ledgerStatus:ids['ledger-status'].textContent,notice:ids['queue-action-status'].textContent,saved:{...saved},status:ids['queue-status'].textContent,buttons:walk(ids['queue-board']).filter(n=>n.tag==='button').map(n=>n.serial),calls:[...calls],sent:[...sent],timers:[...timers.values()].map(t=>t.ms)});}
+function snap(){views.push({board:tree(ids['queue-board']),ledger:tree(ids['ledger-items']),ledgerStatus:ids['ledger-status'].textContent,notice:ids['queue-action-status'].textContent,saved:{...saved},status:ids['queue-status'].textContent,buttons:walk(ids['queue-board']).filter(n=>n.tag==='button').map(n=>n.serial),buttonLabels:[...walk(ids['queue-board']),...walk(ids['ledger-items'])].filter(n=>n.tag==='button').map(n=>n.textContent),registeredEvents:Object.keys(events),calls:[...calls],sent:[...sent],timers:[...timers.values()].map(t=>t.ms)});}
 (async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),context);await flush();snap();
 for(const step of input.steps){
  if(step==='poll'){const t=[...timers].find(([,t])=>t.ms===5000);if(t){timers.delete(t[0]);t[1].fn();}}
- if(typeof step==='object'&&step.click){walk(ids['queue-board']).find(n=>n.tag==='button'&&n.textContent===step.click).listeners.click();}
- if(typeof step==='object'&&step.client){events['research-submission-state']({detail:step.client});}
+ if(typeof step==='object'&&step.click){walk(ids['queue-board']).find(n=>n.tag==='button'&&n.textContent===step.click)?.listeners.click();}
+ if(typeof step==='object'&&step.client){events['research-submission-state']?.({detail:step.client});}
  if(step==='dismiss'){walk(ids['queue-board']).find(n=>n.className==='queue-remove').listeners.click();}
  if(step==='restore'){walk(ids['ledger-items']).find(n=>n.className==='text-button ledger-restore').listeners.click();}
  
@@ -62,7 +62,7 @@ class QueueUITests(unittest.TestCase):
     def test_real_labels_waiting_position_and_read_only_open(self):
         v=ui([catalog()])[-1]
         text=all_text(v['board']);self.assertIn('Log Skip Recent Momentum',text);self.assertIn('AUDUSD',text);self.assertIn('Waiting position 1',text)
-        self.assertNotIn('Open progress',text);self.assertIn('Cancel',text)
+        self.assertNotIn('Open progress',text);self.assertNotIn('Cancel',v['buttonLabels'])
         self.assertTrue(all(c['method']=='GET' for c in v['calls']))
     def test_poll_transitions_and_terminal_outcomes(self):
         v=ui([catalog(),catalog('p1'),catalog('succeeded')],['poll','poll'])
@@ -139,47 +139,34 @@ class QueueUITests(unittest.TestCase):
         for value in ['Cross sectional','21 · P1: Rejected · P2: Not admitted','Missing usable dates.','Use a new submission.','AUDUSD','Positive']:
             self.assertIn(value,text)
         self.assertNotIn('Resume',text)
-    def test_unconfirmed_request_is_visible_even_before_server_list_records_it(self):
-        client={'payload':payload(),'uncertain':True,'busy':False,'message':'Server returned HTTP 400.',
-                'selection':{'Feature':'Frozen feature','Scope':'Frozen scope','Target':'Price Return','Expected Direction':'Negative'}}
+    def test_browser_pending_notices_cannot_reintroduce_submission_recovery(self):
         c=catalog();c['items']=[]
-        v=ui([c],[{'click':'Check and retry'}],client=client)[-1]
-        text=all_text(v['board'])
-        for value in ['Receipt unconfirmed','Frozen feature','Frozen scope','Negative','HTTP 400','Check receipt','Check and retry']:self.assertIn(value,text)
-        event=next(e for e in v['sent'] if e['type']=='research-submission-recover')
-        self.assertEqual(event['detail'],{'request_id':REQUEST_ID,'resend':True})
-        self.assertTrue(all(c['method']=='GET' for c in v['calls']))
-    def test_local_notice_dismiss_button_requests_safe_receipt_resolution(self):
-        client={'payload':payload(),'uncertain':True,'busy':False,'message':'Unknown receipt'}
-        c=catalog();c['items']=[]
-        v=ui([c],['dismiss'],client=client)[-1]
-        event=[e for e in v['sent'] if e['type']=='research-submission-dismiss'][0]
-        self.assertEqual(event['detail']['request_id'],REQUEST_ID)
-        self.assertTrue(all(call['method']=='GET' for call in v['calls']))
-    def test_explicit_rejection_notice_has_dismiss_button(self):
-        client={'payload':payload(),'uncertain':False,'notRecorded':True,'busy':False,
-                'rejection':{'code':'INVALID_ORIGIN'},'message':'Reload the local page.'}
-        c=catalog();c['items']=[]
-        text=all_text(ui([c],client=client)[0]['board'])
-        self.assertIn('Submission rejected',text);self.assertIn('×',text)
-        self.assertNotIn('0 of 5 work items',text)
-    def test_known_job_does_not_get_duplicate_unconfirmed_card(self):
+        for state in ({'uncertain':True}, {'rejection':{'code':'INVALID_ORIGIN'}}, {'busy':True}):
+            client=dict(payload=payload(),message='Old pending browser request',**state)
+            v=ui([c],[{'client':client},{'click':'Check receipt'},{'click':'Check and retry'},'poll'],client=client)[-1]
+            self.assertNotIn(REQUEST_ID,all_text(v['board']))
+            self.assertEqual(v['buttonLabels'],[])
+            self.assertNotIn('research-submission-state',v['registeredEvents'])
+            self.assertFalse(any(e['type'].startswith('research-submission-') for e in v['sent']))
+            self.assertTrue(all(call['method']=='GET' for call in v['calls']))
+
+    def test_every_previously_actionable_state_is_get_only(self):
+        for state in ('queued','resolving','preparing','p1','p2','blocked','failed','cancelled','succeeded'):
+            with self.subTest(state=state):
+                c=catalog(state);c['items'][0]['job']['resumable']=True
+                v=ui([c],[{'click':'Cancel'},{'click':'Resume'},{'click':'Check and retry'},'poll'])[-1]
+                self.assertEqual(len(v['calls']),2)
+                self.assertTrue(all(call['method']=='GET' and call['url']=='/api/experiments' for call in v['calls']))
+                self.assertFalse({'Cancel','Resume','Check and retry','Check receipt'}&set(v['buttonLabels']))
+                self.assertIn(REQUEST_ID,all_text(v['board'])+all_text(v['ledger']))
+
+    def test_saved_jobs_ignore_unconfirmed_browser_request_state(self):
         client={'payload':payload(),'uncertain':True,'busy':False,'message':'unconfirmed'}
-        text=all_text(ui([catalog()],client=client)[0]['board'])
-        self.assertEqual(text.count(REQUEST_ID),1);self.assertNotIn('Check and retry',text)
-    def test_cancel_on_card_uses_exact_id_and_moves_result_to_history(self):
-        v=ui([catalog(),job('cancelled')],[{'click':'Cancel'}])[-1]
-        self.assertEqual(v['calls'][1]['url'],'/api/experiments/'+REQUEST_ID+'/cancel')
-        self.assertEqual(v['calls'][1]['method'],'POST')
-        self.assertNotIn(REQUEST_ID,all_text(v['board']));self.assertIn(REQUEST_ID,all_text(v['ledger']))
-    def test_unknown_action_checks_status_without_repeating_post(self):
-        v=ui([catalog(),{'error':True},job('p1')],[{'click':'Cancel'},{'click':'Check status'}])
-        self.assertIn('could not be confirmed',all_text(v[1]['board']))
-        self.assertEqual([c['method'] for c in v[-1]['calls']],['GET','POST','GET'])
-        self.assertIn('In P1',all_text(v[-1]['board']))
-    def test_resume_conflict_displays_reason(self):
-        v=ui([catalog('blocked'),{'http':409,'error':{'message':'Code changed; create a new submission.'}}],[{'click':'Resume'}])[-1]
-        self.assertIn('Code changed',all_text(v['board']))
+        v=ui([catalog()],[{'client':client}],client=client)[-1]
+        self.assertEqual(all_text(v['board']).count(REQUEST_ID),1)
+        self.assertNotIn('unconfirmed',all_text(v['board']))
+        self.assertTrue(all(call['method']=='GET' for call in v['calls']))
+
     def test_results_notify_signal_library_once_per_reference_set(self):
         c=catalog('succeeded');c['items'][0]['job']['results']=[{'id':'RESEARCHLINK_fixture','version':'1.0.0','content_sha256':'a'*64}]
         v=ui([c],['poll'])[-1]

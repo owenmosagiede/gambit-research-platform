@@ -39,12 +39,14 @@ const context={Date,AbortController,document:{getElementById:id=>ids[id],createE
   if(value.error)throw Error('offline');return {ok:!value.http,status:value.http||200,json:async()=>value};}};
 const text=n=>[n.textContent,...n.children.map(text)].join(' ');
 const find=(n,id)=>n.id===id?n:n.children.map(c=>find(c,id)).find(Boolean);
+const walk=n=>[n,...n.children.flatMap(walk)];
 const flush=()=>new Promise(r=>setImmediate(r));
-function snap(){views.push({detail:text(ids['batch-detail']),status:ids['batch-status'].textContent,calls:[...calls],timers:[...timers.values()].map(t=>t.ms)});}
+function snap(){views.push({detail:text(ids['batch-detail']),buttons:walk(ids['batch-detail']).filter(n=>n.tag==='button').map(n=>n.textContent),status:ids['batch-status'].textContent,calls:[...calls],timers:[...timers.values()].map(t=>t.ms)});}
 (async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),context);await flush();snap();
  for(const step of input.steps){
   if(step==='poll'){const t=[...timers].find(([,v])=>v.ms===15000);if(t){timers.delete(t[0]);t[1].fn();}}
   if(step.startsWith('click:')){const b=find(ids['batch-detail'],step.slice(6));if(b&&!b.disabled)b.listeners.click();}
+  if(step.startsWith('click-label:')){const b=walk(ids['batch-detail']).find(n=>n.tag==='button'&&n.textContent===step.slice(12));if(b&&!b.disabled)b.listeners.click();}
   if(step==='hide')events.pagehide();if(step==='show')events.pageshow();
   await flush();snap();
  }process.stdout.write(JSON.stringify(views));})().catch(e=>{console.error(e);process.exitCode=1;});
@@ -96,34 +98,34 @@ class BatchUITests(unittest.TestCase):
         self.assertIn('cannot be relaunched',views[-1]['detail'])
         self.assertTrue(all(c['method']=='GET' for c in views[-1]['calls']))
 
-    def test_review_then_launch_exact_preview_once(self):
-        values = browser([self.listing(), batch(approved=False), {}, self.listing(), batch()],
-                         ['click:batch-launch', 'click:batch-review', 'click:batch-launch', 'click:batch-launch'])
-        self.assertTrue(all(c['method'] == 'GET' for c in values[1]['calls']))
-        posts = [c for c in values[-1]['calls'] if c['method'] == 'POST']
-        self.assertEqual(len(posts), 1)
-        self.assertEqual(json.loads(posts[0]['body']), {'preview_sha256': 'a'*64, 'exclude_blocked': False})
+    def test_all_batch_states_are_get_only_without_execution_controls(self):
+        for state,approved in [('previewing',False),('ready',False),('approved',True),
+                               ('dispatching',True),('paused',False),('paused',True),
+                               ('needs_attention',True),('completed',True)]:
+            with self.subTest(state=state,approved=approved):
+                b=batch(approved=approved);b['state']['state']=state
+                values=browser([self.listing(),b,self.listing(),b],
+                    ['click:batch-review','click:batch-launch','click:batch-pause','click:batch-resume','poll'])
+                self.assertEqual(values[-1]['buttons'],[])
+                self.assertEqual(len(values[-1]['calls']),4)
+                self.assertTrue(all(c['method']=='GET' for c in values[-1]['calls']))
+                self.assertIn('Read-only batch monitor',values[-1]['detail'])
 
-    def test_changed_preview_requires_new_review(self):
-        changed = batch(approved=False); changed['preview_sha256'] = 'b'*64
-        values = browser([self.listing(), batch(approved=False), self.listing(), changed],
-                         ['click:batch-review', 'poll', 'click:batch-launch'])
-        self.assertTrue(all(c['method'] == 'GET' for c in values[-1]['calls']))
+    def test_changed_or_blocked_preview_remains_visible_without_launch(self):
+        changed=batch(approved=False);changed['preview_sha256']='b'*64
+        changed['preview_counts']={'new':2,'blocked':1};changed['preview_complete']=False
+        values=browser([self.listing(),batch(approved=False),self.listing(),changed],
+            ['click:batch-review','poll','click:batch-launch'])
+        self.assertIn('1 blocked',values[-1]['detail'])
+        self.assertEqual(values[-1]['buttons'],[])
+        self.assertTrue(all(c['method']=='GET' for c in values[-1]['calls']))
 
-    def test_incomplete_or_blocked_cannot_launch(self):
-        for key, value in [('preview_complete', False), ('preview_counts', {'new': 2, 'blocked': 1})]:
-            b = batch(approved=False); b[key] = value
-            views = browser([self.listing(), b], ['click:batch-review', 'click:batch-launch'])
-            self.assertTrue(all(c['method'] == 'GET' for c in views[-1]['calls']))
-
-    def test_lost_response_refreshes_without_repeating_launch(self):
-        views = browser([self.listing(), batch(approved=False), {'error': True}, self.listing(), batch()],
-                        ['click:batch-review', 'click:batch-launch', 'click:batch-launch'])
-        self.assertEqual(sum(c['method'] == 'POST' for c in views[-1]['calls']), 1)
-
-    def test_pause_and_resume_use_existing_batch(self):
-        paused = batch(); paused['state']['state'] = 'paused'
-        views = browser([self.listing(), batch(), {}, self.listing(), paused, {}, self.listing(), batch()],
-                        ['click:batch-pause', 'click:batch-resume'])
-        posts = [c for c in views[-1]['calls'] if c['method'] == 'POST']
-        self.assertEqual([c['url'] for c in posts], ['/api/batches/'+BID+'/pause', '/api/batches/'+BID+'/resume'])
+    def test_pagination_changes_visible_details_without_server_writes(self):
+        b=batch();b['items']=[json.loads(json.dumps(b['items'][0])) for _ in range(26)]
+        for index,item in enumerate(b['items']):item['intent']['feature']['id']='recipe-'+str(index)
+        values=browser([self.listing(),b],['click-label:Next','click-label:Previous'])
+        self.assertNotIn('recipe-25',values[0]['detail'])
+        self.assertIn('recipe-25',values[1]['detail'])
+        self.assertIn('Page 1 of 2',values[-1]['detail'])
+        self.assertEqual(len(values[-1]['calls']),2)
+        self.assertTrue(all(c['method']=='GET' for c in values[-1]['calls']))

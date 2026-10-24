@@ -15,6 +15,7 @@
   ];
   let requestGeneration = 0;
   let currentController = null;
+  let refreshSelection = "";
   let entries = [];
   let instrumentEntries = [];
   let detailGeneration = 0;
@@ -204,20 +205,24 @@
       "Stored labels available. Historical training must still check each label against its training cutoff.");
   }
 
-  function populate() {
+  function populate(previous) {
     const available = priceFamily().length > 0;
     renderCategories(available);
     status.textContent = available ?
       "Select a return category. Includes all five horizons: 1, 7, 21, 63 and 252 scheduled weekdays." :
       "Price Return is not ready: verified stored observations are required for all five horizons (1, 7, 21, 63 and 252 scheduled weekdays).";
+    if (available && previous === "price") { select.value = previous; updateNote(); }
   }
 
   async function load() {
+    const previous = select.value || refreshSelection;
+    refreshSelection = previous;
     const generation = ++requestGeneration;
     if (currentController) currentController.abort();
     currentController = new AbortController();
     const controller = currentController;
     const timeout = window.setTimeout(() => controller.abort(), 300000);
+    entries = []; instrumentEntries = []; renderInstruments();
     renderCategories(false, "Loading targets…");
     status.textContent = "Verifying stored Targets… This can take longer while research is preparing data.";
     retry.hidden = true;
@@ -229,7 +234,7 @@
       document.getElementById("target-details-body").replaceChildren();
     }
     try {
-      const response = await fetch("/api/target-library", {cache: "no-store", signal: controller.signal});
+      const response = await fetch("/api/target-library", {method: "GET", cache: "no-store", signal: controller.signal});
       if (!response.ok) throw new Error("Target catalog unavailable");
       const value = catalog(await response.json());
       if (generation !== requestGeneration) return;
@@ -238,14 +243,15 @@
         a.horizon.unit.localeCompare(b.horizon.unit) || a.horizon.amount - b.horizon.amount ||
         a.representation.localeCompare(b.representation) || a.target_id.localeCompare(b.target_id));
       instrumentEntries = value.instruments || [];
-      renderInstruments(); populate();
+      refreshSelection = "";
+      renderInstruments(); populate(previous);
       if (value.issues.length) {
         status.textContent += " Some Target records could not be verified and are unavailable.";
         retry.hidden = false;
       }
     } catch (_error) {
       if (generation !== requestGeneration) return;
-      entries = []; instrumentEntries = []; renderInstruments();
+      entries = []; instrumentEntries = []; refreshSelection = ""; renderInstruments();
       renderCategories(false, "Targets unavailable");
       status.textContent = controller.signal.aborted
         ? "Target verification timed out. Stored data has not been changed. Retry when the server is less busy."
@@ -275,7 +281,7 @@
     body.replaceChildren(); again.hidden = true;
     try {
       const url = `/api/target-library/${encodeURIComponent(target.target_id)}?materialization_id=${encodeURIComponent(saved.id)}`;
-      const response = await fetch(url, {cache:"no-store", signal:controller.signal});
+      const response = await fetch(url, {method:"GET", cache:"no-store", signal:controller.signal});
       if (!response.ok) throw new Error("Target unavailable");
       const data = await response.json();
       if (generation !== detailGeneration) return;
@@ -336,5 +342,6 @@
   const detailRetry = document.getElementById("target-detail-retry");
   if (detailRetry) detailRetry.addEventListener("click", loadDetail);
   retry.addEventListener("click", load);
+  window.addEventListener("experiment-catalog-refresh", load);
   load();
 })();
