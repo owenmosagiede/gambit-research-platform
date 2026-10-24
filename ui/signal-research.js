@@ -108,7 +108,7 @@
 
   function mount(host, entry) {
     cancelCurrent();
-    const controller = new AbortController(); let alive = true, version = 0, relationships = [], selectedContext = null, horizon = 1, stage = "P1", branch = 0;
+    const controller = new AbortController(); let alive = true, version = 0, relationships = [], issues = [], selectedContext = null, horizon = 1, stage = "P1", branch = 0;
     const cache = new Map();
     cancelCurrent = () => { alive = false; controller.abort(); };
     const root = node("div", undefined, "feature-research"); host.append(root);
@@ -152,10 +152,18 @@
     }
     function render() {
       const token=++version;root.replaceChildren();
+      if (issues.length) {
+        const warning=panel("Some research records are unavailable", "research-warning");
+        warning.append(note("Some saved records could not be verified. Verified results are shown; unavailable records have not been changed."),
+          button("Retry research",load),jsonDetails("Unavailable record references",issues));
+        root.append(warning);
+      }
       const contexts=[...new Map(relationships.map(r=>[contextKey(r),r])).entries()];
       if (!contexts.length) {
-        const empty=panel("Ready for a hypothesis", "research-empty");
-        empty.append(node("h4","No research results yet"),note("This Signal is registered. Choose it on the Experiment page to test a Scope and direction. Preparing observations alone does not count as a test."));root.append(empty);return;
+        const empty=panel(issues.length ? "Research verification incomplete" : "No saved research", "research-empty");
+        empty.append(node("h4",issues.length ? "No verified results available" : "No research results yet"),
+          note(issues.length ? "Saved records could not be verified. Retry to check them again; this does not mean that no research was performed." :
+            "No verified research records are available for this Signal. Preparing observations alone does not count as a test."));root.append(empty);return;
       }
       if (!contexts.some(([key])=>key===selectedContext)) selectedContext=contexts[0][0];
       const family=relationships.filter(r=>contextKey(r)===selectedContext);
@@ -164,14 +172,14 @@
       const result=relationship.results.find(r=>r.stage===stage);
       const controls=node("div",undefined,"research-controls");
       controls.append(selector("Scope · hypothesis",contexts.map(([key,r])=>[key,`${r.scope_label || r.scope.id} · ${fullMode(r.mode)} · ${words(r.expected_direction)} · ${targetName(r.target_family)} · Spec v${r.results[0]?.research_spec?.version || "—"}`]),selectedContext,value=>{selectedContext=value;branch=0;render();}));
-      const horizons=node("div",undefined,"research-control");horizons.append(node("span","Horizon · scheduled weekdays","research-label"));const hbuttons=node("div",undefined,"research-segments");
-      for(const value of [1,7,21,63,252]) {const b=button(String(value),()=>{horizon=value;branch=0;render();});b.disabled=!family.some(r=>r.horizon===value);b.setAttribute("aria-pressed",String(horizon===value));b.title=b.disabled ? "No saved research for this horizon" : `${value} scheduled weekdays`;hbuttons.append(b);}horizons.append(hbuttons);
+      const horizons=node("div",undefined,"research-control");horizons.append(node("span","Forecast horizon · scheduled weekdays","research-label"));const hbuttons=node("div",undefined,"research-segments");
+      for(const value of [1,7,21,63,252]) {const b=button(String(value),()=>{horizon=value;branch=0;render();});b.disabled=!family.some(r=>r.horizon===value);b.setAttribute("aria-pressed",String(horizon===value));b.title=b.disabled ? "No saved research for this horizon" : `${value}-day forecast horizon (scheduled weekdays)`;hbuttons.append(b);}horizons.append(hbuttons);
       const periods=node("div",undefined,"research-control");periods.append(node("span","Research period","research-label"));const pbuttons=node("div",undefined,"research-segments");
       for(const [value,label] of [["P1","P1 Discovery"],["P2","P2 Validation"]]) {const b=button(label,()=>{stage=value;render();});b.setAttribute("aria-pressed",String(stage===value));pbuttons.append(b);}periods.append(pbuttons);controls.append(horizons,periods);root.append(controls);
-      if(candidates.length>1) root.append(selector("Saved research result",candidates.map((r,i)=>[String(i),`${r.results[0]?.period.start_inclusive || "—"} – ${r.results[0]?.period.end_exclusive || "—"} · ${r.projection.id.slice(-12)}`]),String(branch),v=>{branch=Number(v);render();}));
+      if(candidates.length>1) root.append(selector("Saved research result",candidates.map((r,i)=>[String(i),`Saved result ${i + 1} · ${r.results[0]?.period.start_inclusive || "—"} – ${r.results[0]?.period.end_exclusive || "—"}`]),String(branch),v=>{branch=Number(v);render();}));
       const badges=node("div",undefined,"research-context");
       badges.append(node("span",`P1 ${status(relationship.p1_status)}`,`research-badge ${tone(relationship.p1_status)}`),node("span",`P2 ${status(relationship.p2_status)}`,`research-badge ${tone(relationship.p2_status)}`),
-        note(`${fullMode(relationship.mode)} · ${targetName(relationship.target_family)} · ${horizon} scheduled weekdays · Expected relationship: ${words(relationship.expected_direction)}`));root.append(badges);
+        note(`${fullMode(relationship.mode)} · ${targetName(relationship.target_family)} · ${horizon}-day forecast horizon · Expected relationship: ${words(relationship.expected_direction)}`));root.append(badges);
       const hypothesis=(relationship.mode === "CS" ? "Across instruments within each date: " : "Over time for this instrument: ") + (relationship.expected_direction==="NEGATIVE" ? "Higher Feature values are hypothesized to correspond to lower Target returns." : "Higher Feature values are hypothesized to correspond to higher Target returns.");
       root.append(note(hypothesis));
       if(!result) {
@@ -181,7 +189,7 @@
         if(validation?.reason_codes?.length) empty.append(note(validation.reason_codes.map(words).join(" · ")));
         empty.append(jsonDetails("Authoritative relationship and decisions",relationship));root.append(empty);return;
       }
-      root.append(note(`${stage} · ${result.period.start_inclusive} – ${result.period.end_exclusive} (end exclusive) · Research Spec: ${result.research_spec.id} · ${result.research_spec.version}`,"research-period"));
+      root.append(note(`${stage} · ${result.period.start_inclusive} – ${result.period.end_exclusive} (end exclusive) · Research Spec v${result.research_spec.version}`,"research-period"));
       const m=result.metrics,s=result.sample,e=result.evidence||{},isCS=relationship.mode==="CS",isP2=stage==="P2";
       const required=Object.values(e).filter(row=>row.status!=="diagnostic"),passes=required.filter(row=>row.status==="pass").length;
       const headlines=node("div",undefined,"research-headlines");
@@ -258,7 +266,8 @@
         const data=await request(`/api/feature-research/${recipe.id}`);
         if(!alive)return;
         if(data.recipe_id!==recipe.id||!Array.isArray(data.relationships)||data.relationships.some(r=>!r.scope||!["TS","CS"].includes(r.mode)||!Array.isArray(r.results)))throw new Error("Invalid research");
-        relationships=data.relationships;render();
+        if(data.issues !== undefined && (!Array.isArray(data.issues) || data.issues.some(issue=>!issue || typeof issue.code!=="string" || typeof issue.message!=="string")))throw new Error("Invalid research issues");
+        relationships=data.relationships;issues=data.issues || [];render();
       } catch(error) {if(alive)root.replaceChildren(note("Saved research could not be verified. No results have been changed."),button("Retry research",load));}
     }
     load();

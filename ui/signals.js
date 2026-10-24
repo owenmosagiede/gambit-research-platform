@@ -8,7 +8,6 @@
   const detailStatus = $("signal-detail-status");
   const detailTitle = $("signal-detail-title");
   const detailPanel = $("signal-detail"), detailHome = $("signal-detail-home");
-  const filters = Object.fromEntries(["search", "provider", "state", "from", "to"].map(key => [key, $(`signal-${key}`)]));
   const signalPattern = /^SIGNAL_[0-9a-f]{64}$/;
   const featurePattern = /^FEATURE_[0-9a-f]{64}$/;
   const recipePattern = /^FEATURE_RECIPE_[0-9a-f]{64}$/;
@@ -24,6 +23,7 @@
   let selectedMaterialization = null;
   let catalogRequest = 0;
   let catalogLoading = null;
+  let catalogController = null;
   let detailRequest = 0;
   let detailController = null;
   let researchRefreshRunning = false;
@@ -107,7 +107,8 @@
   }
   function validEntry(item) {
     if (!item) return false;
-    if (item.kind === "stored_signal") return validSummary(item.signal) && item.id === item.signal.signal_id;
+    if (!validResearch(item.research) || item.research.state !== "results_linked") return false;
+    if (item.kind === "stored_signal") return validSummary(item.signal) && item.id === item.signal.signal_id && item.signal.scientific_state === "results_linked";
     return ["reusable_fx_recipe", "registered_feature"].includes(item.kind) && (recipePattern.test(item.id) || featurePattern.test(item.id)) && reference(item.recipe) &&
       item.recipe.id === item.id && text(item.name) && item.source && text(item.source.label) &&
       item.source.input_contract && item.observation_count === null && validResearch(item.research) &&
@@ -144,8 +145,8 @@
     return data;
   }
   async function request(url, controller) {
-    // The full catalog can take longer on a cold cloud store. Registered cards
-    // are already displayed while coverage and research evidence are loading.
+    // Cold stores can take longer to verify saved research. No registration
+    // cards are substituted while the authoritative projection is loading.
     const deadline = url === "/api/signal-library-summaries" ? 60000 : 20000;
     const timeout = window.setTimeout(() => controller.abort(), deadline);
     try {
@@ -157,15 +158,14 @@
 
   function showPage() {
     const hash = window.location.hash;
-    const page = ["#ledger", "#ledger-page"].includes(hash) ? "ledger" : ["#signals", "#signal-page"].includes(hash) ? "signals" : ["#pit", "#pit-page"].includes(hash) ? "pit" : "experiment";
+    const page = ["#ledger", "#ledger-page"].includes(hash) ? "ledger" : ["#signals", "#signal-page"].includes(hash) ? "signals" : "experiment";
     $("experiment-inputs").hidden = page !== "experiment";
     $("signal-page").hidden = page !== "signals";
-    $("pit-page").hidden = page !== "pit";
     if ($("ledger-page")) $("ledger-page").hidden = page !== "ledger";
-    const target = page === "ledger" ? "ledger-page" : page === "experiment" ? "experiment-inputs" : page === "signals" ? "signal-page" : "pit-page";
+    const target = page === "ledger" ? "ledger-page" : page === "experiment" ? "experiment-inputs" : "signal-page";
     const skip = document.querySelector(".skip-link");
     skip.href = `#${target}`;
-    skip.textContent = page === "ledger" ? "Skip to Trial Ledger" : page === "experiment" ? "Skip to experiment inputs" : `Skip to ${page === "signals" ? "Signal" : "PIT Data"} Library`;
+    skip.textContent = page === "ledger" ? "Skip to Trial Ledger" : page === "experiment" ? "Skip to experiment inputs" : "Skip to Signal Library";
     for (const link of document.querySelectorAll("[data-page]")) {
       if (link.dataset.page === page) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
@@ -195,37 +195,7 @@
     wrap.append(grid);
     return { wrap, grid, body };
   }
-  function outputList(entry) { return entry.kind === "stored_signal" ? [entry.signal] : entry.outputs; }
-  // Labels are presentation only; stored and reusable Features share state keys.
-  function researchState(entry) {
-    return entry.catalog_pending ? "checking" : entry.kind === "stored_signal" ? entry.signal.scientific_state : entry.research.state;
-  }
-  function stateLabel(entry) { return researchLabel(researchState(entry)); }
-  function populateFilters() {
-    const choices = {provider: entries.flatMap(entry => outputList(entry).map(output => output.source.provider)), state: entries.map(researchState)};
-    for (const [key, values] of Object.entries(choices)) {
-      const control = filters[key], previous = control.value;
-      const all = el("option", key === "provider" ? "All providers" : "All statuses"); all.value = "";
-      control.replaceChildren(all, ...[...new Set(values)].sort().map(value => {
-        const option = el("option", key === "provider" ? providerName(value) : researchLabel(value)); option.value = value; return option;
-      }));
-      control.value = values.includes(previous) ? previous : "";
-    }
-  }
-  function matches(entry) {
-    const query = filters.search.value.trim().toLowerCase(), from = filters.from.value, to = filters.to.value;
-    if (from && to && from > to) return false;
-    if (filters.state.value && filters.state.value !== researchState(entry)) return false;
-    const grouped = entry.kind !== "stored_signal", item = grouped ? entry : entry.signal;
-    const words = [item.name, entry.id, operatorText(item), grouped ? entry.source.label : entry.signal.source.series_id,
-      ...outputList(entry).flatMap(output => [output.signal_id, output.source.series_id, providerName(output.source.provider)])].join(" ").toLowerCase();
-    if (query && !words.includes(query)) return false;
-    if (!filters.provider.value && !from && !to) return true;
-    // Provider and coverage must belong to the same actual materialization.
-    return outputList(entry).some(output => (!filters.provider.value || output.source.provider === filters.provider.value) &&
-      (output.materializations || [{coverage:output.coverage}]).some(({coverage}) =>
-        (!from || coverage.reference_end && coverage.reference_end >= from) && (!to || coverage.reference_start && coverage.reference_start <= to)));
-  }
+  function stateLabel(entry) { return researchLabel(entry.research.state); }
   function clearSelection() {
     window.SignalResearch?.cancel();
     ++detailRequest; if (detailController) detailController.abort();
@@ -233,23 +203,13 @@
     detailBody.replaceChildren(); detailPanel.hidden = true; detailPanel.setAttribute("aria-busy", "false");
     $("signal-detail-retry").hidden = true;
   }
-  function revealSelection() {
-    const entry = entries.find(item => item.id === selectedEntryId);
-    if (entry && !matches(entry)) for (const control of Object.values(filters)) control.value = "";
-  }
-  function applyFilters() {
-    if (selectedEntryId && !entries.some(entry => entry.id === selectedEntryId && matches(entry))) clearSelection();
-    renderTable();
-  }
   function renderTable() {
     detailHome.append(detailPanel); detailPanel.hidden = true;
-    const visible = entries.filter(matches), buttons = new Map();
-    const invalidRange = filters.from.value && filters.to.value && filters.from.value > filters.to.value;
-    catalogStatus.textContent = invalidRange ? "Coverage from must be on or before Coverage to." :
-      `${visible.length} of ${entries.length} ${entries.length === 1 ? "library entry" : "library entries"}`;
+    const buttons = new Map();
+    catalogStatus.textContent = `${entries.length} researched ${entries.length === 1 ? "Signal" : "Signals"}`;
     const list = el("ul", undefined, "card-list");
     let selectedCard = null;
-    for (const entry of visible) {
+    for (const entry of entries) {
       const grouped = entry.kind !== "stored_signal", signal = entry.signal;
       const card = el("li", undefined, "library-card"); card.dataset.entryId = entry.id;
       card.dataset.expanded = String(entry.id === selectedEntryId);
@@ -261,7 +221,6 @@
       for (const [index, label] of ["Signal", "Source", "Transformation", "Observations", "Research status"].entries()) {
         const field = el("span", undefined, index === 0 ? "card-identity" : "card-field");
         field.append(el("span", label, "card-field-label"), el("span", values[index], index === 0 ? "dataset-name" : "card-value"));
-        if (index === 0 && (!grouped || entry.signal_id)) field.append(el("span", grouped ? entry.signal_id : signal.signal_id, "signal-id"));
         summary.append(field);
       }
       button.append(summary, el("span", entry.id === selectedEntryId ? "Close Feature" : "Explore Feature →", "card-action"));
@@ -273,7 +232,7 @@
       if (entry.id === selectedEntryId) selectedCard = card;
     }
     tableContainer.replaceChildren(list);
-    if (!visible.length) tableContainer.append(el("p", entries.length ? "No Signals match these filters. Try a different search or clear the filters." : "No registered Signals are available yet.", "empty-table"));
+    if (!entries.length) tableContainer.append(el("p", "No researched Signals yet. A Signal appears here after verified research records have been saved. Prepared observations alone do not count as research.", "empty-table"));
     if (selectedCard) {
       if ($("signal-catalog-view")) { detailHome.append(detailPanel); detailHome.hidden = false; }
       else selectedCard.append(detailPanel);
@@ -299,6 +258,9 @@
   }
   function groupContent(entry) {
     const fragment = document.createDocumentFragment();
+    if (entry.source.input_contract.observation_clock === "scheduled_weekdays") {
+      fragment.append(el("p", "Feature lookback and smoothing windows count scheduled weekdays. The forecast horizon separately measures future returns.", "field-note"));
+    }
     if (window.SignalResearch) {
       fragment.append(el("p", operatorText(entry), "recipe-chain"), el("p", `${entry.source.label} · Observations: N/A · Coverage belongs to each stored output`, "field-note"));
       const dashboard = el("div"); fragment.append(dashboard); window.SignalResearch.mount(dashboard, entry);
@@ -311,8 +273,8 @@
     if (entry.research.relationships.length) {
       for (const relationship of entry.research.relationships.filter(r => Array.isArray(r.results))) {
         const section = el('section', undefined, 'research-note');
-        section.append(el('h3', `${relationship.mode} · ${relationship.horizon} scheduled weekdays`));
-        section.append(facts([['Scope', relationship.scope.id], ['Target', 'Price Return'],
+        section.append(el('h3', `${relationship.mode} · ${relationship.horizon}-day forecast horizon`));
+        section.append(facts([['Scope', relationship.scope_label || relationship.scope.id], ['Target', 'Price Return'],
           ['Expected Direction', relationship.expected_direction], ['P1', relationship.p1_status], ['P2', relationship.p2_status]]));
         for (const result of relationship.results) {
           section.append(el('h4', `${result.stage} · ${result.period.start_inclusive} – ${result.period.end_exclusive} (exclusive)`));
@@ -361,7 +323,7 @@
         row.append(instrument, coverage, observations, readiness, details); outputs.body.append(row);
       }
     }
-    if (!entry.outputs.length) outputContent.append(el("p", entry.catalog_pending ? "Stored output coverage is still loading. Registration does not imply prepared observations." : "No stored outputs are catalogued for this Signal. The definition remains available for preparation.", "field-note"));
+    if (!entry.outputs.length) outputContent.append(el("p", "No stored outputs are catalogued for this Signal. Its verified research records remain available.", "field-note"));
     outputContent.append(outputs.wrap);
     const definition = el("details", undefined, "definition-panel");
     definition.append(el("summary", "Recipe definition"));
@@ -377,7 +339,7 @@
       if (!window.SignalResearch) { selectSignal(entry.signal.signal_id); return; }
       ++detailRequest; if (detailController) detailController.abort();
       selectedEntryId=entry.id; selectedId=null; selectedMaterialization=null; selectedDetail=null;
-      openLibrary(); revealSelection(); renderTable();
+      openLibrary(); renderTable();
       detailTitle.textContent=entry.signal.name;
       detailStatus.textContent=`${entry.signal.source.series_id} · ${providerName(entry.signal.source.provider)}`;
       detailPanel.setAttribute("aria-busy","false"); $("signal-detail-retry").hidden=true;
@@ -388,10 +350,10 @@
     }
     ++detailRequest; if (detailController) detailController.abort();
     selectedEntryId = entry.id; selectedId = null; selectedMaterialization = null; selectedDetail = null;
-    openLibrary(); revealSelection(); renderTable();
+    openLibrary(); renderTable();
     $("signal-detail").setAttribute("aria-busy", "false"); $("signal-detail-retry").hidden = true;
     detailTitle.textContent = entry.name;
-    detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : entry.outputs.length ? `${stateLabel(entry)} · Select a stored output to view its observations and lineage.` : `${stateLabel(entry)} · Registered definition; ${entry.catalog_pending ? "stored coverage is loading" : "no stored outputs are catalogued"}.`;
+    detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : entry.outputs.length ? `${stateLabel(entry)} · Select a stored output to view its observations and lineage.` : `${stateLabel(entry)} · No stored outputs are catalogued.`;
     detailBody.replaceChildren(groupContent(entry)); detailTitle.focus({preventScroll: true});
     if (!window.SignalResearch && entry.details_deferred && entry.research.state === "results_linked") {
       const generation = detailRequest, controller = new AbortController(); detailController = controller;
@@ -405,7 +367,7 @@
         entry.research = research; detailBody.replaceChildren(groupContent(entry));
         detailStatus.textContent = "Authoritative research results verified. Output observations are verified when opened.";
       } catch (_error) {
-        if (generation === detailRequest) detailStatus.textContent = "Research details could not be verified. Collapse and reopen to retry; the registered Signal remains available.";
+        if (generation === detailRequest) detailStatus.textContent = "Research details could not be verified. Collapse and reopen to retry; the verified research summary remains available.";
       }
     }
   }
@@ -427,13 +389,12 @@
     if (group) {
       fragment.append(groupContent(group), el("h3", `${signal.source.series_id} · Stored output details`));
     }
-    fragment.append(el("p", signal.signal_id, "signal-id"));
     if (data.materializations.length > 1) {
       const group = el("div", undefined, "materialization-selector");
       const label = el("label", "Stored version"); label.htmlFor = "signal-materialization";
       const select = el("select"); select.id = "signal-materialization";
-      data.materializations.forEach(m => {
-        const option = el("option", `${range(m.coverage.cutoff_start, m.coverage.cutoff_end)} · ${m.row_count} observations · ${m.id.slice(-8)}`);
+      data.materializations.forEach((m, index) => {
+        const option = el("option", `Stored version ${index + 1} · ${range(m.coverage.cutoff_start, m.coverage.cutoff_end)} · ${m.row_count} observations`);
         option.value = m.id; option.selected = m.id === current.id; select.append(option);
       });
       select.addEventListener("change", () => selectSignal(signal.signal_id, select.value));
@@ -502,7 +463,7 @@
     fragment.append(observations.wrap);
     const definition = el("details", undefined, "definition-panel");
     definition.append(el("summary", "Definition and provenance"));
-    appendJson(definition, "Feature and materialization", data.provenance);
+    appendJson(definition, "Signal, Feature and materialization", {signal_id: signal.signal_id, selected_materialization_id: data.selected_materialization_id, ...data.provenance});
     appendJson(definition, "Exact recipe", data.recipe);
     appendJson(definition, "Source metadata", data.source_metadata);
     appendJson(definition, "Historical timing policy", data.timing);
@@ -514,7 +475,7 @@
     openLibrary();
     selectedId = id; selectedMaterialization = mid; selectedDetail = null;
     selectedEntryId = groupForSignal(id)?.id || id;
-    openLibrary(); revealSelection(); renderTable();
+    openLibrary(); renderTable();
     const generation = ++detailRequest;
     if (detailController) detailController.abort();
     detailController = new AbortController();
@@ -528,7 +489,7 @@
       if (catalogLoading) await catalogLoading;
       if (generation !== detailRequest) return;
       selectedEntryId = groupForSignal(id)?.id || id;
-      revealSelection(); renderTable();
+      renderTable();
       const output = signals.find(item => item.signal_id === id);
       const base = output && output.detail_href || `/api/signal-library/${encodeURIComponent(id)}`;
       const url = `${base}${mid ? `?materialization_id=${encodeURIComponent(mid)}` : ""}`;
@@ -544,35 +505,17 @@
       if (generation === detailRequest) $("signal-detail").setAttribute("aria-busy", "false");
     }
   }
-  function registrationCatalog(data) {
-    if (!data || !Array.isArray(data.features) || data.feature_count !== data.features.length) throw new Error("Invalid Feature registry");
-    return data.features.map(item => {
-      if (!reference(item.reference) || !["reusable_fx_recipe", "stored_feature"].includes(item.kind) || !Array.isArray(item.transformations) || !item.transformations.length) throw new Error("Invalid Feature definition");
-      const steps = item.transformations.map((step, index) => ({...step, node: `step_${index}`,
-        label: step.operator.id === "TR_BASE_momentum_skip_diff" ? "Skip Recent Difference" : step.label}));
-      const logFirst = steps[0].operator.id === "TR_BASE_level_log", last = steps[steps.length - 1];
-      const internalLog = last.parameters.some(p => p.name === "basis" && p.value.value === "log");
-      const fx = item.kind === "reusable_fx_recipe";
-      const name = !fx ? item.name : logFirst && last.operator.id === "TR_BASE_momentum_skip_diff" ? "Log Skip Recent Momentum" :
-        (logFirst ? "Log " : internalLog ? "Log Return " : "") + last.label;
-      return {kind: fx ? "reusable_fx_recipe" : "registered_feature", id: item.id, recipe: item.reference,
-        signal_id: item.signal_id || item.id.replace("FEATURE_RECIPE_", "SIGNAL_"), name,
-        source: {label: fx ? "Closing prices" : "Registered source series", input_contract: {}},
-        transformations: steps, observation_count: null, outputs: [], catalog_pending: true,
-        research: {state: "unverified", label: "Checking research status", relationship_count: 0, relationships: [], metrics: [],
-          description: "Registered definition. Stored outputs and research status are checked separately."}};
-    });
-  }
-
   async function loadCatalog({preserveSelection = false} = {}) {
     const generation = ++catalogRequest;
+    if (catalogController) catalogController.abort();
+    catalogController = new AbortController();
     if (!preserveSelection) {
       ++detailRequest;
       if (detailController) detailController.abort();
       selectedId = null; selectedMaterialization = null; selectedEntryId = null; selectedDetail = null;
       entries = []; signals = [];
       detailTitle.textContent = "Select a Signal";
-      detailStatus.textContent = "Choose a library entry to explore its recipe and stored outputs.";
+      detailStatus.textContent = "Choose a researched Signal to explore its saved results and provenance.";
       detailBody.replaceChildren();
       $("signal-detail-retry").hidden = true;
       $("signal-detail").setAttribute("aria-busy", "false");
@@ -586,22 +529,11 @@
     $("signal-library-issues").hidden = true;
     $("signal-library-retry").hidden = true;
     try {
-      let registered = [];
-      try {
-        registered = registrationCatalog(await request("/api/feature-library", new AbortController()));
-        if (generation !== catalogRequest) return;
-        entries = registered.map(item => entries.find(old => old.id === item.id || old.kind === "stored_signal" && old.signal.feature.id === item.id) || item);
-        populateFilters(); renderTable();
-        catalogStatus.textContent += " · Loading stored coverage and research status…";
-        tableContainer.setAttribute("aria-busy", "false");
-      } catch (_error) { /* Older or temporarily unavailable registry: try the summary endpoint. */ }
-      const data = readCatalog(await request("/api/signal-library-summaries", new AbortController()));
+      const data = readCatalog(await request("/api/signal-library-summaries", catalogController));
       if (generation !== catalogRequest) return;
-      const represented = new Set(data.entries.map(item => item.kind === "stored_signal" ? item.signal.feature.id : item.id));
-      entries = [...data.entries, ...registered.filter(item => !represented.has(item.id))];
+      entries = data.entries;
       const storedSelection = entries.find(item => item.kind === "stored_signal" && item.signal.feature.id === selectedEntryId);
       if (storedSelection) selectedEntryId = storedSelection.id;
-      populateFilters();
       signals = entries.flatMap(entry => entry.kind === "stored_signal" ? [entry.signal] : entry.outputs);
       if (preserveSelection && selectedEntryId && !entries.some(entry => entry.id === selectedEntryId)) {
         ++detailRequest; if (detailController) detailController.abort();
@@ -609,6 +541,10 @@
         detailTitle.textContent = "Select a Signal";
         detailStatus.textContent = "The previous selection is not in the current verified library.";
         detailBody.replaceChildren();
+      }
+      if (selectedId && !signals.some(output => output.signal_id === selectedId)) {
+        ++detailRequest; if (detailController) detailController.abort();
+        selectedId = null; selectedMaterialization = null; selectedDetail = null;
       }
       if (selectedId) selectedEntryId = groupForSignal(selectedId)?.id || selectedId;
       renderTable();
@@ -631,14 +567,14 @@
     } catch (_error) {
       if (generation !== catalogRequest) return;
       if (!preserveSelection && !entries.length) { signals = []; entries = []; }
-      catalogStatus.textContent = entries.length ? `${entries.length} registered Signals shown from the last verified library. Stored coverage and research status could not finish loading; retry to update them.` : preserveSelection
+      catalogStatus.textContent = entries.length ? `${entries.length} researched Signals shown from the last verified library. The latest research could not be verified; retry to update it.` : preserveSelection
         ? "The latest research could not be loaded. Showing the last verified library; retry to update it."
         : "The Signal Library could not be loaded. Please try again.";
       $("signal-library-retry").hidden = false;
     } finally {
       if (generation === catalogRequest) {
         tableContainer.setAttribute("aria-busy", "false");
-          }
+      }
     }
   }
 
@@ -673,11 +609,9 @@
       selectSignal(event.detail.signal_id, event.detail.materialization_id || null);
     }
   });
-  $("signal-library-retry").addEventListener("click", () => { catalogLoading = loadCatalog(); });
+  $("signal-library-retry").addEventListener("click", () => { catalogLoading = loadCatalog({preserveSelection: entries.length > 0}); });
   $("signal-detail-retry").addEventListener("click", () => { if (selectedId) selectSignal(selectedId, selectedMaterialization); });
-  $("signal-back")?.addEventListener("click", () => { clearSelection(); renderTable(); $("signal-search").focus({preventScroll:true}); });
-  for (const control of Object.values(filters)) control.addEventListener("input", applyFilters);
-  $("signal-clear").addEventListener("click", () => { for (const control of Object.values(filters)) control.value = ""; applyFilters(); });
+  $("signal-back")?.addEventListener("click", () => { const previous = selectedEntryId; clearSelection(); renderTable().get(previous)?.focus({preventScroll:true}); });
   window.addEventListener("hashchange", showPage);
   showPage();
 })();

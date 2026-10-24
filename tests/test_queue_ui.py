@@ -5,7 +5,12 @@ from test_research_ui import job,payload,REQUEST_ID,SECOND_ID,all_text
 ROOT=Path(__file__).resolve().parents[1]
 
 def catalog(status='queued'):
-    return {'items':[{'job':job(status)['job'],'intent':{k:v for k,v in payload().items() if k!='request_id'},'queue_position':1 if status=='queued' else None}],
+    return {'items':[{'job':job(status)['job'],'intent':{k:v for k,v in payload().items() if k!='request_id'},'queue_position':1 if status=='queued' else None,
+                     'presentation':{'state':'verified','title':'63-day log momentum, skip 5 days · AUDUSD',
+                         'feature_label':'63-day log momentum, skip 5 days','scope_label':'AUDUSD',
+                         'subtitle':'Time-series · 1 instrument · Positive hypothesis',
+                         'target_label':'Forward price return · five forecast horizons',
+                         'schedule_note':'Lookbacks and forecast horizons use scheduled weekdays.'}}],
             'issues':[],'worker':{'healthy':True}}
 
 def ui(responses,steps=(),saved=None,storage_error=False,client=None):
@@ -61,9 +66,26 @@ class QueueUITests(unittest.TestCase):
 
     def test_real_labels_waiting_position_and_read_only_open(self):
         v=ui([catalog()])[-1]
-        text=all_text(v['board']);self.assertIn('Log Skip Recent Momentum',text);self.assertIn('AUDUSD',text);self.assertIn('Waiting position 1',text)
+        text=all_text(v['board']);self.assertIn('63-day log momentum, skip 5 days',text);self.assertIn('AUDUSD',text);self.assertIn('Waiting position 1',text)
+        self.assertNotIn('Log Skip Recent Momentum',text)
         self.assertNotIn('Open progress',text);self.assertNotIn('Cancel',v['buttonLabels'])
         self.assertTrue(all(c['method']=='GET' for c in v['calls']))
+
+    def test_names_use_saved_presentation_not_current_dropdowns(self):
+        c=catalog('succeeded');c['items'][0]['presentation']['title']='63-day log momentum · Saved USD pairs'
+        text=all_text(ui([c])[0]['ledger'])
+        self.assertIn('Saved USD pairs',text);self.assertIn('Forecast horizon',text)
+        self.assertIn('Exact selections and record IDs',text)
+        self.assertIn(payload()['feature']['id'],text)
+        self.assertIn('scheduled weekdays',text)
+        self.assertNotIn('Log Skip Recent Momentum',text)
+
+    def test_missing_label_keeps_history_without_inventing_current_names(self):
+        c=catalog('succeeded');c['items'][0]['presentation']={'state':'unavailable'}
+        text=all_text(ui([c])[0]['ledger'])
+        self.assertIn('could not be verified',text);self.assertIn(REQUEST_ID,text)
+        self.assertIn(payload()['feature']['id'],text)
+        self.assertNotIn('Log Skip Recent Momentum',text)
     def test_poll_transitions_and_terminal_outcomes(self):
         v=ui([catalog(),catalog('p1'),catalog('succeeded')],['poll','poll'])
         self.assertIn('In P1',all_text(v[1]['board']))
@@ -136,7 +158,7 @@ class QueueUITests(unittest.TestCase):
             blockers=[{'code':'COVERAGE','message':'Missing usable dates.'}],
             resume_blocker={'code':'IMPLEMENTATION_CHANGED','message':'Use a new submission.'})
         text=all_text(ui([c])[0]['board'])
-        for value in ['Cross sectional','21 · P1: Rejected · P2: Not admitted','Missing usable dates.','Use a new submission.','AUDUSD','Positive']:
+        for value in ['Cross sectional','21-day forecast · P1: Rejected · P2: Not admitted','Missing usable dates.','Use a new submission.','AUDUSD','Positive']:
             self.assertIn(value,text)
         self.assertNotIn('Resume',text)
     def test_browser_pending_notices_cannot_reintroduce_submission_recovery(self):

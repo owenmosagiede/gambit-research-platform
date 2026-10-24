@@ -1,11 +1,13 @@
 """Read-only reusable recipe presentation over the existing stored library.
 
-No definitions, observations or scientific records are written. All registered Features are included. List reads verify catalog metadata only;
+No definitions, observations or scientific records are written. Only Features
+with verified research outcomes are included. List reads verify catalog metadata only;
 observation verification occurs when an output is opened. Research links retain their
 original relationship and result references; they never certify a whole recipe.
 """
 from copy import deepcopy
 from pathlib import Path
+from jsonschema.exceptions import ValidationError
 from data.catalog_reads import catalog_glob
 
 from api.signal_library import (ENTRIES, SIGNAL_ID, MATERIALIZATION_ID,
@@ -15,6 +17,7 @@ from data.feature_store import FeatureStore, PublicationError, read_materializat
 from data.feature_store_contracts import normalize_library_entry
 from data.reusable_features import reusable_recipe_mapping_context
 from data.transformations.identity import canonical_bytes, digest, reference
+from api.research_labels import recipe_label
 
 OUTPUT_PREFIX='/api/signal-library-outputs/'
 
@@ -94,15 +97,7 @@ def _recipe_presentation(store, recipe):
                else operator['display_name'])
         transformations.append({'node':step['node'],'operator':deepcopy(step['operator']),
             'label':label,'parameters':deepcopy(step['parameters'])})
-    terminal=transformations[-1]
-    log_first=transformations[0]['operator']['id']=='TR_BASE_level_log'
-    params={p['name']:p['value']['value'] for p in terminal['parameters']}
-    if terminal['operator']['id']=='TR_BASE_momentum_skip_diff' and log_first:
-        name='Log Skip Recent Momentum'
-    else:
-        prefix='Log ' if log_first else ('Log Return ' if params.get('basis')=='log' else '')
-        name=prefix+terminal['label']
-    return {'kind':'reusable_fx_recipe','id':recipe['id'],'recipe':reference(recipe),'name':name,
+    return {'kind':'reusable_fx_recipe','id':recipe['id'],'recipe':reference(recipe),'name':recipe_label(recipe),
         'source':{'label':'Closing prices','input_contract':deepcopy(contract)},
         'transformations':transformations,'observation_count':None,'outputs':[]}
 
@@ -184,35 +179,141 @@ def _registered_entry(store, feature):
             for step in recipe['steps']], 'observation_count':None,'outputs':[]}
 
 
-def _research_catalog(root):
-    """Read authoritative record envelopes once; metrics/artifacts load on demand."""
+def _verified_branch(store, link):
+    """Verify completed outcome metadata without opening numerical artifacts."""
+    from research.contracts import ref, digest as research_digest
+    from data.transformations.contracts import normalize_reference
+    relation=store.resolve('relationship',link['body']['relationship']);body=relation['body']
+    normalize_reference(body['recipe'])
+    normalize_reference(body['scope'].get('reference',body['scope']))
+    scope=body['scope'];scope_ref=scope.get('reference',scope)
+    if any(scope.get(key,scope_ref[key])!=scope_ref[key] for key in ('id','version')):
+        raise PublicationError('Frozen Scope identity differs from its reference')
+    if 'membership_snapshot' in scope:normalize_reference(scope['membership_snapshot'])
+    if body['mode'] not in ('TS','CS') or body['horizon'] not in (1,7,21,63,252):
+        raise PublicationError('Unsupported research mode or horizon')
+    trials=[store.resolve('trial',r) for r in link['body']['trial_results']]
+    admissions=[store.resolve('admission',r) for r in link['body']['admission_results']]
+    validations=[store.resolve('validation',r) for r in link['body']['validation_results']]
+    by_ref={research_digest(ref(t)):t for t in trials}
+    stages={t['body']['stage']:t for t in trials}
+    if len(by_ref)!=len(trials) or set(stages) not in ({'P1'},{'P1','P2'}) or len(stages)!=len(trials):
+        raise PublicationError('A completed research branch requires one discovery trial and at most one validation trial')
+    for trial in trials:
+        key=trial['scientific_key'];stage=trial['body']['stage']
+        if key['relationship']!=ref(relation) or key['stage']!=stage:
+            raise PublicationError('Trial relationship or stage differs')
+        normalize_reference(key['research_spec'])
+        if (key.get('horizon',body['horizon'])!=body['horizon']
+                or trial['body'].get('horizon',body['horizon'])!=body['horizon']
+                or trial['body'].get('mode',body['mode'])!=body['mode']):
+            raise PublicationError('Trial mode or horizon differs')
+        if trial['body'].get('execution_status','completed') not in ('completed','not_computable','discovery_direction_failed'):
+            raise PublicationError('Trial execution has not completed')
+    if len(admissions)!=1:
+        raise PublicationError('Completed discovery requires one authoritative admission decision')
+    admission=admissions[0]['body'];p1=stages['P1']
+    if (admission['relationship']!=ref(relation) or admission['trial']!=ref(p1)
+            or admission['decision'] not in ('admitted','rejected','unresolved')
+            or p1['body'].get('admission',admission['decision'])!=admission['decision']):
+        raise PublicationError('Admission does not match completed discovery')
+    if len(validations)>1 or ('P2' in stages and not validations):
+        raise PublicationError('Validation trial requires its authoritative decision')
+    for validation in validations:
+        value=validation['body'];evaluation=value['evaluation_trial']
+        if (value['relationship']!=ref(relation) or value['discovery_trial']!=ref(p1)
+                or admission['decision']!='admitted' or value['decision'] not in ('VALIDATED','FAILED','UNRESOLVED')):
+            raise PublicationError('Validation does not match admitted discovery')
+        if evaluation is None:
+            if 'P2' in stages or value['decision']=='VALIDATED':
+                raise PublicationError('Validation success requires a completed evaluation')
+        else:
+            p2=stages.get('P2')
+            if (p2 is None or evaluation!=ref(p2) or p2['scientific_key']['discovery_trial']!=ref(p1)
+                    or p2['scientific_key']['research_spec']!=p1['scientific_key']['research_spec']
+                    or p2['body'].get('decision',value['decision'])!=value['decision']):
+                raise PublicationError('Validation evaluation differs from its discovery branch')
+    return relation,trials,admissions,validations
+
+
+def _research_catalog(root, issues):
+    """Read verified completed branches once, isolating unavailable records."""
     from research.store import ResearchStore, FOLDERS, inside
     from research.contracts import ref
-    store=ResearchStore(root);result={}
+    store=ResearchStore(root);result={};branches={}
     relative='storage/catalog/'+FOLDERS['link']
     inside(root,relative)  # Preserve confinement and watch the original path too.
     for path in sorted(catalog_glob(Path(root)/relative, 'RESEARCHLINK_*.json')):
-        link=store.get('link',path.stem);relation=store.resolve('relationship',link['body']['relationship'])
-        recipe_id=relation['body']['recipe']['id']
-        result.setdefault(recipe_id,[]).append({'signal_id':'SIGNAL_'+recipe_id.removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
-            'projection':ref(link),'relationship':ref(relation),'attempt_ids':[],
-            **{key:link['body'][key] for key in ('trial_results','admission_results','validation_results')}})
+        try:
+            link=store.get('link',path.stem)
+            relation,trials,admissions,validations=_verified_branch(store,link)
+            body=relation['body'];recipe_id=body['recipe']['id']
+            row={'signal_id':'SIGNAL_'+recipe_id.removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
+                'projection':ref(link),'relationship':ref(relation),'attempt_ids':[],
+                'recipe':deepcopy(body['recipe']),
+                **{key:deepcopy(link['body'][key]) for key in ('trial_results','admission_results','validation_results')},
+                **{key:deepcopy(body[key]) for key in ('scope','mode','horizon','target_family','expected_direction')},
+                'p1_status':admissions[0]['body']['decision'],
+                'p2_status':validations[0]['body']['decision'] if validations else 'not_run'}
+            branches.setdefault(canonical_bytes(ref(relation)),[]).append(row)
+        except (ValueError,KeyError,TypeError,OSError):
+            issues.append({'code':'UNAVAILABLE_RESEARCH_LINK','record_id':path.stem,
+                'message':'A research result link or its trial/admission/validation references could not be verified.'})
+    for rows in branches.values():
+        def evidence(row):
+            return {canonical_bytes(r) for key in ('trial_results','admission_results','validation_results') for r in row[key]}
+        seen=set()
+        for row in rows:
+            key=frozenset(evidence(row))
+            if key in seen or any(key<evidence(other) for other in rows):continue
+            seen.add(key);result.setdefault(row['recipe']['id'],[]).append(row)
     return result
+
+
+def _research_projection(rows):
+    return {'state':'results_linked','label':'Research results recorded',
+        'relationship_count':len({canonical_bytes(r['relationship']) for r in rows}),
+        'trial_count':len({canonical_bytes(t) for r in rows for t in r['trial_results']}),
+        'relationships':deepcopy(rows),'metrics':[],
+        'description':'Recorded outcomes include rejected, failed and unresolved research. Each outcome belongs to its exact hypothesis and evaluation period.'}
+
+
+def _recipe_projector(root):
+    """Dispatch output mapping by its pinned currency or canonical input profile."""
+    legacy=None;currency=None;projectors={}
+    def project(feature):
+        nonlocal legacy,currency
+        policy=feature['body']['recipe'].get('evaluation_policy',{}).get('id')
+        if policy!='POL_TRANSFORM_EVALUATION_FX_CURRENCY_SNAPSHOT':
+            if legacy is None:_,legacy=reusable_recipe_mapping_context(root)
+            return legacy(feature)
+        from data.fx_currency_features import context, records, projector
+        if currency is None:
+            _,catalog,_=context(root);approved=records(root)
+            by_config={r['configuration']['id']:approved[r['recipe']['id']] for r in catalog['body']['recipes']}
+            currency={b['feature']['id']:(b,by_config[b['configuration_id']]) for b in catalog['body']['bindings']}
+        match=currency.get(feature['id'])
+        if match is None or match[0]['feature']!=reference(feature):
+            raise PublicationError('Feature has no exact completed currency mapping')
+        recipe=match[1]
+        if recipe['id'] not in projectors:projectors[recipe['id']]=projector(root,recipe)
+        return projectors[recipe['id']](feature)
+    return project
 
 
 def list_signal_summaries(root):
     store=FeatureStore(root);folder=store.path(ENTRIES);groups={};legacy=[];issues=[]
-    from api.feature_library import list_feature_library
-    catalog=list_feature_library(root, store=store)
-    issues.extend(catalog['issues'])
-    for item in catalog['features']:
-        feature=store.resolve(item['reference']);entry=_registered_entry(store,feature)
-        groups[feature['id']]=dict(entry,_entries=[])
-    project_feature=None
-    try:research_catalog=_research_catalog(root)
-    except Exception:
-        research_catalog=None
-        issues.append({'code':'RESEARCH_STATUS_UNAVAILABLE','message':'Research status could not be checked; definitions remain visible.'})
+    research_catalog=_research_catalog(root,issues)
+    for identifier,rows in research_catalog.items():
+        try:
+            refs={canonical_bytes(row['recipe']) for row in rows}
+            if len(refs)!=1:raise PublicationError('Conflicting exact researched Feature references')
+            feature=store.resolve(rows[0]['recipe']);entry=_registered_entry(store,feature)
+            groups[identifier]=dict(entry,research=_research_projection(rows))
+        except (ValueError,KeyError,TypeError,OSError,ValidationError):
+            issues.append({'code':'UNAVAILABLE_RESEARCHED_FEATURE','record_id':identifier,
+                'message':'The exact Feature definition referenced by research could not be verified.'})
+    project_feature=_recipe_projector(root)
     for path in sorted(catalog_glob(folder, '*')):
         if path.name.startswith('.'):continue
         sid=path.name if SIGNAL_ID.fullmatch(path.name) else None
@@ -223,34 +324,26 @@ def list_signal_summaries(root):
                 # Existing non-FX summary fields and presentation are unchanged.
                 summary=_metadata_summary(loaded_store,loaded)
                 feature_id=loaded[0]['feature']['id']
-                if research_catalog and research_catalog.get(feature_id):summary['scientific_state']='results_linked'
-                groups.pop(feature_id,None)
-                legacy.append({'kind':'stored_signal','id':sid,'signal':summary})
+                group=groups.get(feature_id)
+                if group is None:continue
+                if group['recipe']!=summary['feature']:raise PublicationError('Research Feature differs from output')
+                summary['scientific_state']='results_linked'
+                groups.pop(feature_id)
+                legacy.append({'kind':'stored_signal','id':sid,'signal':summary,'research':group['research']})
                 continue
-            if project_feature is None:
-                _,project_feature=reusable_recipe_mapping_context(root)
             recipe=project_feature(loaded[0]['feature'])
+            if recipe['id'] not in groups:continue
             proposed=_recipe_presentation(loaded_store,recipe)
             output=_output_summary(loaded_store,loaded)
-            group=groups.setdefault(recipe['id'],dict(proposed,_entries=[]))
+            group=groups[recipe['id']]
             if group['recipe']!=proposed['recipe']:raise PublicationError('Conflicting exact reusable recipe')
             group['outputs'].append(output)
-            group['_entries'].extend(loaded[0]['library_entries'])
         except Exception:
             issues.append({'code':'UNAVAILABLE_SIGNAL','signal_id':sid,
                 'message':'A stored Signal or its reusable recipe mapping could not be verified and was excluded.'})
     entries=[]
     for group in groups.values():
         group['outputs'].sort(key=lambda output:(output['source']['series_id'],output['signal_id']))
-        group['research']=_research(group.pop('_entries'))
-        results=(research_catalog or {}).get(group['id'],[])
-        if results:
-            research=group['research'];research['relationships'].extend(results)
-            research['relationship_count']=len({(r['signal_id'],canonical_bytes(r['relationship'])) for r in research['relationships']})
-            research.update(state='results_linked',label='Research results recorded',
-                description='Research records exist for specific relationships. Open this Signal to verify their authoritative metrics.')
-        elif research_catalog is None:
-            group['research'].update(state='unverified',label='Research status unavailable')
         group['signal_id']=group.get('signal_id','SIGNAL_'+group['id'].removeprefix('FEATURE_RECIPE_'))
         group['details_deferred']=True
         entries.append(group)

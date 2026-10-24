@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="/library.css">
   <link rel="stylesheet" href="/signal-research.css">
   <link rel="stylesheet" href="/gambit-theme.css">
-  <script src="/library.js" defer></script>
   <script src="/signal-research.js" defer></script>
   <script src="/signals.js" defer></script>
   <script src="/features.js" defer></script>
@@ -17,7 +16,6 @@
   <script src="/scopes.js" defer></script>
   <script src="/submission.js" defer></script>
   <script src="/queue.js" defer></script>
-  <script src="/batches.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#experiment-inputs">Skip to experiment contract</a>
@@ -26,7 +24,6 @@
       <div class="brand"><img src="/brand/gambit-wordmark-reverse.svg" width="160" height="35" alt="Gambit Systems"><p>Research platform</p></div>
       <nav class="page-navigation" aria-label="Workspace">
         <a href="#experiment" data-page="experiment" aria-current="page">Experiment contract</a>
-        <a href="#pit" data-page="pit">PIT Data Library</a>
         <a href="#signals" data-page="signals">Signal Library</a>
         <a href="#ledger" data-page="ledger">Trial Ledger</a>
       </nav>
@@ -104,13 +101,6 @@
         <a class="text-button" href="#ledger">View completed trials in Trial Ledger →</a>
         <div id="queue-board" class="queue-board"></div>
       </section>
-      <section class="trial-queue" aria-labelledby="batch-title">
-        <div class="queue-heading"><h2 id="batch-title">Research batches</h2><button id="batch-refresh" type="button" class="text-button">Refresh batches</button></div>
-        <p class="field-note">Approved batches run on the server when the research queue is available. Closing your laptop does not stop them. Viewing this panel never launches research.</p>
-        <label for="batch-select">Saved batch</label><select id="batch-select"><option value="">Loading batches…</option></select>
-        <p id="batch-status" role="status" aria-live="polite" class="field-note"></p>
-        <div id="batch-detail"></div>
-      </section>
       <details id="selection-details" class="definition-panel">
         <summary>Selection details and stored coverage</summary>
       <section id="feature-coverage" class="feature-coverage" aria-labelledby="feature-coverage-title" aria-busy="false" hidden>
@@ -148,46 +138,13 @@
       <p id="ledger-status" class="field-note" role="status" aria-live="polite">Loading saved history…</p>
       <div id="ledger-items" class="ledger-items"></div>
     </main>
-    <main id="pit-page" tabindex="-1" hidden>
-      <header class="page-header"><p class="section-label">Data</p><h1>PIT Data Library</h1><p class="page-description">Browse saved datasets and explore their coverage, source and timing.</p></header>
-      <section class="library-filters" aria-label="PIT data search and filters">
-        <div class="search-field"><label for="pit-search">Search</label><input id="pit-search" type="search" placeholder="Search by name, ID or attribute" autocomplete="off"></div>
-        <div><label for="pit-provider">Provider</label><select id="pit-provider"><option value="">All providers</option></select></div>
-        <div><label for="pit-frequency">Frequency</label><select id="pit-frequency"><option value="">All frequencies</option></select></div>
-        <div><label for="pit-from">Coverage from</label><input id="pit-from" type="date"></div>
-        <div><label for="pit-to">Coverage to</label><input id="pit-to" type="date"></div>
-        <button id="pit-clear" class="filter-clear" type="button">Clear filters</button>
-        <p class="filter-note">Dates match overlapping stored observation coverage.</p>
-      </section>
-      <p id="library-status" class="library-status" role="status" aria-live="polite" aria-atomic="true">Loading saved datasets…</p>
-      <p id="library-issues" class="library-issues" hidden></p>
-      <button id="library-retry" class="retry-button" type="button" hidden>Retry</button>
-      <div id="library-items" class="library-cards" aria-busy="true"></div>
-      <div id="dataset-detail-home" hidden>
-      <section id="dataset-details" class="dataset-details" aria-labelledby="details-title" hidden>
-        <p class="section-label">Dataset details</p>
-        <h2 id="details-title" tabindex="-1">Explore your saved data</h2>
-        <p id="details-description" class="details-description">Choose a dataset from the library to view its details.</p>
-        <div id="details-body" hidden></div>
-      </section>
-      </div>
-    </main>
     <main id="signal-page" tabindex="-1" hidden>
       <div id="signal-catalog-view">
       <header class="page-header">
         <p class="section-label">Research</p>
         <h1>Signal Library</h1>
-        <p class="page-description">Explore a Feature. Follow its hypothesis from discovery to validation.</p>
+        <p class="page-description">Signals appear after verified research records have been saved. Preparation alone does not count as research. Rejected, precheck and unresolved outcomes remain visible; research does not imply validation.</p>
       </header>
-      <section class="library-filters" aria-label="Signal search and filters">
-        <div class="search-field"><label for="signal-search">Search</label><input id="signal-search" type="search" placeholder="Search by name, ID or attribute" autocomplete="off"></div>
-        <div><label for="signal-provider">Provider</label><select id="signal-provider"><option value="">All providers</option></select></div>
-        <div><label for="signal-state">Research status</label><select id="signal-state"><option value="">All statuses</option></select></div>
-        <div><label for="signal-from">Coverage from</label><input id="signal-from" type="date"></div>
-        <div><label for="signal-to">Coverage to</label><input id="signal-to" type="date"></div>
-        <button id="signal-clear" class="filter-clear" type="button">Clear filters</button>
-        <p class="filter-note">Dates match overlapping stored observation coverage; provider and dates must match the same stored output.</p>
-      </section>
       <p id="signal-library-status" class="library-status" role="status" aria-live="polite">Loading Signals…</p>
       <p id="signal-library-issues" class="library-issues" hidden></p>
       <button id="signal-library-retry" class="retry-button" type="button" hidden>Retry</button>

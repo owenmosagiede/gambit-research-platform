@@ -12,6 +12,7 @@ import re
 from research.contracts import ResearchError, ref
 from research.store import ResearchStore, inside
 from data.feature_store import FeatureStore
+from api.research_labels import scope_label
 
 RECIPE = re.compile(r'FEATURE_(?:RECIPE_)?[0-9a-f]{64}')
 TRIAL = re.compile(r'TRIAL_[0-9a-f]{64}')
@@ -22,25 +23,35 @@ def feature_research(root, recipe_id):
     if not RECIPE.fullmatch(recipe_id):
         raise ValueError('Use an exact Feature recipe ID')
     store = ResearchStore(root)
-    # Reuse the existing reader's exact relationship, trial, admission and
-    # validation linkage checks, including independent evidence branches.
-    relationships = store.results_for_recipe(recipe_id)
+    # The same metadata checks drive inclusion and detail: a corrupt unrelated
+    # link cannot turn a verified result into an empty or untested Feature.
+    from api.signal_summaries import _research_catalog
+    issues=[]
+    relationships = _research_catalog(root,issues).get(recipe_id,[])
     for relationship in relationships:
         # Cosmetic label only; never substitute today's scope or membership.
         try:
             scope = relationship['scope']
-            relationship['scope_label'] = FeatureStore(root).resolve(scope.get('reference', scope))['display_name']
+            relationship['scope_label'] = scope_label(FeatureStore(root).resolve(scope.get('reference', scope)))
         except (ValueError, KeyError, OSError):
-            relationship['scope_label'] = relationship['scope']['id']
-        for result in relationship['results']:
-            trial = store.resolve('trial', result['authority'])
+            relationship['scope_label'] = relationship['scope'].get('reference',relationship['scope'])['id']
+        relationship['results']=[]
+        for authority in relationship['trial_results']:
+            trial = store.resolve('trial', authority)
             body = trial['body']
+            for artifact in body['artifact_manifests']:
+                store.verify_artifact(artifact)
+            result={'authority':authority,'stage':body['stage'],
+                'metrics':deepcopy(body['metrics']),'sample':deepcopy(body['sample']),
+                'period':deepcopy(trial['scientific_key']['period']),
+                'research_spec':deepcopy(trial['scientific_key']['research_spec'])}
             result.update({key: deepcopy(body.get(key)) for key in (
                 'evidence', 'reason_codes', 'confidence_flags', 'multiple_testing', 'fdr_diagnostics')})
             result['artifact_manifests'] = deepcopy(body['artifact_manifests'])
+            relationship['results'].append(result)
         relationship['validations'] = [dict(authority=value, **store.resolve('validation', value)['body'])
                                       for value in relationship['validation_results']]
-    return {'schema_version': '1.0.0', 'recipe_id': recipe_id, 'relationships': relationships}
+    return {'schema_version': '1.0.0', 'recipe_id': recipe_id, 'relationships': relationships,'issues':issues}
 
 
 def _artifacts(store, trial, wanted):
