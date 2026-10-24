@@ -59,12 +59,13 @@ def stage(root, sources, return_policy, request_text):
     return release
 
 
-def validate_release(root,release):
+def validate_release(root,release, *, numerical=True):
+    if type(numerical) is not bool:raise ValueError('Numerical validation mode must be explicit')
     store=FeatureStore(root)
     if store.resolve(reference(release))!=release or release['body'].get('kind')!='fx_currency_release':
         raise ValueError('Invalid currency release')
-    logging.getLogger(__name__).info('Currency validation: prices started')
-    catalog,instruments=resolve_prices(root,release['body']['price_catalog'],verify_rows=True)
+    logging.getLogger(__name__).info('Currency validation: %s prices started','numerical' if numerical else 'metadata')
+    catalog,instruments=resolve_prices(root,release['body']['price_catalog'],verify_rows=numerical)
     logging.getLogger(__name__).info('Currency validation: prices passed')
     profile=profile_for(root,release);selection=profile['target_selection']
     if (selection.get('selection_scope')!='currency_price_catalog' or selection['price_catalog']!=reference(catalog)
@@ -82,12 +83,12 @@ def validate_release(root,release):
     if features.get('kind')!='fx_currency_feature_catalog' or features['price_catalog']!=reference(catalog):
         raise ValueError('Release Feature catalog differs')
     from data.fx_currency_features import get_policy
-    from data.fx_feature_recipes import configurations,build_fx_feature
+    from data.fx_feature_recipes import configurations,build_fx_feature,configuration_profile
     from data.reusable_features import _definition
     from data.reusable_feature_contracts import make_record,RECIPE_KIND,CURRENCY_INPUT_CONTRACT
     from data.transformations.registry import Registry
-    registry=Registry(root);policy=get_policy(root);variants={v['id']:v for v in configurations(registry)}
-    if features['evaluation_policy']!=reference(policy) or len(features['recipes'])!=180:
+    registry=Registry(root);policy=get_policy(root);variants={v['id']:v for v in configurations(registry,configuration_profile(features))}
+    if features['evaluation_policy']!=reference(policy) or len(features['recipes'])!=len(variants):
         raise ValueError('Release Feature family is incomplete')
     seen=set()
     from research.feature_applications import binding_for,CURRENCY_QUOTE
@@ -112,17 +113,54 @@ def validate_release(root,release):
                 or binding['source_view']!=expected['body']['recipe']['sources'][0]['source_view']):
             raise ValueError('Currency source-bound Feature differs')
     if seen!={(v,s) for v in variants for s in instruments}:raise ValueError('Incomplete currency bindings')
+    from data.targets.store import TargetStore
+    target_store=TargetStore(root) if not numerical else None
     target_count=0
+    target_log='Currency validation' if numerical else 'Currency metadata'
     for symbol,pins in selection['materializations'].items():
         if set(pins)!={'1','7','21','63','252'}:raise ValueError('Missing Target horizon')
         for horizon,binding in pins.items():
             target_count+=1
-            logging.getLogger(__name__).info('Currency validation: Target %s/630 started',target_count)
-            result=read_materialization(root,binding['id']);manifest=result['manifest']
+            logging.getLogger(__name__).info('%s: Target %s/630 started',target_log,target_count)
+            if numerical:
+                result=read_materialization(root,binding['id'])
+            else:
+                from data.targets.fx import _definition
+                manifest=target_store.resolve(binding);definition=target_store.resolve(manifest['definition'])
+                snapshot=target_store.resolve(instruments[symbol]['price_snapshot'])
+                schedule_policy=target_store.resolve(definition['body']['schedule_policy'])
+                expected=_definition(target_store,snapshot,catalog['body']['return_policy'],int(horizon),schedule_policy,install=False)
+                if reference(expected)!=manifest['definition']:raise ValueError('Currency Target metadata semantics differ')
+                result={'manifest':manifest,'definition':definition}
+            manifest=result['manifest']
             if (reference(manifest)!=binding or manifest['price_snapshot']!=instruments[symbol]['price_snapshot']
                     or manifest['input_key']['batch_policy']!=catalog['body']['return_policy']
                     or manifest['input_key']['knowledge_cutoff']!=selection['knowledge_cutoff']
                     or result['definition']['body']['horizon']['amount']!=int(horizon)):
                 raise ValueError('Currency Target semantics differ')
-            logging.getLogger(__name__).info('Currency validation: Target %s/630 passed',target_count)
+            logging.getLogger(__name__).info('%s: Target %s/630 passed',target_log,target_count)
     return release
+
+
+def build_momentum_catalogs(root, release):
+    """Build the fixed momentum reset records using existing inputs, read-only.
+
+    No observations are recomputed, no records are installed, and no existing
+    record changes identity. Callers must validate the installed metadata and
+    separately switch active registration/release pointers during their reset.
+    """
+    from data.reusable_features import build_momentum_registration
+    from data.fx_currency_features import build_momentum_catalog
+    from data.fx_records import make_record
+    store=FeatureStore(root)
+    if set(release)=={'id','version','content_sha256'}:release=store.resolve(release)
+    if store.resolve(reference(release))!=release or release['body'].get('kind')!='fx_currency_release':
+        raise ValueError('Expected exact existing currency release')
+    ts=build_momentum_registration(root)
+    catalog=build_momentum_catalog(root,release['body']['feature_catalog'])
+    body=deepcopy(release['body']);body['feature_catalog']=reference(catalog)
+    new_release=make_record('onboarding_evidence',body)
+    return {'records':[*ts['records'],catalog,new_release],'release':new_release,
+        'registration':ts['registration'],'feature_catalog':reference(catalog),
+        'ts_recipes':ts['recipes'],'cs_recipes':[r['recipe'] for r in catalog['body']['recipes']],
+        'features':ts['features']+[b['feature'] for b in catalog['body']['bindings']]}

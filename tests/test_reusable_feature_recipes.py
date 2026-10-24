@@ -226,6 +226,44 @@ class ReusableFeatureRecipeTests(unittest.TestCase):
         self.assertEqual(len(created),182)  #180definitions, one completion, writer lock
         self.assertTrue(all(p.startswith(('definitions/feature_recipes/','storage/catalog/feature_recipes/','storage/temporary/feature-store-publication.lock')) for p in created))
 
+    def test_fixed_momentum_registration_preserves_exact_identities_and_rejects_subset(self):
+        from data.fx_feature_recipes import (MOMENTUM_CONFIGURATION_PROFILE, MOMENTUM_CATALOG_PROFILE, configurations, configuration_profile)
+        expected=configurations(self.registry,MOMENTUM_CONFIGURATION_PROFILE)
+        self.assertEqual(len(expected),53)
+        with self.assertRaisesRegex(ValueError,'Unknown fixed'):
+            configurations(self.registry,'arbitrary_subset')
+        for body in ({'profile':MOMENTUM_CATALOG_PROFILE,'configuration_profile':'unknown'},
+                     {'profile':'fx_feature_recipes.1.0.0','configuration_profile':MOMENTUM_CONFIGURATION_PROFILE}):
+            with self.assertRaisesRegex(ValueError,'Conflicting fixed'):configuration_profile(body)
+        with patch.object(reusable,'_legacy_context',side_effect=lambda root:self.context()), \
+             patch.object(reusable,'FeatureStore',return_value=self.store):
+            reusable.register_reusable_fx_recipes(self.root)
+            before=inventory(self.root)
+            built=reusable.build_momentum_registration(self.root)
+            self.assertEqual(before,inventory(self.root))
+            self.assertEqual(len(built['recipes']),53)
+            self.assertEqual(len(built['features']),2279)
+            self.assertTrue(set(r['id'] for r in built['recipes'])<=set(self.expected))
+            shutil.rmtree(self.root/reusable.REGISTRATION_ROOT)
+            for catalog in self.catalogs:self.store.path(record_path(self.store.resolve(catalog))).unlink()
+            for record in built['records']:self.store.install_record(record)
+            for definition in self.definitions.values():
+                if definition['id'] not in {r['id'] for r in built['recipes']}:
+                    self.store.path(record_path(definition)).unlink()
+            listed=reusable.list_reusable_fx_recipes(self.root)
+            self.assertEqual({reference(r)['id'] for r in listed},{r['id'] for r in built['recipes']})
+            self.assertEqual(len(reusable.legacy_bindings_for_recipe(self.root,reference(listed[0]),verify_features=False)),43)
+            # A validly content-addressed smaller family cannot pass as momentum.
+            catalog=deepcopy(built['records'][0]);body=deepcopy(catalog['body'])
+            body['configurations'].pop();body['configuration_count']-=1
+            altered=make_fx_record('onboarding_evidence',body)
+            self.store.install_record(altered)
+            completion=deepcopy(built['records'][1]['body']);completion['legacy_catalogs']=[reference(altered)]
+            invalid=make_record('feature_recipe_registration',completion,built['records'][1]['display_name'])
+            shutil.rmtree(self.root/reusable.REGISTRATION_ROOT);self.store.install_record(invalid)
+            with self.assertRaisesRegex(ValueError,'configurations differ'):
+                reusable.list_reusable_fx_recipes(self.root)
+
     def test_unknown_and_invalid_reusable_recipe_ids_fail_closed(self):
         for identifier in ('FEATURE_x','../secret','FEATURE_RECIPE_'+'A'*64):
             with self.subTest(identifier=identifier),self.assertRaises(reusable.ReusableRecipeNotFound):

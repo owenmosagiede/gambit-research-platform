@@ -4,7 +4,8 @@ import hashlib
 from data.alfred_onboarding import identified
 from data.feature_store import FeatureStore
 from data.fx_currency_catalog import add, resolve_prices, active_release
-from data.fx_feature_recipes import RULES, configurations, build_fx_feature
+from data.fx_feature_recipes import (RULES, configurations, build_fx_feature, configuration_profile,
+    MOMENTUM_CONFIGURATION_PROFILE)
 from data.reusable_feature_contracts import CURRENCY_INPUT_CONTRACT, make_record, RECIPE_KIND
 from data.reusable_features import _definition
 from data.transformations.identity import canonical_bytes, reference
@@ -76,7 +77,7 @@ def records(root):
 
 def _records(root):
     store,catalog,policy=context(root);registry=Registry(root)
-    variants={v['id']:v for v in configurations(registry)};result={}
+    variants={v['id']:v for v in configurations(registry,configuration_profile(catalog['body']))};result={}
     for item in catalog['body']['recipes']:
         config=item['configuration']
         if variants.pop(config['id'],None)!=config:raise ValueError('Unapproved or duplicate currency configuration')
@@ -121,3 +122,38 @@ def projector(root,recipe):
         if feature!=expected:raise ValueError('Currency Feature semantics differ')
         return deepcopy(recipe)
     return project
+
+
+def build_momentum_catalog(root, catalog_ref):
+    """Return a new metadata catalog for the exact momentum family, without writes."""
+    from data.fx_records import make_record as catalog_record
+    store=FeatureStore(root);original=store.resolve(catalog_ref);body=original['body']
+    if body.get('kind')!='fx_currency_feature_catalog':raise ValueError('Expected currency Feature catalog')
+    configuration_profile(body)
+    _,instruments=resolve_prices(root,body['price_catalog'])
+    registry=Registry(root);policy=get_policy(root)
+    if body['evaluation_policy']!=reference(policy):raise ValueError('Currency Feature policy differs')
+    variants={v['id']:v for v in configurations(registry,MOMENTUM_CONFIGURATION_PROFILE)}
+    recipes=[deepcopy(item) for item in body['recipes'] if item['configuration']['id'] in variants]
+    if len(recipes)!=53 or {r['configuration']['id'] for r in recipes}!=set(variants):
+        raise ValueError('Momentum catalog requires all 53 exact recipes')
+    for item in recipes:
+        config=item['configuration']
+        if config!=variants[config['id']]:raise ValueError('Momentum configuration differs')
+        expected=_definition(registry,policy,config);recipe_body=deepcopy(expected['body'])
+        recipe_body['input_contract']=deepcopy(CURRENCY_INPUT_CONTRACT)
+        expected=make_record(RECIPE_KIND,recipe_body,'Currency / quote: '+expected['display_name'])
+        if store.resolve(item['recipe'])!=expected:raise ValueError('Momentum recipe differs')
+    bindings=[deepcopy(b) for b in body['bindings'] if b['configuration_id'] in variants]
+    keys={(b['configuration_id'],b['instrument_id']) for b in bindings}
+    if len(bindings)!=53*126 or keys!={(v,s) for v in variants for s in instruments}:
+        raise ValueError('Momentum currency bindings are incomplete or duplicated')
+    for b in bindings:
+        instrument=instruments[b['instrument_id']]
+        expected=build_fx_feature(root,instrument,variants[b['configuration_id']],registry=registry,evaluation_policy=policy,store=store)
+        if (store.resolve(b['feature'])!=expected or b['price_snapshot']!=instrument['price_snapshot']
+                or b['source_view']!=expected['body']['recipe']['sources'][0]['source_view']):
+            raise ValueError('Momentum currency Feature binding differs')
+    return catalog_record('onboarding_evidence',{'kind':'fx_currency_feature_catalog',
+        'configuration_profile':MOMENTUM_CONFIGURATION_PROFILE,'price_catalog':body['price_catalog'],
+        'evaluation_policy':body['evaluation_policy'],'recipes':recipes,'bindings':bindings})
