@@ -7,12 +7,7 @@
   const labels = {previewing:"Checking selections", ready:"Preview ready · awaiting approval", dispatching:"Submitting approved experiments",
     paused:"Paused", completed:"Batch execution complete", needs_attention:"Needs attention", queued:"Queued", resolving:"Checking inputs",
     preparing:"Preparing observations", p1:"In P1", p2:"In P2", succeeded:"Execution complete", failed:"Execution failed", blocked:"Blocked", cancelled:"Cancelled"};
-  let timer, controller, generation = 0, active = true, last = null, page = 0, reviewed = null, busy = false, fresh = false;
-  const feedback = nodeFeedback();
-  function nodeFeedback() {
-    const n = document.createElement("p"); n.role = "status"; n.ariaLive = "polite"; n.className = "field-note";
-    detail.before(n); return n;
-  }
+  let timer, controller, generation = 0, active = true, last = null, page = 0;
   const node = (tag, text, cls) => {
     const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n;
   };
@@ -24,54 +19,6 @@
       try { const value = JSON.parse(option.value); if (value.id === ref.id && value.version === ref.version) return option.textContent; } catch (_) { /* placeholder */ }
     }
     return ref.id;
-  }
-  function actions(value) {
-    if (value.read_only) {
-      detail.append(node("p", "Historical batch: its time-series research is retained. Retired cross-sectional research was removed. This batch cannot be relaunched.", "field-note"));
-      return;
-    }
-    const controls = node("div", undefined, "queue-heading"), state = value.state.state;
-    const button = (id, title, disabled, fn) => {
-      const b = node("button", title); b.id = id; b.type = "button"; b.disabled = disabled || busy || !fresh;
-      b.addEventListener("click", fn); controls.append(b);
-    };
-    const eligible = !value.approved && state === "ready" && value.preview_complete && value.preview_sha256 &&
-      value.previewed === value.unique_experiments && !(value.preview_counts.blocked > 0);
-    if (!value.approved) {
-      button("batch-review", "Review batch", !eligible, () => { reviewed = value.preview_sha256; render(last); });
-      if (reviewed && reviewed === value.preview_sha256 && eligible) {
-        detail.append(node("p", `You are reviewing ${value.unique_experiments} experiments: ${value.preview_counts.new || 0} new and ${value.preview_counts.reuse || 0} reused. Review the Features, Scopes and directions below. Launch queues P1 and, only for admitted candidates, P2.`, "field-note"));
-        button("batch-launch", "Launch reviewed batch", false, () => mutate(value, "approve", {preview_sha256: reviewed, exclude_blocked: false}));
-      }
-      if (value.preview_counts.blocked > 0) detail.append(node("p", "Resolve the blocked selections before launching this batch.", "card-reasons"));
-    }
-    if (["previewing", "ready", "approved", "dispatching"].includes(state))
-      button("batch-pause", "Pause batch", false, () => mutate(value, "pause", {}));
-    if (state === "paused") button("batch-resume", value.approved ? "Resume approved batch" : "Resume checks", false, () => mutate(value, "resume", {}));
-    detail.append(controls, node("p", "Pausing stops further batch submissions. Experiments already queued or running continue. Preparation runs on the server through the existing research queue.", "field-note"));
-  }
-  async function mutate(value, action, payload) {
-    if (busy || !fresh || last?.batch_id !== value.batch_id) return;
-    if (action === "approve" && (reviewed !== last.preview_sha256 || value.preview_sha256 !== last.preview_sha256)) return;
-    busy = true; generation++; controller?.abort(); window.clearTimeout(timer);
-    select.disabled = refresh.disabled = true; render(last);
-    feedback.textContent = "Saving your request…";
-    const request = new AbortController(), deadline = window.setTimeout(() => request.abort(), 20000);
-    try {
-      const response = await fetch("/api/batches/" + encodeURIComponent(value.batch_id) + "/" + action,
-        {method:"POST", mode:"same-origin", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload), signal:request.signal});
-      if (!response.ok) {
-        const messages = {401:"Sign in again, then refresh the batch.", 403:"Your session could not authorize this action. Sign in again and refresh.",
-          409:"The batch changed or cannot accept this action. Refresh and review its current status.", 503:"Batch submission is temporarily unavailable. Refresh before trying again."};
-        throw Error(messages[response.status] || "The server did not confirm the request. Check the refreshed batch status before trying again.");
-      }
-      feedback.textContent = action === "approve" ? "Launch approved. The server will process this batch through the research queue." : action === "pause" ? "Batch paused. Previously queued experiments continue." : "Batch resumed.";
-    } catch (error) {
-      feedback.textContent = error.name === "AbortError" || error instanceof TypeError ? "Request outcome unconfirmed. Checking saved status; do not submit again until it is confirmed." : error.message;
-    } finally {
-      window.clearTimeout(deadline); busy = false; reviewed = null; fresh = false;
-      select.disabled = refresh.disabled = false; if (last) render(last); await load();
-    }
   }
   function render(value) {
     detail.replaceChildren();
@@ -93,7 +40,8 @@
     detail.append(node("p", `Estimated runtime: ${range(estimates.sequential_seconds_range, "hours", 3600)} · Additional storage: ${range(estimates.additional_bytes_range, "GiB", 1073741824)}. Estimates are not guarantees.`, "field-note"));
     if (estimates.p1_horizon_evaluations !== undefined) detail.append(node("p", `P1: ${estimates.p1_horizon_evaluations} horizon evaluations · P2: up to ${estimates.p2_horizon_evaluations_upper_bound}.`, "field-note"));
     for (const limitation of estimates.limitations || []) detail.append(node("p", limitation, "field-note"));
-    actions(value);
+    if (value.read_only) detail.append(node("p", "Historical batch: its time-series research is retained. Retired cross-sectional research was removed. This batch cannot be relaunched.", "field-note"));
+    detail.append(node("p", "Read-only batch monitor.", "field-note"));
     const table = node("table", undefined, "signal-table"), head = node("thead"), heading = node("tr"), body = node("tbody");
     for (const title of ["Feature / Scope", "Progress", "Last update"]) { const th = node("th", title); th.scope = "col"; heading.append(th); }
     head.append(heading);
@@ -122,7 +70,7 @@
     }
   }
   async function load() {
-    if (!active || busy) return;
+    if (!active) return;
     const current = ++generation; window.clearTimeout(timer); controller?.abort(); controller = new AbortController();
     const request = controller, signal = request.signal, deadline = window.setTimeout(() => request.abort(), 20000);
     const get = async url => {
@@ -138,16 +86,15 @@
       select.value = list.batches.some(b => b.batch_id === selected) ? selected : list.batches[list.batches.length - 1].batch_id;
       const bid = select.value, value = await get("/api/batches/" + encodeURIComponent(bid)); if (current !== generation) return;
       if (value.batch_id !== bid || !Array.isArray(value.items) || !value.job_counts || !value.state) throw Error("Invalid batch");
-      if (last?.batch_id !== value.batch_id || last?.preview_sha256 !== value.preview_sha256) reviewed = null;
-      fresh = true; last = value; render(value); status.textContent = `Status checked ${new Date().toLocaleTimeString()}. Updates every 15 seconds. Research starts only after you launch a batch.`;
+      last = value; render(value); status.textContent = `Status checked ${new Date().toLocaleTimeString()}. Updates every 15 seconds. Read-only monitoring.`;
     } catch (_) {
-      fresh = false; reviewed = null; if (last) render(last);
+      if (last) render(last);
       if (current === generation) status.textContent = last ? "Connection unavailable. Showing the last retrieved status; current progress is unconfirmed. Retry with Refresh batches." : "Batch status unavailable. Retry with Refresh batches.";
     } finally {
       window.clearTimeout(deadline); if (current === generation && active) timer = window.setTimeout(load, 15000);
     }
   }
-  select.addEventListener("change", () => { page = 0; last = null; reviewed = null; fresh = false; feedback.textContent = ""; detail.replaceChildren(); load(); });
+  select.addEventListener("change", () => { page = 0; last = null; detail.replaceChildren(); load(); });
   refresh.addEventListener("click", load);
   window.addEventListener("pagehide", () => { active = false; generation++; controller?.abort(); window.clearTimeout(timer); });
   window.addEventListener("pageshow", () => { if (!active) { active = true; load(); } });

@@ -7,7 +7,7 @@
   if (!select || !scope || !status || !panel) return;
   let entries = [], catalogGeneration = 0, resolutionGeneration = 0;
   let catalogController = null, resolutionController = null;
-  let lastScopeValue = scope.value;
+  let lastScopeBinding = null, refreshSelection = null, catalogPending = false;
   const text = value => typeof value === "string" && value.trim().length > 0;
   const count = value => Number.isSafeInteger(value) && value >= 0;
   const reference = value => value && text(value.id) && text(value.version) && /^[0-9a-f]{64}$/.test(value.content_sha256);
@@ -15,6 +15,10 @@
     a.version === b.version && a.content_sha256 === b.content_sha256;
   const choice = item => JSON.stringify({id: item.id, version: item.version});
   const selected = () => entries.find(item => choice(item) === select.value);
+  const catalogNote = () => entries.length ? `${entries.length} registered Features. Choose a registered Feature recipe.` :
+    "No registered Features are available.";
+  const scopeBinding = () => JSON.stringify([scope.value, scope.dataset.scopeReference || "",
+    scope.dataset.membershipSnapshot || "", scope.dataset.scopeResolution || ""]);
   const signalPattern = /^SIGNAL_[0-9a-f]{64}$/;
   const materializationPattern = /^MATERIALIZATION_[0-9a-f]{64}$/;
   const readinessKeys = ["retrospective_research", "historical_replay", "live_use"];
@@ -32,7 +36,15 @@
   function scopeSelection() {
     try {
       const value = JSON.parse(scope.value);
-      if (value && text(value.id) && text(value.version)) return value;
+      const binding = JSON.parse(scope.dataset.scopeResolution);
+      const definition = JSON.parse(scope.dataset.scopeReference);
+      const membership = JSON.parse(scope.dataset.membershipSnapshot);
+      if (value && text(value.id) && text(value.version) && binding.id === value.id && binding.version === value.version &&
+          definition.id === value.id && definition.version === value.version &&
+          sameReference(binding.reference, definition) && sameReference(binding.definition_binding, definition) &&
+          sameReference(binding.membership_snapshot, membership)) {
+        return {...value, reference: definition, membership_snapshot: membership};
+      }
     } catch (_error) { /* No Scope selected. */ }
     return null;
   }
@@ -79,6 +91,8 @@
         value.recipe.kind !== feature.kind || !value.scope || value.scope.id !== chosenScope.id ||
         value.scope.version !== chosenScope.version || !reference(value.scope.reference) ||
         value.scope.reference.id !== chosenScope.id || value.scope.reference.version !== chosenScope.version ||
+        !sameReference(value.scope.reference, chosenScope.reference) ||
+        !sameReference(value.scope.membership_snapshot, chosenScope.membership_snapshot) ||
         !reference(value.scope.membership_snapshot) || !text(value.scope.display_name) ||
         !count(value.member_count) || !Array.isArray(value.members) || value.members.length !== value.member_count ||
         new Set(value.members.map(item => item.instrument_id)).size !== value.member_count ||
@@ -180,13 +194,15 @@
   }
   async function resolveSelection() {
     clearResolution();
-    lastScopeValue = scope.value;
+    lastScopeBinding = scopeBinding();
     const item = selected(), chosenScope = scopeSelection();
     $("feature-details-link").hidden = !item || !item.signal_id;
     if (!item) {
       delete select.dataset.featureReference; delete select.dataset.experimentFeature; delete select.dataset.featureKind;
-      select.setCustomValidity("Choose a registered Feature.");
-      status.textContent = "Choose a registered Feature recipe."; panel.hidden = true; return;
+      select.title = "";
+      select.setCustomValidity(catalogPending ? "Loading registered Features." : "Choose a registered Feature.");
+      status.textContent = catalogPending ? "Loading registered Features…" : catalogNote(); panel.hidden = true;
+      window.dispatchEvent(new CustomEvent("feature-state-change")); return;
     }
     select.dataset.featureReference = JSON.stringify(item.reference);
     select.dataset.featureKind = item.kind;
@@ -196,9 +212,9 @@
     const registered = item.kind === "reusable_fx_recipe" ? "Registered recipe" : "Registered stored Feature";
     status.textContent = `${registered}. ` + (chosenScope ? "Checking selected Scope coverage…" : "Choose Scope to check stored coverage.");
     panel.hidden = !chosenScope;
-    if (!chosenScope) return;
+    if (!chosenScope) { window.dispatchEvent(new CustomEvent("feature-state-change")); return; }
     const generation = resolutionGeneration;
-    const selection = select.value, scopeValue = scope.value;
+    const selection = select.value, binding = scopeBinding();
     resolutionController = new AbortController(); const active = resolutionController;
     panel.setAttribute("aria-busy", "true");
     $("feature-coverage-title").textContent = "Stored coverage";
@@ -207,7 +223,7 @@
       const query = `feature_id=${encodeURIComponent(item.id)}&feature_version=${encodeURIComponent(item.version)}` +
         `&scope_id=${encodeURIComponent(chosenScope.id)}&scope_version=${encodeURIComponent(chosenScope.version)}`;
       const value = readResolution(await fetchValue(`/api/feature-resolution?${query}`, active), item, chosenScope);
-      if (generation !== resolutionGeneration || select.value !== selection || scope.value !== scopeValue) return;
+      if (generation !== resolutionGeneration || select.value !== selection || scopeBinding() !== binding) return;
       select.dataset.featureResolution = JSON.stringify(value);
       status.textContent = `${registered}. ${value.summary.materialized_member_count}/${value.member_count} Scope members have matching stored outputs.`;
       // During an idle-server upgrade, an older backend may still serve native
@@ -237,13 +253,16 @@
     }
   }
   async function load() {
+    const previous = selected() || refreshSelection;
+    refreshSelection = previous;
+    catalogPending = true;
     const generation = ++catalogGeneration;
     if (catalogController) catalogController.abort();
     catalogController = new AbortController(); const active = catalogController;
-    clearResolution(); panel.hidden = true;
-    const previous = select.value;
-    entries = []; select.disabled = true; select.value = "";
+    entries = []; select.disabled = true; select.value = ""; select.title = "";
     delete select.dataset.featureReference; delete select.dataset.experimentFeature; delete select.dataset.featureKind;
+    delete select.dataset.catalogCount;
+    clearResolution(); panel.hidden = true;
     select.setCustomValidity("Loading registered Features."); select.setAttribute("aria-busy", "true");
     select.replaceChildren(option("Loading features…", "", true));
     status.textContent = "Loading registered Features…";
@@ -252,23 +271,28 @@
       const value = readCatalog(await fetchValue("/api/feature-library", active));
       if (generation !== catalogGeneration) return;
       entries = value.features;
+      catalogPending = false;
+      refreshSelection = null;
+      select.dataset.catalogCount = String(entries.length);
       const placeholder = option(entries.length ? "Select a feature" : "No registered Features", "", true);
       placeholder.selected = true; select.replaceChildren(placeholder);
       for (const item of entries) {
-        const label = item.kind === "reusable_fx_recipe" ? operatorText(item) : item.name;
+        const label = item.kind === "reusable_fx_recipe" ? `${item.name} · ${operatorText(item)}` : item.name;
         const node = option(label, choice(item)); node.title = item.name;
         node.dataset.registrationState = item.registration_state; select.append(node);
       }
       select.disabled = entries.length === 0;
-      if (entries.some(item => choice(item) === previous)) select.value = previous;
+      const retained = previous && entries.find(item => sameReference(item.reference, previous.reference));
+      if (retained) select.value = choice(retained);
       await resolveSelection();
+      if (generation !== catalogGeneration) return;
       if (!entries.length) status.textContent = "No registered Features are available.";
       if (value.issues.length) {
         status.textContent += " Some registry records are unavailable."; $("feature-retry").hidden = false;
       }
     } catch (_error) {
       if (generation !== catalogGeneration) return;
-      entries = []; select.disabled = true;
+      entries = []; refreshSelection = null; catalogPending = false; select.disabled = true;
       select.replaceChildren(option("Features unavailable", "", true));
       status.textContent = "Registered Features could not be loaded. Retry to load the library.";
       select.setCustomValidity("Registered Features are unavailable."); $("feature-retry").hidden = false;
@@ -277,10 +301,10 @@
     }
   }
   select.addEventListener("change", resolveSelection);
-  scope.addEventListener("change", resolveSelection);
-  window.addEventListener("scope-state-change", () => {
-    if (scope.value !== lastScopeValue) resolveSelection();
-  });
+  const scopeChanged = () => { if (scopeBinding() !== lastScopeBinding) resolveSelection(); };
+  scope.addEventListener("change", scopeChanged);
+  window.addEventListener("scope-state-change", scopeChanged);
+  window.addEventListener("experiment-catalog-refresh", load);
   $("feature-retry").addEventListener("click", load);
   $("feature-coverage-retry").addEventListener("click", resolveSelection);
   $("feature-details-link").addEventListener("click", () => { const item = selected(); if (item) openSignal(item.signal_id); });

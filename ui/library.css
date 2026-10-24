@@ -162,6 +162,15 @@ form {
   gap: 20px;
 }
 form > div { min-width: 0; }
+.experiment-contract-inputs { margin-top: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+.experiment-contract-inputs > div { min-width: 0; }
+.contract-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.contract-heading h2 { margin: 0; font-size: 18px; font-weight: 500; }
+.contract-reference { margin: 28px 0; padding: 24px; border: 1px solid var(--g-border); border-radius: var(--g-radius); }
+.contract-example { margin: 16px 0 22px; padding: 18px; overflow-x: auto; background: var(--g-quiet); border-radius: var(--g-radius); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.contract-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px; margin: 0; }
+.contract-rules dt { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.contract-rules dd { margin: 0; color: var(--g-muted); font-size: 13px; line-height: 1.65; }
 .form-actions { padding-top: 30px; }
 .submit-button {
   width: 100%;
@@ -246,6 +255,7 @@ main:focus, #details-title:focus { outline: none; }
 }
 
 @media (max-width: 1200px) {
+  .experiment-contract-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .form-actions { padding-top: 0; }
 }
@@ -262,6 +272,8 @@ main:focus, #details-title:focus { outline: none; }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 500px) {
+  .experiment-contract-inputs, .contract-rules { grid-template-columns: minmax(0, 1fr); }
+  .contract-reference { padding: 16px; }
   form, .detail-grid, .dataset-list { grid-template-columns: minmax(0, 1fr); }
   .dataset-details h2 { font-size: 22px; }
   .stat-card { padding: 12px; }

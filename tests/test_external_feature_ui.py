@@ -37,16 +37,19 @@ class ExternalFeatureUITests(unittest.TestCase):
         self.assertEqual(views[-2]['validity'],'');self.assertTrue(views[-1]['validity'])
         self.assertNotIn('featureResolution',views[-1]['dataset'])
 
-    def test_backend_explicit_rejection_is_not_reported_as_unknown_submission(self):
-        import test_research_ui as submission
-        rejection={'http':422,'recorded':False,'error':{'code':'EXTERNAL_ALIGNMENT_BLOCKED'},
-                   'blockers':[{'code':'EXTERNAL_ALIGNMENT_BLOCKED','message':'Universe broadcasting unsupported.'}]}
-        view=submission.ui([{'action':'submit'}],routes={'POST /api/experiments':[rejection]})[-1]
-        self.assertEqual(view['status'],'Not submitted')
-        self.assertIn('No research job was recorded',view['message'])
-        self.assertIn('Universe broadcasting',submission.all_text(view['blockers']))
-        self.assertTrue(view['retryHidden']);self.assertEqual(view['saved'],{})
-        self.assertFalse(view['submitDisabled'])
+    def test_contract_reports_unsupported_alignment_without_attempting_submission(self):
+        import test_research_ui as contract
+        resolution=contract.feature_resolution('stored_daily_state',submission_compatible=False,
+                                              source_application_note='Universe broadcasting unsupported.')
+        resolution['recipe']['kind']='stored_feature'
+        view=contract.ui([{'action':'resolution','value':resolution},
+                          {'action':'event','name':'research-submission-recover',
+                           'detail':{'request_id':contract.REQUEST_ID,'resend':True}}])[-1]
+        self.assertIn('Universe broadcasting',view['selection'])
+        self.assertIn('never submits',view['selection'])
+        self.assertTrue(all(call['method']=='GET' and call['url']=='/api/research-readiness'
+                            for call in view['calls']))
+        self.assertEqual(view['saved'],{})
 
 
 if __name__=='__main__':unittest.main()

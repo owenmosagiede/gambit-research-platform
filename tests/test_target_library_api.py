@@ -22,7 +22,7 @@ def inventory(root):
             for path in root.rglob('*') if path.is_file()}
 
 
-def selector(catalog=None, *, fail=False, selection=None):
+def selector(catalog=None, *, fail=False, selection=None, steps=(), history=False):
     """Execute the actual UI script with a minimal native-select DOM harness."""
     node = shutil.which('node')
     if not node:
@@ -37,21 +37,51 @@ class Element {
   addEventListener(name, action) { this.listeners[name] = action; }
 }
 const ids = Object.fromEntries(["target", "target-status", "target-retry"].map(id => [id, new Element(id)]));
+const listeners = {}, requests = [], pending = [], snapshots = [], signals = [];
+let hold = false;
+const output = value => ({ok:value !== null, json:async () => value});
 const context = {document: {getElementById: id => ids[id], createElement: tag => new Element(tag)},
-  window: {setTimeout: () => 1, clearTimeout: () => {}}, AbortController,
-  fetch: async url => { if (url !== "/api/target-library" || input.fail) throw new Error("Unavailable"); return {ok:true, json:async () => input.catalog}; }};
-vm.runInNewContext(fs.readFileSync(input.script, "utf8"), context);
-setImmediate(() => {
+  window: {setTimeout: () => 1, clearTimeout: () => {}, addEventListener: (name, fn) => listeners[name] = fn,
+    dispatchEvent: event => listeners[event.type]?.(event)}, AbortController,
+  CustomEvent: class { constructor(type) { this.type = type; } },
+  fetch: async (url, options) => {
+    requests.push({url,method:options.method}); signals.push(options.signal);
+    if (url !== "/api/target-library" || input.fail) throw new Error("Unavailable");
+    if (hold) return new Promise((resolve, reject) => pending.push({resolve,reject}));
+    return output(input.catalog);
+  }};
+function snapshot() {
+  const select = ids.target;
+  snapshots.push(JSON.parse(JSON.stringify({disabled: select.disabled, value: select.value, dataset: select.dataset,
+    options: select.children.map(x => ({value:x.value,text:x.textContent,disabled:x.disabled,dataset:x.dataset})),
+    status:ids["target-status"].textContent,retryHidden:ids["target-retry"].hidden,
+    requests,aborted:signals.map(signal => signal.aborted)})));
+}
+const flush = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+  vm.runInNewContext(fs.readFileSync(input.script, "utf8"), context);
+  await flush();
   const select = ids.target;
   if (input.selection !== null) { select.value = input.selection; select.listeners.change(); }
-  process.stdout.write(JSON.stringify({disabled: select.disabled, value: select.value, dataset: select.dataset,
-    options: select.children.map(x => ({value:x.value,text:x.textContent,disabled:x.disabled,dataset:x.dataset})),
-    status:ids["target-status"].textContent,retryHidden:ids["target-retry"].hidden}));
-});
+  snapshot();
+  for (const step of input.steps) {
+    if (step.action === "refresh") {
+      if (step.catalog) input.catalog = step.catalog;
+      input.fail = Boolean(step.fail); hold = Boolean(step.hold);
+      context.window.dispatchEvent(new context.CustomEvent("experiment-catalog-refresh"));
+    } else if (step.action === "settle") {
+      if (step.error) pending[step.index].reject(new Error("Unavailable"));
+      else pending[step.index].resolve(output(step.catalog ?? input.catalog));
+    }
+    await flush(); snapshot();
+  }
+  process.stdout.write(JSON.stringify(snapshots));
+})().catch(error => { console.error(error); process.exitCode = 1; });
 '''
     result = subprocess.run([node, '-e', script], input=json.dumps({'catalog':catalog,'fail':fail,'selection':selection,
-        'script':str(PROJECT / 'ui/targets.js')}), text=True, capture_output=True, check=True)
-    return json.loads(result.stdout)
+        'steps':list(steps),'script':str(PROJECT / 'ui/targets.js')}), text=True, capture_output=True, check=True)
+    views = json.loads(result.stdout)
+    return views if history else views[-1]
 
 
 HORIZONS = [1, 7, 21, 63, 252]
@@ -225,6 +255,50 @@ class TargetLibraryApiTests(unittest.TestCase):
         self.assertCountEqual(bindings, expected)
         self.assertIn('training cutoff',view['status'])
         self.assertEqual([option['text'] for option in view['options'] if not option['disabled']], ['Price Return'])
+
+    def test_refresh_keeps_category_but_replaces_only_verified_family_bindings(self):
+        initial = weekday_family_catalog(self.catalog())
+        refreshed = weekday_family_catalog(self.catalog(), tag='refreshed')
+        views = selector(initial, selection='price', history=True,
+                         steps=[{'action':'refresh','catalog':refreshed,'hold':True},
+                                {'action':'settle','index':0}])
+        before, pending, after = views
+        self.assertTrue(pending['disabled'])
+        self.assertEqual(pending['value'], '')
+        self.assertEqual(pending['dataset'], {})
+        self.assertEqual(after['value'], 'price')
+        self.assertNotEqual(before['dataset']['targetBindings'], after['dataset']['targetBindings'])
+        self.assertEqual({item['target_id'] for item in json.loads(after['dataset']['targetBindings'])},
+                         {item['target_id'] for item in refreshed['targets']})
+        self.assertTrue(all(request == {'url':'/api/target-library','method':'GET'} for request in after['requests']))
+
+    def test_incomplete_or_failed_refresh_revokes_selected_category(self):
+        initial = weekday_family_catalog(self.catalog())
+        incomplete = deepcopy(initial)
+        incomplete['targets'].pop()
+        incomplete['target_count'] -= 1
+        for change in ({'catalog':incomplete}, {'fail':True}):
+            with self.subTest(change=change):
+                view = selector(initial, selection='price', steps=[{'action':'refresh', **change}])
+                self.assertTrue(view['disabled'])
+                self.assertEqual(view['value'], '')
+                self.assertEqual(view['dataset'], {})
+                self.assertTrue(all(request['method'] == 'GET' for request in view['requests']))
+
+    def test_late_catalog_response_cannot_restore_retired_target_bindings(self):
+        initial = weekday_family_catalog(self.catalog())
+        empty = {'schema_version':'1.0.0','target_count':0,'targets':[],'issues':[]}
+        views = selector(initial, selection='price', history=True,
+                         steps=[{'action':'refresh','hold':True},
+                                {'action':'refresh','catalog':empty},
+                                {'action':'settle','index':0,'catalog':initial}])
+        current, late = views[-2:]
+        self.assertTrue(late['disabled'])
+        self.assertEqual(late['dataset'], {})
+        self.assertEqual(late['value'], '')
+        self.assertEqual(current['options'], late['options'])
+        self.assertEqual(current['status'], late['status'])
+        self.assertTrue(late['aborted'][1])
 
     def test_unrelated_persisted_session_target_cannot_enable_weekday_family(self):
         view = selector(self.catalog())
