@@ -113,6 +113,8 @@ def validate_release(root,release, *, numerical=True):
                 or binding['source_view']!=expected['body']['recipe']['sources'][0]['source_view']):
             raise ValueError('Currency source-bound Feature differs')
     if seen!={(v,s) for v in variants for s in instruments}:raise ValueError('Incomplete currency bindings')
+    from data.targets.store import TargetStore
+    target_store=TargetStore(root) if not numerical else None
     target_count=0
     target_log='Currency validation' if numerical else 'Currency metadata'
     for symbol,pins in selection['materializations'].items():
@@ -123,9 +125,13 @@ def validate_release(root,release, *, numerical=True):
             if numerical:
                 result=read_materialization(root,binding['id'])
             else:
-                from data.targets.store import TargetStore
-                target_store=TargetStore(root);manifest=target_store.resolve(binding)
-                result={'manifest':manifest,'definition':target_store.resolve(manifest['definition'])}
+                from data.targets.fx import _definition
+                manifest=target_store.resolve(binding);definition=target_store.resolve(manifest['definition'])
+                snapshot=target_store.resolve(instruments[symbol]['price_snapshot'])
+                schedule_policy=target_store.resolve(definition['body']['schedule_policy'])
+                expected=_definition(target_store,snapshot,catalog['body']['return_policy'],int(horizon),schedule_policy,install=False)
+                if reference(expected)!=manifest['definition']:raise ValueError('Currency Target metadata semantics differ')
+                result={'manifest':manifest,'definition':definition}
             manifest=result['manifest']
             if (reference(manifest)!=binding or manifest['price_snapshot']!=instruments[symbol]['price_snapshot']
                     or manifest['input_key']['batch_policy']!=catalog['body']['return_policy']

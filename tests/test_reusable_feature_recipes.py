@@ -227,11 +227,14 @@ class ReusableFeatureRecipeTests(unittest.TestCase):
         self.assertTrue(all(p.startswith(('definitions/feature_recipes/','storage/catalog/feature_recipes/','storage/temporary/feature-store-publication.lock')) for p in created))
 
     def test_fixed_momentum_registration_preserves_exact_identities_and_rejects_subset(self):
-        from data.fx_feature_recipes import MOMENTUM_CONFIGURATION_PROFILE, configurations
+        from data.fx_feature_recipes import (MOMENTUM_CONFIGURATION_PROFILE, MOMENTUM_CATALOG_PROFILE, configurations, configuration_profile)
         expected=configurations(self.registry,MOMENTUM_CONFIGURATION_PROFILE)
         self.assertEqual(len(expected),53)
         with self.assertRaisesRegex(ValueError,'Unknown fixed'):
             configurations(self.registry,'arbitrary_subset')
+        for body in ({'profile':MOMENTUM_CATALOG_PROFILE,'configuration_profile':'unknown'},
+                     {'profile':'fx_feature_recipes.1.0.0','configuration_profile':MOMENTUM_CONFIGURATION_PROFILE}):
+            with self.assertRaisesRegex(ValueError,'Conflicting fixed'):configuration_profile(body)
         with patch.object(reusable,'_legacy_context',side_effect=lambda root:self.context()), \
              patch.object(reusable,'FeatureStore',return_value=self.store):
             reusable.register_reusable_fx_recipes(self.root)

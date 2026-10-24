@@ -49,8 +49,12 @@ MOMENTUM_AXES = {
 
 def configuration_profile(body):
     profile = body.get('configuration_profile', FULL_CONFIGURATION_PROFILE)
-    if body.get('profile') == MOMENTUM_CATALOG_PROFILE:
-        profile = MOMENTUM_CONFIGURATION_PROFILE
+    catalog_profile = body.get('profile')
+    if catalog_profile in ('fx_feature_recipes.1.0.0', MOMENTUM_CATALOG_PROFILE):
+        expected = MOMENTUM_CONFIGURATION_PROFILE if catalog_profile == MOMENTUM_CATALOG_PROFILE else FULL_CONFIGURATION_PROFILE
+        if 'configuration_profile' in body and profile != expected:
+            raise PublicationError('Conflicting fixed FX configuration profiles')
+        profile = expected
     if profile not in (FULL_CONFIGURATION_PROFILE, MOMENTUM_CONFIGURATION_PROFILE):
         raise PublicationError('Unknown fixed FX configuration profile')
     return profile
