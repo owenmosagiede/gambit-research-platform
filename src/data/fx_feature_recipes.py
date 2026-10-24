@@ -29,6 +29,33 @@ LOG_BASIS = tuple('TR_BASE_'+name for name in 'vol_ewma vol_abs_change vol_chang
 POLICY_ID = 'POL_TRANSFORM_EVALUATION_FX_SNAPSHOT'
 POLICY_VERSION = '2.0.0'
 CATALOG_KIND = 'fx_feature_recipe_registration'
+FULL_CONFIGURATION_PROFILE = 'fx_all.1.0.0'
+MOMENTUM_CONFIGURATION_PROFILE = 'fx_momentum.1.0.0'
+MOMENTUM_CATALOG_PROFILE = 'fx_momentum_feature_recipes.1.0.0'
+# The named profile pins the previously approved 53 daily configurations. It is
+# not a user-provided filter and cannot silently grow with a registry change.
+MOMENTUM_AXES = {
+    'TR_BASE_change_diff': {'k': (1,5,21,63,126,252)},
+    'TR_BASE_momentum_skip_diff': {'k': (21,63,126,252), 's': (1,5)},
+    'TR_BASE_smooth_ew_change': {'h': (5,21,63,126)},
+    'TR_BASE_trend_ema_distance': {'h': (5,21,63,126)},
+    'TR_BASE_trend_ma_distance': {'w': (5,21,63,126,252)},
+    'TR_BASE_trend_slope': {'w': (21,63,126,252)},
+    'TR_BASE_trend_slope_tstat': {'w': (21,63,126,252)},
+    'TR_BASE_volscale_diff': {'k': (1,5,21), 'w': (21,63,126)},
+    'TR_BASE_volscale_trend': {'v': (21,63,126), 'w': (5,21,63)},
+}
+
+
+def configuration_profile(body):
+    profile = body.get('configuration_profile', FULL_CONFIGURATION_PROFILE)
+    if body.get('profile') == MOMENTUM_CATALOG_PROFILE:
+        profile = MOMENTUM_CONFIGURATION_PROFILE
+    if profile not in (FULL_CONFIGURATION_PROFILE, MOMENTUM_CONFIGURATION_PROFILE):
+        raise PublicationError('Unknown fixed FX configuration profile')
+    return profile
+
+
 RULES = {'interpretation':'retrospective_snapshot', 'calendar_id':'RESEARCH_WEEKDAYS',
     'calendar_version':'version_1.0.0','parameter_frequency':'daily','observation_clock':'scheduled_weekdays',
     'historical_availability':'preserve_unknown','missing_scheduled_price':'retain_null',
@@ -108,7 +135,7 @@ def _typed_parameters(entry, parameters):
     return result
 
 
-def configurations(registry):
+def configurations(registry, profile=FULL_CONFIGURATION_PROFILE):
     result=[]
     for identifier in sorted(LOG_FIRST+LOG_BASIS):
         entry=registry.operator(identifier);c=entry['body']['execution_contract'];grid=c['grid_profile']
@@ -120,7 +147,20 @@ def configurations(registry):
                 'parameters':parameters,'grid_policy':grid,'parameter_frequency':'daily'}
             result.append(dict(spec,id='FXCONFIG_'+digest(spec),display_name=entry['display_name']))
     if len({item['id'] for item in result})!=len(result):raise PublicationError('Duplicate FX recipe configuration')
-    return result
+    if profile == FULL_CONFIGURATION_PROFILE:
+        return result
+    if profile != MOMENTUM_CONFIGURATION_PROFILE:
+        raise PublicationError('Unknown fixed FX configuration profile')
+    from itertools import product
+    selected = [v for v in result if v['operator']['id'] in MOMENTUM_AXES]
+    expected = {(operator, tuple(zip(sorted(axes), values)))
+        for operator, axes in MOMENTUM_AXES.items()
+        for values in product(*(axes[name] for name in sorted(axes)))}
+    actual = {(v['operator']['id'], tuple((p['name'], int(p['value']['value']))
+        for p in v['parameters'])) for v in selected}
+    if len(selected) != 53 or actual != expected or any(v['operator']['version'] != '2.0.0' for v in selected):
+        raise PublicationError('The fixed 53-configuration momentum profile differs from the approved grid')
+    return selected
 
 
 def build_fx_feature(root, instrument, configuration, *, registry=None, evaluation_policy=None, store=None):
@@ -260,12 +300,12 @@ def _catalog_bindings(root):
         if body.get('kind')!=CATALOG_KIND:continue
         store._validate(record)
         if path.name!=record['id']+'.json':raise PublicationError('FX recipe catalog path mismatch')
-        if body['profile']!='fx_feature_recipes.1.0.0':raise PublicationError('Unknown FX recipe catalog profile')
+        if body['profile'] not in ('fx_feature_recipes.1.0.0',MOMENTUM_CATALOG_PROFILE):raise PublicationError('Unknown FX recipe catalog profile')
         if registry is None:
             registry=Registry(root)
-            expected_variants={item['id']:item for item in configurations(registry)}
             config=strict_json(stable_read(store.path('config/fx_retrospective_completion.json')))
             batch=_approved_policy(store,config['return_policy'])
+        expected_variants={item['id']:item for item in configurations(registry,configuration_profile(body))}
         policy=store.resolve(body['evaluation_policy'])
         if reference(policy)!=reference(get_fx_policy(root)):raise PublicationError('Wrong catalog policy')
         found={item['id']:item for item in body['configurations']}

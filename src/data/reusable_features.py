@@ -12,7 +12,8 @@ import re
 from data.alfred_onboarding import stable_read, strict_json
 from data.feature_store import FeatureStore, PublicationError, record_path
 from data.fx_feature_recipes import (_catalog_bindings, configurations, get_fx_policy,
-    LOG_FIRST, LOG_BASIS, CATALOG_KIND)
+    LOG_FIRST, LOG_BASIS, CATALOG_KIND, FULL_CONFIGURATION_PROFILE,
+    MOMENTUM_CONFIGURATION_PROFILE, MOMENTUM_CATALOG_PROFILE, configuration_profile)
 from data.fx_pipeline import _universe
 from data.targets.fx import _price_snapshot
 from data.transformations.registry import Registry
@@ -30,10 +31,10 @@ class ReusableRecipeNotFound(PublicationError):
     pass
 
 
-def _context(root):
+def _context(root, profile=FULL_CONFIGURATION_PROFILE):
     registry=Registry(root);policy=get_fx_policy(root)
-    variants=configurations(registry)
-    if len(variants)!=180:raise PublicationError('Expected exactly180 approved FX recipe configurations')
+    variants=configurations(registry,profile)
+    if len(variants)!=(53 if profile==MOMENTUM_CONFIGURATION_PROFILE else 180):raise PublicationError('Fixed FX configuration profile is incomplete')
     return registry,policy,{item['id']:item for item in variants}
 
 
@@ -127,10 +128,11 @@ def _legacy_context(root):
     return store,registry,policy,definitions,bindings,catalogs
 
 
-def _registration(definitions,bindings,catalogs):
+def _registration(definitions,bindings,catalogs,profile=FULL_CONFIGURATION_PROFILE):
     counts=Counter(item['configuration_id'] for item in bindings.values())
     if set(counts)!=set(definitions) or set(counts.values())!={43}:raise PublicationError('Every reusable recipe requires43legacy source bindings')
-    body={'kind':'reusable_fx_feature_recipe_registration','profile':'reusable_fx_feature_recipes.1.0.0',
+    if profile not in (FULL_CONFIGURATION_PROFILE,MOMENTUM_CONFIGURATION_PROFILE):raise PublicationError('Unknown fixed FX configuration profile')
+    body={'kind':'reusable_fx_feature_recipe_registration','profile':('reusable_fx_momentum_recipes.1.0.0' if profile==MOMENTUM_CONFIGURATION_PROFILE else 'reusable_fx_feature_recipes.1.0.0'),
           'legacy_catalogs':sorted(catalogs,key=lambda ref:ref['id']),
           'recipes':[{'configuration_id':key,'feature_recipe':reference(definitions[key]),'legacy_binding_count':counts[key]} for key in sorted(definitions)],
           'recipe_count':len(definitions),'legacy_binding_count':len(bindings),'instrument_count':43,'observation_action':'none'}
@@ -175,7 +177,12 @@ def _pinned_read_context(root):
     store=FeatureStore(root)
     paths=sorted(catalog_glob(store.path(REGISTRATION_ROOT), '*/manifest.json'))
     if not paths:raise ReusableRecipeNotFound('Reusable FX recipes have not been registered')
-    registry,policy,variants=_context(root)
+    profiles={strict_json(stable_read(path))['body']['profile'] for path in paths}
+    if len(profiles)!=1:raise PublicationError('Conflicting completed FX configuration profiles')
+    registration_profile=next(iter(profiles))
+    profile=(MOMENTUM_CONFIGURATION_PROFILE if registration_profile=='reusable_fx_momentum_recipes.1.0.0' else FULL_CONFIGURATION_PROFILE)
+    registry,policy,variants=_context(root,profile)
+    count=len(variants);binding_count=count*43
     definitions={key:_definition(registry,policy,item) for key,item in variants.items()}
     rules={item['name']:item['value']['value'] for item in policy['body']['parameters']}
     approval=rules.get('source_alignment_approval');retrospective=rules.get('source_retrospective_policy')
@@ -196,10 +203,10 @@ def _pinned_read_context(root):
         for catalog_ref in local_catalogs:
             catalog=store.resolve(catalog_ref);body=catalog['body']
             if (catalog['record_type']!='onboarding_evidence' or body.get('kind')!=CATALOG_KIND
-                    or body.get('profile')!='fx_feature_recipes.1.0.0' or body.get('evaluation_policy')!=reference(policy)):
+                    or body.get('profile') not in ('fx_feature_recipes.1.0.0',MOMENTUM_CATALOG_PROFILE) or configuration_profile(body)!=profile or body.get('evaluation_policy')!=reference(policy)):
                 raise PublicationError('Pinned legacy recipe catalog differs from the reusable policy')
             actual={item['id']:item for item in body['configurations']}
-            if actual!=variants or len(actual)!=len(body['configurations']) or body['configuration_count']!=180:
+            if actual!=variants or len(actual)!=len(body['configurations']) or body['configuration_count']!=count:
                 raise PublicationError('Pinned recipe configurations differ from the approved grid')
             keys=set();symbols=set()
             for binding in body['bindings']:
@@ -218,14 +225,14 @@ def _pinned_read_context(root):
                     raise PublicationError('Pinned instrument has conflicting source references')
                 previous=local_bindings.setdefault(binding['feature']['id'],binding)
                 if previous!=binding:raise PublicationError('Conflicting pinned legacy Feature binding')
-            if (symbols!=set(_universe()) or body['instrument_count']!=43 or body['binding_count']!=7740
+            if (symbols!=set(_universe()) or body['instrument_count']!=43 or body['binding_count']!=binding_count
                     or keys!={(identifier,symbol) for identifier in definitions for symbol in symbols}):
                 raise PublicationError('Pinned legacy catalog must contain180configurations across43instruments')
-        expected=_registration(definitions,local_bindings,local_catalogs)
+        expected=_registration(definitions,local_bindings,local_catalogs,profile)
         if reference(completion)!=reference(expected):raise PublicationError('Reusable mapping completion differs from its pinned legacy catalogs')
         for identifier,binding in local_bindings.items():
             if bindings.setdefault(identifier,binding)!=binding:raise PublicationError('Conflicting reusable completion bindings')
-    if len(bindings)!=7740:raise PublicationError('Reusable mapping has an unexpected historical binding count')
+    if len(bindings)!=binding_count:raise PublicationError('Reusable mapping has an unexpected historical binding count')
     return store,registry,policy,definitions,bindings
 
 
@@ -353,3 +360,35 @@ def reusable_recipe_mapping(root):
     """
     mapping,_=reusable_recipe_mapping_context(root)
     return mapping
+
+
+def build_momentum_registration(root):
+    """Build a new exact 53-recipe catalog; do not install or delete any files.
+
+    The caller switches registration roots as one controlled reset. Existing
+    Feature and recipe identities are retained; only their catalog changes.
+    """
+    from data.fx_records import make_record as catalog_record
+    store,registry,policy,_,all_definitions,all_bindings=_registered(root)
+    variants={v['id']:v for v in configurations(registry,MOMENTUM_CONFIGURATION_PROFILE)}
+    definitions={key:all_definitions[key] for key in variants}
+    bindings={key:b for key,b in all_bindings.items() if b['configuration_id'] in variants}
+    if len(bindings)!=53*43:raise PublicationError('Momentum registration lacks exact source bindings')
+    expected={record['id']:record for record in definitions.values()}
+    for binding in bindings.values():
+        feature=store.resolve(binding['feature'])
+        if _project_legacy(store,feature,registry,policy,expected)!=definitions[binding['configuration_id']]:
+            raise PublicationError('Momentum source binding differs')
+        recipe=feature['body']['recipe']
+        if recipe['selection']['entity_id']!=binding['instrument_id'] or recipe['sources'][0]['source_view']!=binding['source_view']:
+            raise PublicationError('Momentum source mapping differs from its Feature')
+    catalog=catalog_record('onboarding_evidence',{'kind':CATALOG_KIND,'profile':MOMENTUM_CATALOG_PROFILE,
+        'evaluation_policy':reference(policy),'configurations':list(variants.values()),
+        'bindings':sorted(bindings.values(),key=lambda b:(b['configuration_id'],b['instrument_id'])),
+        'configuration_count':53,'instrument_count':43,'binding_count':53*43,
+        'materialization_state':'registered_only','research_state':'not_executed'},
+        'Fixed momentum FX Feature configurations')
+    registration=_registration(definitions,bindings,[reference(catalog)],MOMENTUM_CONFIGURATION_PROFILE)
+    return {'records':[catalog,registration],'registration':reference(registration),
+        'recipes':[reference(r) for r in definitions.values()],
+        'features':[b['feature'] for b in bindings.values()]}

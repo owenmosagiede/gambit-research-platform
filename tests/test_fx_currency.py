@@ -141,6 +141,37 @@ class CurrencyReleaseTests(unittest.TestCase):
         self.assertAlmostEqual(float(output['observations'][-1]['value']),math.log(float(prices[-1]['value'])/float(prices[1]['value'])))
         self.assertTrue(apply(self.root,manifest,manifest['sha256'])['reused'])
 
+    def test_momentum_catalog_preserves_inputs_without_numerical_replay(self):
+        from unittest.mock import patch
+        from data.fx_currency_features import build_momentum_catalog,records,bindings
+        from data.fx_currency_catalog import activate,add
+        from data.fx_currency_release import validate_release
+        from data.fx_feature_recipes import MOMENTUM_CONFIGURATION_PROFILE
+        from data.fx_records import make_record
+        store=FeatureStore(self.root)
+        original=store.resolve(self.release['body']['feature_catalog'])
+        catalog=build_momentum_catalog(self.root,reference(original))
+        self.assertEqual(catalog['body']['configuration_profile'],MOMENTUM_CONFIGURATION_PROFILE)
+        self.assertEqual(len(catalog['body']['recipes']),53)
+        self.assertEqual(len(catalog['body']['bindings']),6678)
+        self.assertEqual(catalog['body']['price_catalog'],original['body']['price_catalog'])
+        self.assertTrue(all(b in original['body']['bindings'] for b in catalog['body']['bindings']))
+        store.install_record(catalog)
+        body=deepcopy(self.release['body']);body['feature_catalog']=reference(catalog)
+        release=add(store,'onboarding_evidence',body);activate(self.root,release)
+        self.addCleanup(activate,self.root,self.release)
+        with patch('data.fx_currency_release.read_materialization',side_effect=AssertionError('Bulk numerical replay forbidden in metadata mode')):
+            validate_release(self.root,release,numerical=False)
+        self.assertEqual(len(records(self.root)),53)
+        first=catalog['body']['recipes'][0]['recipe']
+        self.assertEqual(len(bindings(self.root,first)),126)
+        self.assertEqual(release['body']['research_spec'],self.release['body']['research_spec'])
+        bad_body=deepcopy(catalog['body']);bad_body['recipes'].pop()
+        bad=make_record('onboarding_evidence',bad_body);store.install_record(bad)
+        bad_release=add(store,'onboarding_evidence',dict(body,feature_catalog=reference(bad)))
+        activate(self.root,bad_release)
+        with self.assertRaisesRegex(ValueError,'Incomplete currency Feature family'):records(self.root)
+
 class CurrencySemanticsTests(unittest.TestCase):
     def test_downside_is_recomputed_on_inverse_price_not_sign_flipped(self):
         from data.transformations.numeric import calculate
