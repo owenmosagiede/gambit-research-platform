@@ -129,6 +129,7 @@ def build_momentum_catalog(root, catalog_ref):
     from data.fx_records import make_record as catalog_record
     store=FeatureStore(root);original=store.resolve(catalog_ref);body=original['body']
     if body.get('kind')!='fx_currency_feature_catalog':raise ValueError('Expected currency Feature catalog')
+    configuration_profile(body)
     _,instruments=resolve_prices(root,body['price_catalog'])
     registry=Registry(root);policy=get_policy(root)
     if body['evaluation_policy']!=reference(policy):raise ValueError('Currency Feature policy differs')
