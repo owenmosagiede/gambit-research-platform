@@ -205,6 +205,38 @@ class BatchReleaseGateTests(unittest.TestCase):
         save(self.folder/'manifest.json',{'schema':schema,'batch_id':self.bid})
         if state is not None:save(self.folder/'state.json',{'state':state})
 
+    def ordinary_jobs(self):
+        from runtime.research_jobs import ResearchJobs
+        from test_research_runtime import Adapter, KernelSpy, profile
+        (self.root/'config').mkdir(exist_ok=True)
+        (self.root/'config/research_execution.json').write_text(json.dumps(profile()))
+        return ResearchJobs(self.root, adapter=Adapter(), kernels=KernelSpy())
+
+    def test_intake_journal_without_envelope_blocks_release_without_repair(self):
+        from unittest.mock import patch
+        from test_research_runtime import intent
+        jobs=self.ordinary_jobs();request=intent()
+        with patch.object(jobs,'_ensure_recorded',side_effect=OSError('Interrupted publication')):
+            with self.assertRaises(OSError):jobs.submit(request)
+        self.assertFalse(jobs._submission_path(request['request_id']).exists())
+        before={str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        with self.assertRaisesRegex(RuntimeError,'authoritative job event'):self.machine.queue()
+        self.assertEqual(before,{str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+
+    def test_completed_intake_alias_is_read_only_but_mismatched_alias_blocks(self):
+        import uuid
+        from test_research_runtime import intent
+        from runtime.experiment_identity import IdentityIndex, save
+        request=intent();jobs=self.ordinary_jobs();jobs.submit(request);jobs.run_pending_once()
+        alias=dict(request,request_id=str(uuid.uuid4()));jobs.submit(alias)
+        before={str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        self.assertEqual(self.machine.queue(),[])
+        self.assertEqual(before,{str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+        index=IdentityIndex(jobs);journal=index.journal(alias['request_id'])
+        journal['intent']['expected_direction']='NEGATIVE'
+        save(index.journal_path(alias['request_id']),journal,mutable=True)
+        with self.assertRaisesRegex(RuntimeError,'differs from canonical'):self.machine.queue()
+
     def test_paused_batch_blocks_code_release_without_jobs(self):
         from legacy_batch_fixture import save
         self.record();before={str(path):path.read_bytes() for path in self.root.rglob('*') if path.is_file()}

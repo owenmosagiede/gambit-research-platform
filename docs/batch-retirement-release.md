@@ -33,6 +33,9 @@ does **not** replace `/opt/gambit/release-control`; its existing checksum/comple
 state checks continue through the retained import. Installing the stricter
 controller is a separate explicit operator change, not an implied deployment step.
 Both versions independently reject an active ordinary experiment queue.
+The updated source also checks durable intake journals without repairing them;
+an interrupted publication or an alias that disagrees with its canonical
+submission blocks release until ordinary intake recovery resolves it.
 
 ## Exact implementation review
 
