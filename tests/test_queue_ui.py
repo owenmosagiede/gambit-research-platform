@@ -13,7 +13,7 @@ def catalog(status='queued'):
                          'schedule_note':'Lookbacks and forecast horizons use scheduled weekdays.'}}],
             'issues':[],'worker':{'healthy':True}}
 
-def ui(responses,steps=(),saved=None,storage_error=False,client=None):
+def ui(responses,steps=(),saved=None,storage_error=False,client=None,hold=()):
     harness=r'''
 const fs=require('fs'),vm=require('vm'),input=JSON.parse(fs.readFileSync(0,'utf8'));
 let creations=0;
@@ -27,17 +27,23 @@ const ids=Object.fromEntries(['queue-board','queue-status','queue-refresh','queu
 ids.feature.options=[{value:JSON.stringify(input.payload.feature),textContent:'Log Skip Recent Momentum'}];
 ids.scope.options=[{value:JSON.stringify(input.payload.scope),textContent:'AUDUSD'}];
 const saved={...(input.saved||{})};
-let seq=0,offset=0;const timers=new Map(),calls=[],events={},sent=[];
+let seq=0,offset=0;const timers=new Map(),calls=[],events={},sent=[],pending=[];
+const response=value=>{if(value.error&&!value.http)throw Error('network');return {ok:!value.http,status:value.http||200,json:async()=>value};};
 const context={document:{getElementById:id=>ids[id],createElement:tag=>new Element(tag)},AbortController,
  CustomEvent:class {constructor(type,options){this.type=type;this.detail=options.detail;}},
  window:{researchSubmissionState:input.client,location:{hash:'#experiment'},localStorage:{getItem:key=>saved[key]||null,setItem:(key,value)=>{if(input.storage_error)throw Error('storage unavailable');saved[key]=value;}},setTimeout:(fn,ms)=>{timers.set(++seq,{fn,ms});return seq;},clearTimeout:id=>timers.delete(id),addEventListener:(n,fn)=>events[n]=fn,dispatchEvent:e=>sent.push(e)},
- fetch:async(url,options)=>{calls.push({url,method:options.method,body:options.body});const value=input.responses[Math.min(offset++,input.responses.length-1)];if(value.error&&!value.http)throw Error('network');return {ok:!value.http,status:value.http||200,json:async()=>value};}};
+ fetch:async(url,options)=>{calls.push({url,method:options.method,body:options.body});const index=offset++,value=input.responses[Math.min(index,input.responses.length-1)];
+ if(input.hold.includes(index))return new Promise((resolve,reject)=>{pending.push({resolve,reject,value});options.signal.addEventListener('abort',()=>reject(Error('timeout')),{once:true});});
+ return response(value);}};
 const walk=n=>[n,...n.children.flatMap(walk)];const tree=n=>({text:n.textContent,tag:n.tag,children:n.children.map(tree)});const views=[];
 const flush=()=>new Promise(r=>setImmediate(r));
-function snap(){views.push({board:tree(ids['queue-board']),ledger:tree(ids['ledger-items']),ledgerStatus:ids['ledger-status'].textContent,notice:ids['queue-action-status'].textContent,saved:{...saved},status:ids['queue-status'].textContent,buttons:walk(ids['queue-board']).filter(n=>n.tag==='button').map(n=>n.serial),buttonLabels:[...walk(ids['queue-board']),...walk(ids['ledger-items'])].filter(n=>n.tag==='button').map(n=>n.textContent),registeredEvents:Object.keys(events),calls:[...calls],sent:[...sent],timers:[...timers.values()].map(t=>t.ms)});}
+function snap(){views.push({board:tree(ids['queue-board']),ledger:tree(ids['ledger-items']),ledgerStatus:ids['ledger-status'].textContent,queueBusy:ids['queue-board']['aria-busy'],ledgerBusy:ids['ledger-items']['aria-busy'],notice:ids['queue-action-status'].textContent,saved:{...saved},status:ids['queue-status'].textContent,buttons:walk(ids['queue-board']).filter(n=>n.tag==='button').map(n=>n.serial),buttonLabels:[...walk(ids['queue-board']),...walk(ids['ledger-items'])].filter(n=>n.tag==='button').map(n=>n.textContent),registeredEvents:Object.keys(events),calls:[...calls],sent:[...sent],timers:[...timers.values()].map(t=>t.ms)});}
 (async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),context);await flush();snap();
 for(const step of input.steps){
  if(step==='poll'){const t=[...timers].find(([,t])=>t.ms===5000);if(t){timers.delete(t[0]);t[1].fn();}}
+ if(step==='timeout'){const t=[...timers].find(([,t])=>t.ms===20000);if(t){timers.delete(t[0]);t[1].fn();}}
+ if(step==='refresh')ids['queue-refresh'].listeners.click();
+ if(typeof step==='object'&&step.settle!==undefined){const p=pending[step.settle];if(step.error)p.reject(Error('network'));else p.resolve(response(step.value||p.value));}
  if(typeof step==='object'&&step.click){walk(ids['queue-board']).find(n=>n.tag==='button'&&n.textContent===step.click)?.listeners.click();}
  if(typeof step==='object'&&step.client){events['research-submission-state']?.({detail:step.client});}
  if(step==='dismiss'){walk(ids['queue-board']).find(n=>n.className==='queue-remove').listeners.click();}
@@ -50,10 +56,56 @@ for(const step of input.steps){
 '''
     node=shutil.which('node')
     if not node:raise unittest.SkipTest('Node unavailable')
-    result=subprocess.run([node,'-e',harness],input=json.dumps({'script':str(ROOT/'ui/queue.js'),'responses':responses,'steps':steps,'payload':payload(),'saved':saved,'storage_error':storage_error,'client':client}),text=True,capture_output=True,check=True)
+    result=subprocess.run([node,'-e',harness],input=json.dumps({'script':str(ROOT/'ui/queue.js'),'responses':responses,'steps':steps,'payload':payload(),'saved':saved,'storage_error':storage_error,'client':client,'hold':list(hold)}),text=True,capture_output=True,check=True)
     return json.loads(result.stdout)
 
 class QueueUITests(unittest.TestCase):
+    def test_initial_loading_and_timeout_do_not_claim_there_are_no_records(self):
+        views=ui([catalog()],['refresh','timeout'],hold=[0])
+        for view in views:
+            self.assertNotIn('No submissions',all_text(view['board']))
+            self.assertNotIn('No saved submissions',all_text(view['ledger']))
+            self.assertNotIn('0 queue items',view['status'])
+            self.assertNotIn('0 of 0',view['ledgerStatus'])
+        self.assertIn('Loading',views[0]['status'])
+        self.assertEqual(views[0]['queueBusy'],'true')
+        self.assertEqual(len(views[1]['calls']),1)
+        self.assertIn('unavailable',views[-1]['status'])
+        self.assertIn('unavailable',views[-1]['ledgerStatus'])
+        self.assertEqual(views[-1]['queueBusy'],'false')
+
+    def test_empty_state_is_shown_only_after_a_verified_response(self):
+        empty=catalog();empty['items']=[]
+        views=ui([empty],[{'settle':0}],hold=[0])
+        self.assertNotIn('No submissions',all_text(views[0]['board']))
+        self.assertIn('No submissions',all_text(views[-1]['board']))
+        self.assertIn('0 queue items',views[-1]['status'])
+        self.assertIn('0 of 0',views[-1]['ledgerStatus'])
+
+    def test_failed_refresh_keeps_records_and_stale_label_after_filtering(self):
+        c=catalog('blocked');c['items'][0]['job']['attempt_id']='attempt-fixture'
+        views=ui([c,{'error':True},c],['poll',{'filter':'search','value':'momentum'},'dismiss','poll'])
+        for view in views[1:4]:
+            self.assertIn(REQUEST_ID,all_text(view['ledger']))
+            self.assertIn('last verified',view['ledgerStatus'])
+            self.assertIn('last verified status',view['status'])
+        self.assertIn(REQUEST_ID,all_text(views[1]['board']))
+        self.assertNotIn('may be out of date',views[-1]['status'])
+        self.assertNotIn('could not be refreshed',views[-1]['ledgerStatus'])
+
+    def test_partial_catalog_does_not_report_unverified_records_as_absent(self):
+        c=catalog();c['items']=[];c['issues']=[{'request_id':REQUEST_ID}]
+        view=ui([c])[0]
+        self.assertIn('No verified submissions',all_text(view['board']))
+        self.assertIn('No verified saved submissions',all_text(view['ledger']))
+        self.assertIn(REQUEST_ID,view['status'])
+
+    def test_malformed_refresh_keeps_last_verified_history(self):
+        valid=catalog('succeeded');invalid=catalog('succeeded');del invalid['items'][0]['job']['updated_at']
+        view=ui([valid,invalid],['poll'])[-1]
+        self.assertIn(REQUEST_ID,all_text(view['ledger']))
+        self.assertIn('last verified',view['ledgerStatus'])
+
     def test_preparation_checkpoint_is_separate_from_research_outcomes(self):
         c=catalog('preparing');j=c['items'][0]['job'];j['stage']='P1 preparation'
         j['preparation_progress']={'phase':'P1','members_completed':1,'members_total':7,'batches_completed':3,

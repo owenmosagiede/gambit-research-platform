@@ -123,13 +123,21 @@ observations and references remain intact. See [specification 21](../../specs/21
 
 ## Signal Library
 
-`GET /api/signal-library-summaries` supplies the table and sidebar. It groups only
-represented stored FX outputs into one reusable recipe configuration per entry;
-it does not list every unmaterialized registered recipe. Summary names are generic,
-source is the required input type, and transformation order/parameters come from
-the reusable registry. Recipe observations display `N/A`; output details retain
-actual instruments, providers, observation counts, coverage, readiness and lineage.
-Non-FX entries retain their existing presentation.
+`GET /api/signal-library-summaries` lists only exact Feature definitions with
+verified completed research relationships. Rejected, failed and unresolved
+scientific outcomes remain visible. The list verifies relationship, trial,
+admission, validation and definition metadata; it does not scan stored output
+folders, open materialization manifests or verify numerical artifacts. Each entry
+has `outputs_deferred: true` and an exact `outputs_href`.
+
+`GET /api/signal-library-summaries/<FEATURE_OR_RECIPE_ID>/outputs` verifies that
+selected definition still has completed research and returns its stored output
+metadata on demand. Only that recipe's exact mapped Signal folders are read;
+unrelated prepared outputs are not inspected. Missing or corrupt selected output
+metadata yields explicit partial issues without removing verified research from
+the main list. Both projections use dependency-tracked caches: new research
+invalidates the list, while output publication invalidates the selected output
+view. Full observation verification remains in the existing detail reader.
 
 `GET /api/signal-library-outputs/<SIGNAL_ID>?materialization_id=<MATERIALIZATION_ID>`
 retrieves the exact historical output underlying a grouped recipe. The existing

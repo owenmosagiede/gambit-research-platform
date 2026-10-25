@@ -16,8 +16,9 @@ from api.scope_library import (SCOPE_ID, ScopeNotFound, InvalidScopeQuery,
 
 from api.feature_recipes import InvalidFeatureRecipeQuery, list_feature_recipes
 from api.feature_library import InvalidFeatureQuery, FeatureNotFound, list_feature_library, get_feature_resolution
-from api.signal_summaries import list_signal_summaries, get_signal_output_detail
+from api.signal_summaries import list_signal_summaries, list_signal_outputs, get_signal_output_detail
 from api.experiment_labels import with_experiment_labels
+from api.experiment_views import list_experiments, get_experiment
 from research.contracts import readiness, request_id, ResearchError, ResearchConflict, ResearchBlocked
 from research.store import ResearchStore
 from services.research_worker import WebResearchJobs
@@ -94,16 +95,30 @@ class ApplicationRoutes:
             return
         if target.path=='/api/experiments':
             if target.query:self.error(400,'UNSUPPORTED_QUERY','Use the queue endpoint without query parameters.',head);return
-            try:value=with_experiment_labels(root,jobs,jobs.list_jobs())
+            try:value=with_experiment_labels(root,jobs,list_experiments(jobs))
             except Exception:self.error(503,'QUEUE_UNAVAILABLE','The experiment queue could not be verified.',head);return
             self.send_json(200,value,head);return
         if target.path.startswith('/api/experiments/'):
 
             if target.query:self.error(400,'UNSUPPORTED_QUERY','Use the exact request ID.',head);return
-            try:value=jobs.get(request_id(target.path[len('/api/experiments/'):]))
+            try:value=get_experiment(jobs,request_id(target.path[len('/api/experiments/'):]))
             except (ResearchError,FileNotFoundError):self.error(404,'NOT_FOUND','This research request is unavailable.',head);return
             except Exception:self.error(503,'JOB_UNAVAILABLE','The research request could not be verified.',head);return
             self.send_json(200,{'job':value},head);return
+        if target.path.startswith('/api/signal-library-summaries/'):
+            import re
+            match = re.fullmatch(r'/api/signal-library-summaries/(FEATURE_(?:RECIPE_)?[0-9a-f]{64})/outputs', target.path)
+            if not match:
+                self.error(404,'NOT_FOUND','This researched Feature is not available.',head);return
+            if target.query:
+                self.error(400,'INVALID_RECIPE','Use an exact researched Feature outputs address.',head);return
+            identifier = match[1]
+            try:value=catalogs.get_verified(('signal_outputs',identifier),root,lambda:list_signal_outputs(root,identifier))
+            except SignalNotFound:
+                self.error(404,'NOT_FOUND','This researched Feature is not available.',head);return
+            except Exception:
+                self.error(503,'LIBRARY_UNAVAILABLE','Stored outputs for this researched Feature could not be loaded.',head);return
+            self.send_json(200,value,head);return
         if target.path.startswith('/api/feature-research/'):
             identifier=target.path[len('/api/feature-research/'):]
             if target.query or not RECIPE.fullmatch(identifier):

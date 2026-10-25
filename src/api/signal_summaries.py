@@ -302,54 +302,85 @@ def _recipe_projector(root):
 
 
 def list_signal_summaries(root):
-    store=FeatureStore(root);folder=store.path(ENTRIES);groups={};legacy=[];issues=[]
-    research_catalog=_research_catalog(root,issues)
-    for identifier,rows in research_catalog.items():
+    """List verified researched definitions; stored outputs are an explicit detail read.
+
+    In particular, unrelated preparation and output publication cannot lengthen
+    this read or invalidate its dependency-tracked cache.
+    """
+    store=FeatureStore(root);entries=[];issues=[]
+    for identifier,rows in _research_catalog(root,issues).items():
         try:
             refs={canonical_bytes(row['recipe']) for row in rows}
             if len(refs)!=1:raise PublicationError('Conflicting exact researched Feature references')
             feature=store.resolve(rows[0]['recipe']);entry=_registered_entry(store,feature)
-            groups[identifier]=dict(entry,research=_research_projection(rows))
+            entry.update(research=_research_projection(rows),details_deferred=True,
+                outputs_deferred=True,outputs_href='/api/signal-library-summaries/'+identifier+'/outputs')
+            entry['signal_id']=entry.get('signal_id','SIGNAL_'+identifier.removeprefix('FEATURE_RECIPE_'))
+            entries.append(entry)
         except (ValueError,KeyError,TypeError,OSError,ValidationError):
             issues.append({'code':'UNAVAILABLE_RESEARCHED_FEATURE','record_id':identifier,
                 'message':'The exact Feature definition referenced by research could not be verified.'})
-    project_feature=_recipe_projector(root)
-    for path in sorted(catalog_glob(folder, '*')):
-        if path.name.startswith('.'):continue
-        sid=path.name if SIGNAL_ID.fullmatch(path.name) else None
-        try:
-            if sid is None or not path.is_dir():raise SignalNotFound('Unknown Signal')
-            loaded_store,loaded=_load_output_metadata(root,sid,store=store)
-            if loaded[0]['metadata']['dataset']['body'].get('kind')!='fx_constructed_dataset':
-                # Existing non-FX summary fields and presentation are unchanged.
-                summary=_metadata_summary(loaded_store,loaded)
-                feature_id=loaded[0]['feature']['id']
-                group=groups.get(feature_id)
-                if group is None:continue
-                if group['recipe']!=summary['feature']:raise PublicationError('Research Feature differs from output')
-                summary['scientific_state']='results_linked'
-                groups.pop(feature_id)
-                legacy.append({'kind':'stored_signal','id':sid,'signal':summary,'research':group['research']})
-                continue
-            recipe=project_feature(loaded[0]['feature'])
-            if recipe['id'] not in groups:continue
-            proposed=_recipe_presentation(loaded_store,recipe)
-            output=_output_summary(loaded_store,loaded)
-            group=groups[recipe['id']]
-            if group['recipe']!=proposed['recipe']:raise PublicationError('Conflicting exact reusable recipe')
-            group['outputs'].append(output)
-        except Exception:
-            issues.append({'code':'UNAVAILABLE_SIGNAL','signal_id':sid,
-                'message':'A stored Signal or its reusable recipe mapping could not be verified and was excluded.'})
-    entries=[]
-    for group in groups.values():
-        group['outputs'].sort(key=lambda output:(output['source']['series_id'],output['signal_id']))
-        group['signal_id']=group.get('signal_id','SIGNAL_'+group['id'].removeprefix('FEATURE_RECIPE_'))
-        group['details_deferred']=True
-        entries.append(group)
-    entries.extend(legacy)
-    entries.sort(key=lambda entry:((entry['name'] if entry['kind']!='stored_signal' else entry['signal']['name']).casefold(),entry['id']))
+    entries.sort(key=lambda entry:(entry['name'].casefold(),entry['id']))
     return {'schema_version':'1.0.0','entry_count':len(entries),'entries':entries,'issues':issues}
+
+
+def _output_candidates(root, feature):
+    """Exact selected-recipe Feature references, without a stored-output scan."""
+    if feature['record_type']!='feature_recipe_definition':
+        return {feature['body']['signal_id']:reference(feature)}
+    selected=reference(feature)
+    if feature['body']['input_contract']['source_profile']=='fx_currency_price.1.0.0':
+        from data.fx_currency_features import context, records
+        _,catalog,_=context(root);approved=records(root).get(feature['id'])
+        if approved is None or reference(approved)!=selected:
+            raise PublicationError('Unknown exact currency recipe')
+        config=next(r['configuration']['id'] for r in catalog['body']['recipes'] if r['recipe']==selected)
+        bindings=[b['feature'] for b in catalog['body']['bindings'] if b['configuration_id']==config]
+    else:
+        mapping,_=reusable_recipe_mapping_context(root)
+        bindings=[b['feature'] for b in mapping.values() if reference(b['recipe'])==selected]
+    if not bindings:raise PublicationError('No exact registered output mapping for researched recipe')
+    result={}
+    for binding in bindings:
+        sid='SIGNAL_'+binding['id'].removeprefix('FEATURE_')
+        if not SIGNAL_ID.fullmatch(sid) or result.setdefault(sid,binding)!=binding:
+            raise PublicationError('Conflicting selected-recipe output identity')
+    return result
+
+
+def list_signal_outputs(root, identifier):
+    """Load outputs for one verified researched definition, only on demand."""
+    import re
+    if not isinstance(identifier,str) or not re.fullmatch(r'FEATURE_(?:RECIPE_)?[0-9a-f]{64}',identifier):
+        raise SignalNotFound('Unknown researched Feature')
+    summaries=list_signal_summaries(root)
+    entry=next((e for e in summaries['entries'] if e['id']==identifier),None)
+    if entry is None:raise SignalNotFound('No verified research for this Feature')
+    store=FeatureStore(root);feature=store.resolve(entry['recipe']);outputs=[];issues=[]
+    try:
+        candidates=_output_candidates(root,feature)
+    except (ValueError,KeyError,TypeError,OSError,ValidationError):
+        return {'schema_version':'1.0.0','recipe':entry['recipe'],'outputs':[],
+            'issues':[{'code':'UNAVAILABLE_OUTPUT_MAPPING','record_id':identifier,
+                'message':'Stored outputs could not be mapped to the exact researched Feature.'}]}
+    project=_recipe_projector(root) if feature['record_type']=='feature_recipe_definition' else None
+    for sid,binding in sorted(candidates.items()):
+        try:
+            # Watch absent folders as well, so later output publication invalidates
+            # this recipe's cached detail without watching unrelated instruments.
+            if not list(catalog_glob(store.path(ENTRIES+'/'+sid),'*.json')):continue
+            loaded_store,loaded=_load_output_metadata(root,sid,store=store)
+            if reference(loaded[0]['feature'])!=binding:
+                raise PublicationError('Stored output differs from selected recipe binding')
+            if project and reference(project(loaded[0]['feature']))!=entry['recipe']:
+                raise PublicationError('Stored output calculation differs from researched recipe')
+            output=_output_summary(loaded_store,loaded)
+            outputs.append(output)
+        except (ValueError,KeyError,TypeError,OSError,ValidationError):
+            issues.append({'code':'UNAVAILABLE_SIGNAL','signal_id':sid,
+                'message':'A selected stored output could not be verified and was excluded.'})
+    outputs.sort(key=lambda output:(output['source']['series_id'],output['signal_id']))
+    return {'schema_version':'1.0.0','recipe':entry['recipe'],'outputs':outputs,'issues':issues}
 
 
 def get_signal_output_detail(root,identifier,materialization_id=None):
