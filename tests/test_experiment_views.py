@@ -202,6 +202,17 @@ class ExperimentViewsTests(unittest.TestCase):
         second = get_experiment(self.jobs, rid)
         self.assertEqual(second['submission_receipt']['request_id'], rid)
 
+    def test_retargeted_submission_directory_does_not_reuse_old_verification(self):
+        rid = self.submit(); directory = self.jobs._submission_path(rid).parent
+        first = directory.with_name('submissions_first'); directory.rename(first)
+        directory.symlink_to(first.name, target_is_directory=True)
+        self.assertEqual(len(list_experiments(self.jobs)['items']), 1)
+        second = directory.with_name('submissions_second'); second.mkdir()
+        (second / (rid + '.json')).write_text('broken')
+        directory.unlink(); directory.symlink_to(second.name, target_is_directory=True)
+        value = list_experiments(self.jobs)
+        self.assertEqual(value['items'], []); self.assertTrue(value['issues'])
+
     def test_legacy_envelope_without_frozen_plan_remains_visible(self):
         rid = self.submit(); index = IdentityIndex(self.jobs)
         index.journal_path(rid).unlink()
