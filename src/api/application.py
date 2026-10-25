@@ -31,7 +31,6 @@ ASSETS = dict(PIT_ASSETS, **{'/signals.js': ('signals.js', 'text/javascript; cha
                            '/scopes.js': ('scopes.js', 'text/javascript; charset=utf-8'),
                            '/features.js': ('features.js', 'text/javascript; charset=utf-8'),
                            '/queue.js': ('queue.js', 'text/javascript; charset=utf-8'),
-                           '/batches.js': ('batches.js', 'text/javascript; charset=utf-8'),
                            '/submission.js': ('submission.js', 'text/javascript; charset=utf-8')})
 
 
@@ -47,6 +46,13 @@ ASSETS.update({
     '/brand/gambit.css': ('brand/gambit.css', 'text/css; charset=utf-8'),
     '/gambit-theme.css': ('gambit-theme.css', 'text/css; charset=utf-8'),
 })
+
+
+BATCH_RETIRED_MESSAGE = 'Research batches have been retired. Submit individual experiments through the research API.'
+
+
+def is_retired_batch_path(path):
+    return path == '/api/batches' or path.startswith('/api/batches/')
 
 
 class ApplicationRoutes:
@@ -82,22 +88,9 @@ class ApplicationRoutes:
                 self.send_json(200,value,head)
             except Exception:self.error(503,'RESEARCH_SPEC_UNAVAILABLE','The backend Research Spec could not be verified.',head)
             return
-        if target.path == '/api/batches' or target.path.startswith('/api/batches/'):
-            from runtime.research_batches import ResearchBatches, checked
-            batches = ResearchBatches(jobs)
-            if target.query:
-                self.error(400, 'UNSUPPORTED_QUERY', 'Use an exact batch ID.', head); return
-            try:
-                if target.path == '/api/batches':
-                    value = {'batches': [{'batch_id': p.parent.name, 'name': checked(p)['request']['name'],
-                        'state': checked(p.parent/'state.json') if (p.parent/'state.json').exists() else {'state':'previewing'}}
-                        for p in sorted(batches.base.glob('*/manifest.json'))]}
-                else:
-                    value = batches.status(request_id(target.path[len('/api/batches/'):]))
-                self.send_json(200, value, head)
-            except FileNotFoundError: self.error(404, 'NOT_FOUND', 'Batch not found.', head)
-            except ResearchError: self.error(409, 'BATCH_UNVERIFIED', 'Batch records could not be verified.', head)
-            except Exception: self.error(503, 'BATCH_UNAVAILABLE', 'Batch status is temporarily unavailable.', head)
+        if is_retired_batch_path(target.path):
+            self.send_json(410, {'error': {'code': 'BATCH_RETIRED', 'message': BATCH_RETIRED_MESSAGE},
+                                 'recorded': False}, head)
             return
         if target.path=='/api/experiments':
             if target.query:self.error(400,'UNSUPPORTED_QUERY','Use the queue endpoint without query parameters.',head);return
@@ -291,26 +284,9 @@ class ApplicationRoutes:
     def write(self,data):
         jobs=self.jobs
         target=urlsplit(self.path)
-        if target.path == '/api/batches' or target.path.startswith('/api/batches/'):
-            from runtime.research_batches import ResearchBatches
-            from data.alfred_onboarding import strict_json
-            try:
-                if target.scheme or target.netloc or target.query: raise ResearchError('Use exact batch endpoints')
-                value = strict_json(data); batches = ResearchBatches(jobs)
-                if target.path == '/api/batches':
-                    result = batches.create(value)
-                else:
-                    parts = target.path[len('/api/batches/'):].split('/')
-                    if len(parts) != 2: raise ResearchError('Use approve, pause or resume')
-                    bid, action = parts; request_id(bid)
-                    if action == 'approve': result = batches.approve(bid, value)
-                    elif action in ('pause', 'resume') and value == {}: result = batches.control(bid, action)
-                    else: raise ResearchError('Unsupported batch action')
-                self.send_json(202, result)
-            except ResearchConflict as exc: self.error(409, 'BATCH_CONFLICT', str(exc))
-            except FileNotFoundError: self.error(404, 'NOT_FOUND', 'Batch not found.')
-            except (ResearchError, ValueError, TypeError, UnicodeError) as exc: self.error(400, 'INVALID_BATCH', str(exc))
-            except Exception: self.error(503, 'BATCH_UNAVAILABLE', 'Receipt uncertain. Check the same batch ID before retrying.')
+        if is_retired_batch_path(target.path):
+            self.send_json(410, {'error': {'code': 'BATCH_RETIRED', 'message': BATCH_RETIRED_MESSAGE},
+                                 'recorded': False})
             return
         submit=target.path=='/api/experiments'
         action=None;rid=None

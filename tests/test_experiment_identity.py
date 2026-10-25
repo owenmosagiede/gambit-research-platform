@@ -11,7 +11,6 @@ import uuid
 from research.contracts import digest, canonical, ResearchConflict
 from research.store import install_bytes, lock
 from runtime.research_jobs import ResearchJobs, implementation
-from runtime.research_batches import ResearchBatches
 from runtime.experiment_identity import IdentityIndex, freeze, scientific_key
 from test_research_runtime import Adapter, KernelSpy, intent, profile
 
@@ -28,13 +27,12 @@ class IntakeTests(TestCase):
     def packet(self, request):
         return freeze(self.jobs, {k: v for k, v in request.items() if k != 'request_id'}, implementation())
 
-    def test_different_ids_mixed_route_race_freezes_once_per_submission_no_calculation(self):
-        request = intent(); packet = self.packet(request)
+    def test_different_ids_concurrent_submissions_create_one_experiment_without_calculation(self):
+        request = intent()
         def submit(i):
             jobs = ResearchJobs(self.root, adapter=Adapter(), kernels=KernelSpy())
             r = dict(request, request_id=str(uuid.uuid4()))
-            kwargs = {'_batch_packet':packet, '_batch_duplicate_policy':'reuse_exact'} if i % 3 == 0 else {}
-            result = jobs.submit(r, **kwargs)
+            result = jobs.submit(r)
             self.assertFalse(jobs.adapter.preparations)
             self.assertFalse(jobs.kernels.calls)
             return r, result
@@ -167,11 +165,15 @@ class IntakeTests(TestCase):
             state=index.rebuild()
         self.assertEqual(len(state['entries']),1);self.assertFalse(state['issues'])
 
-    def test_batch_frozen_input_change_is_rejected_at_dispatch(self):
-        r=intent();packet=self.packet(r);packet['frozen_plan']['knowledge_cutoff']='changed'
-        with self.assertRaisesRegex(ResearchConflict,'changed after preview'):
-            self.jobs.submit(r,_batch_packet=packet,_batch_duplicate_policy='reuse_exact')
-        self.assertFalse(self.jobs._submission_path(r['request_id']).exists())
+    def test_retired_batch_overrides_are_rejected_before_intake(self):
+        r=intent()
+        before={str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        for keyword,value in (('_batch_packet',{}),('_batch_duplicate_policy','reuse_exact'),('_batch_reuse_id',r['request_id'])):
+            with self.subTest(keyword=keyword),self.assertRaisesRegex(TypeError,keyword):
+                self.jobs.submit(r,**{keyword:value})
+        after={str(p.relative_to(self.root)):p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        self.assertEqual(after,before)
+        self.assertEqual(self.adapter.resolve_calls,0)
 
     def test_changed_phase_target_and_membership_never_reuse_old_science(self):
         request=intent();first,_=self.jobs.submit(request);resolve=self.adapter.resolve_plan

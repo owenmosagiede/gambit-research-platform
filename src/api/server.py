@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
-from api.application import ApplicationRoutes, ASSETS
+from api.application import ApplicationRoutes, ASSETS, is_retired_batch_path
 from api.catalog_cache import CatalogCache
 from research.contracts import ResearchError, ResearchConflict, ResearchBlocked
 from services.research_worker import WebResearchJobs
@@ -75,7 +75,12 @@ def make_server(root,host='127.0.0.1',port=0,research_jobs=None):
             self.close_connection=True
             if not self.allowed_request():return
             target=urlsplit(self.path)
-            submit=(target.path=='/api/experiments' or target.path=='/api/batches' or target.path.startswith('/api/batches/'))
+            if is_retired_batch_path(target.path):
+                if self.headers.get('Origin')!='http://'+self.headers.get('Host',''):
+                    self.error(403,'INVALID_ORIGIN','Submit is available from this local application only.');return
+                # Compatibility response only: do not read or parse a batch body.
+                self.dispatch(data=b'');return
+            submit=target.path=='/api/experiments'
             action=None;rid=None
             if target.path.startswith('/api/experiments/'):
                 parts=target.path[len('/api/experiments/'):].split('/')
@@ -93,7 +98,7 @@ def make_server(root,host='127.0.0.1',port=0,research_jobs=None):
                 lengths=self.headers.get_all('Content-Length',[])
                 if len(lengths)!=1:raise ValueError()
                 length=int(lengths[0])
-                if not 1<=length<=(262144 if target.path.startswith('/api/batches') else 16384):raise ValueError()
+                if not 1<=length<=16384:raise ValueError()
             except ValueError:
                 self.error(413,'INVALID_LENGTH','Request body exceeds the endpoint limit.');return
             try:

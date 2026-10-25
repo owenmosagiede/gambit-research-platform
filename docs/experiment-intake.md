@@ -1,6 +1,7 @@
 # Canonical experiment intake
 
-All UI, HTTP/agent and batch requests call `ResearchJobs.submit`. Intake resolves
+Authenticated experiment requests call `ResearchJobs.submit`. The UI is a read-only
+contract reference; the retired batch workflow cannot submit work. Intake resolves
 metadata only and freezes the exact plan before recording a new experiment.
 Preparation and P1/P2 remain the existing worker's responsibility.
 
@@ -27,10 +28,10 @@ original implementation. `different` permits a new execution for the same input
 metadata when a reviewed scientific implementation change warrants one. Unknown
 release differences require reconciliation rather than a silent rerun.
 
-The initial registry contains no cross-release approvals. In particular, historical
-results must be reconciled and compatibility reviewed against the live runtime
-before deploying this release. This is a safety gate, not an assertion that all
-maintenance releases change the science.
+Cross-release approvals are limited to the exact implementation/environment pairs
+listed in that registry. Historical results must be reconciled and the live pair
+matched to its review before deployment. See `batch-retirement-release.md` for the
+batch retirement review. Unknown runtime differences remain unreviewed.
 
 ## Atomic publication and recovery
 

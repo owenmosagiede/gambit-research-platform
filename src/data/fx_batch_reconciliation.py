@@ -15,10 +15,9 @@ PREFIX = 'storage/catalog/operations/research_batches/'
 
 
 def reconcile(root, files, records, retired, ts_ids):
-    from runtime.research_batches import ResearchBatches
+    from data.legacy_batch_evidence import preview
     from runtime.research_jobs import ResearchJobs
     jobs = ResearchJobs(root)
-    batches = ResearchBatches(jobs)
     replacements, reconciled, blockers = {}, set(), []
 
     def checked(path):
@@ -66,7 +65,7 @@ def reconcile(root, files, records, retired, ts_ids):
                 raise ValueError('Approval does not reference the original manifest')
             # This is a pure preview computation over existing rows: no resolve,
             # materialization, queue repair, or fresh approval is performed.
-            if approval['approval']['preview_sha256'] != digest(batches._preview(root / base, m)):
+            if approval['approval']['preview_sha256'] != digest(preview(root / base, m)):
                 raise ValueError('Original approved preview differs')
             known = {path, base + 'approval.json', base + 'state.json'}
             retained = {}

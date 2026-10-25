@@ -31,7 +31,7 @@ class CurrencyDeletionTests(unittest.TestCase):
     def put(self,path,value):install_bytes(self.root/path,canonical(value)+b'\n')
 
     def completed_batch(self, ts_first=False):
-        from runtime.research_batches import ResearchBatches
+        from legacy_batch_fixture import ArchivedBatchFixture
         from runtime.research_jobs import ResearchJobs
         from test_research_runtime import Adapter, KernelSpy, profile, intent
         class CanonicalAdapter(Adapter):
@@ -47,24 +47,18 @@ class CurrencyDeletionTests(unittest.TestCase):
         (self.root/'config/research_execution.json').write_text(json.dumps(profile()))
         jobs=ResearchJobs(self.root,adapter=CanonicalAdapter(),kernels=KernelSpy())
         self.addCleanup(jobs.close)
-        batches=ResearchBatches(jobs);bid=str(uuid.uuid4())
+        batches=ArchivedBatchFixture(jobs);bid=str(uuid.uuid4())
         scopes=['EURUSD','FX_G10'] if ts_first else ['FX_G10','EURUSD']
         request={'batch_id':bid,'name':'Synthetic mixed completed batch',
             'features':[intent()['feature']], 'scopes':[{'id':s,'version':'1.0.0'} for s in scopes],
             'target_family':'price_return','expected_direction':'POSITIVE','duplicate_policy':'reuse_exact'}
-        batches.create(request)
-        for _ in range(4):batches.advance()
-        status=batches.status(bid)
-        self.assertTrue(status['preview_complete'])
-        batches.approve(bid,{'preview_sha256':status['preview_sha256'],'exclude_blocked':False})
-        for _ in range(12):
-            jobs.run_pending_once()
-            if batches.status(bid)['state']['state']=='completed':break
+        batches.install_completed(request)
         self.assertEqual(batches.status(bid)['state']['state'],'completed')
         return batches,bid
 
     def test_completed_mixed_batch_preserves_ts_bytes_and_read_only_history(self):
         from research.contracts import ResearchConflict
+        from runtime.research_batches import ResearchBatches
         batches,bid=self.completed_batch()  # TS index 1 must NOT be renumbered.
         base=f'storage/catalog/operations/research_batches/{bid}/'
         before=files(self.root);manifest=self.preview()
@@ -86,15 +80,11 @@ class CurrencyDeletionTests(unittest.TestCase):
         self.assertEqual(status['job_counts'],{'succeeded':1})
         self.assertEqual(status['items'][0]['index'],1)
         self.assertEqual(status['items'][0]['intent']['scope']['id'],'EURUSD')
-        for action in ('pause','resume'):
-            with self.assertRaisesRegex(ResearchConflict,'read-only'):batches.control(bid,action)
-        with self.assertRaisesRegex(ResearchConflict,'read-only'):
-            batches.approve(bid,{'preview_sha256':status['preview_sha256'],'exclude_blocked':False})
-        batches.advance()
+        with self.assertRaisesRegex(ResearchConflict,'retired'):ResearchBatches(batches.jobs)
         self.assertTrue(apply(self.root,manifest,manifest['sha256'])['reused'])
 
     def test_mixed_reconciliation_rejects_unfinished_or_corrupt_evidence(self):
-        from runtime.research_batches import save
+        from legacy_batch_fixture import save
         batches,bid=self.completed_batch(ts_first=True);directory=batches.directory(bid)
         original=(directory/'state.json').read_bytes()
         save(directory/'state.json',{'state':'paused'},mutable=True)
@@ -104,7 +94,8 @@ class CurrencyDeletionTests(unittest.TestCase):
         self.assertTrue(any('corrupt batch evidence' in b for b in self.preview()['blockers']))
 
     def test_mixed_reconciliation_rejects_unknown_files_and_forged_dispatch(self):
-        from runtime.research_batches import save,checked
+        from legacy_batch_fixture import save
+        from data.legacy_batch_evidence import checked
         batches,bid=self.completed_batch();directory=batches.directory(bid)
         extra=directory/'extra.json';extra.write_text('{}')
         self.assertTrue(any('Unknown or missing batch files' in b for b in self.preview()['blockers']))
@@ -227,18 +218,16 @@ class CurrencyDeletionTests(unittest.TestCase):
         self.assertTrue(any('Mixed' in b for b in manifest['blockers']))
         self.assertNotIn(path,manifest['delete'])
 
-    def test_maintenance_marker_blocks_resume_recovery_and_batch_dispatch(self):
+    def test_maintenance_marker_blocks_resume_recovery_and_batch_api_stays_retired(self):
         from runtime.research_jobs import ResearchJobs
         from runtime.research_batches import ResearchBatches
-        from research.contracts import ResearchBlocked
+        from research.contracts import ResearchBlocked,ResearchConflict
         self.put(MARKER,{'sha256':'interrupted'})
         jobs=ResearchJobs(self.root)
         with self.assertRaises(ResearchBlocked):jobs.resume('a0000000-0000-4000-8000-000000000001')
         with self.assertRaises(ResearchBlocked):jobs.get('a0000000-0000-4000-8000-000000000001')
         self.assertEqual(jobs._pending(),[])
-        batches=ResearchBatches(jobs)
-        self.assertIsNone(batches.advance())
-        with self.assertRaises(ResearchBlocked):batches.control('a0000000-0000-4000-8000-000000000001','resume')
+        with self.assertRaisesRegex(ResearchConflict,'retired'):ResearchBatches(jobs)
 
     def test_uncommitted_retained_intake_reservation_blocks_migration(self):
         request='a0000000-0000-4000-8000-000000000001'

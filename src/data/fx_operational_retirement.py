@@ -29,7 +29,7 @@ def validate_operational_evidence(root,index,files):
     from data.fx_currency_migration import RETIRED
     from data.alfred_onboarding import stable_read,strict_json
     from runtime.research_jobs import ResearchJobs
-    from runtime.research_batches import ResearchBatches,checked
+    from data.legacy_batch_evidence import checked, preview as frozen_preview, rows as frozen_rows
     jobs=ResearchJobs(root)
     def original(path):return strict_json(stable_read(Path(root)/path,index.files[path]['sha256']))
     for path,binding in files.items():
@@ -61,8 +61,8 @@ def validate_operational_evidence(root,index,files):
             or replacement.get('schema')!='research_batch_retained_ts_v1'
             or approval['manifest_sha256']!=manifest['sha256']):
         raise ValueError('Pilot export is not tied to a verified completed mixed batch')
-    batches=ResearchBatches(jobs);frozen=batches._preview(Path(root)/base,manifest)
-    rows=batches._rows(Path(root)/base)
+    frozen=frozen_preview(Path(root)/base,manifest)
+    rows=frozen_rows(Path(root)/base)
     items=[{k:v for k,v in row.items() if k not in ('sha256','packet_sha256')} for row in rows]
     fields={'batch_id','name','state','created_at','requested_combinations','unique_experiments','input_duplicates',
             'previewed','preview_complete','preview_sha256','preview_counts','estimates','free_bytes_on_workspace_filesystem',

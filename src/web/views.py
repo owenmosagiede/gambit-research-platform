@@ -9,7 +9,7 @@ from django.middleware.csrf import get_token
 from django.shortcuts import redirect, render
 from django.utils.html import escape
 from django.views.decorators.http import require_http_methods
-from api.application import ApplicationRoutes, ASSETS
+from api.application import ApplicationRoutes, ASSETS, is_retired_batch_path, BATCH_RETIRED_MESSAGE
 from api.catalog_cache import CatalogCache
 from data.alfred_onboarding import stable_read
 from data.alfred_pit import inside
@@ -81,10 +81,12 @@ def api(request, endpoint):
         response = denied(request, 429, 'RATE_LIMITED', 'Too many requests. Retry shortly using the same submission ID.')
         response['Retry-After'] = '60'
         return response
+    if is_retired_batch_path(request.path):
+        return denied(request, 410, 'BATCH_RETIRED', BATCH_RETIRED_MESSAGE)
     jobs, catalogs = services(str(settings.RESEARCH_ROOT))
     route = ApplicationRoutes(settings.RESEARCH_ROOT, jobs, catalogs, request.method, request.get_full_path())
     if request.method == 'POST':
-        if not settings.ALLOW_SUBMISSIONS and (request.path == '/api/experiments' or request.path.endswith('/resume') or (request.path.startswith('/api/batches/') and request.path.endswith('/approve'))):
+        if not settings.ALLOW_SUBMISSIONS and (request.path == '/api/experiments' or request.path.endswith('/resume')):
             return denied(request, 503, 'DEPLOYMENT_NOT_ACTIVATED', 'Cloud submissions are disabled until migration and recovery checks pass.')
         if request.content_type != 'application/json' or request.headers.get('Transfer-Encoding'):
             return denied(request, 415, 'INVALID_BODY', 'Use a bounded JSON request.')
@@ -92,7 +94,7 @@ def api(request, endpoint):
             length = int(request.headers.get('Content-Length', '0'))
         except ValueError:
             length = 0
-        if not 1 <= length <= (262144 if request.path.startswith('/api/batches') else 16384):
+        if not 1 <= length <= 16384:
             return denied(request, 413, 'INVALID_LENGTH', 'Request body exceeds the endpoint limit.')
         if len(request.body) != length:
             return denied(request, 400, 'INVALID_BODY', 'Incomplete request.')

@@ -113,24 +113,36 @@ class Machine:
         jobs = ResearchJobs(self.root)
         names = {p.stem for p in (self.root/'storage/catalog/submissions').glob('*.json')}
         names.update(p.stem for p in (self.root/'storage/catalog/operations/jobs').glob('*.json'))
+        # A durable intake journal reserves work even if envelope publication
+        # was interrupted. Read it without creating receipts or repairing jobs.
+        from runtime.experiment_identity import IdentityIndex
+        index = IdentityIndex(jobs); journals = {}
+        for path in sorted((index.base/'requests').glob('*.json')):
+            journal = index.journal(path.stem)
+            if journal is None: raise RuntimeError('Intake journal disappeared during release check')
+            rid = journal['canonical_request_id']
+            names.add(rid); journals.setdefault(rid, []).append(journal)
         active = []
         for rid in sorted(names):
             # Validate immutable intent/event history directly. No projection
             # repair, quarantine writes, or recursive research-writer lock.
             if jobs._incident_path(jobs._submission_path(rid)).exists():
                 raise RuntimeError('Resolve queue integrity issues before deployment')
+            if not jobs._submission_path(rid).is_file():
+                raise RuntimeError('Intake journal or job has no submission and authoritative job event')
             job = jobs._read_job(rid)
             if job is None: raise RuntimeError('Submission has no authoritative job event')
+            if rid in journals:
+                original = jobs._submission(rid)
+                identity = index.entry(original)['scientific_identity']
+                if any(j['intent'] != original['intent'] or j['scientific_identity'] != identity
+                       for j in journals[rid]):
+                    raise RuntimeError('Intake journal differs from canonical submission')
             if job['status'] in ACTIVE: active.append(rid)
         # Preview/approved/paused batches also freeze an implementation. They
         # must be completed or explicitly reconciled before a code release.
-        from runtime.research_batches import checked
-        batches=self.root/'storage/catalog/operations/research_batches'
-        for manifest in sorted(batches.glob('*/manifest.json')):
-            checked(manifest)
-            state=manifest.parent/'state.json'
-            if not state.exists() or checked(state).get('state')!='completed':
-                active.append('batch:'+manifest.parent.name)
+        from data.legacy_batch_evidence import pending
+        active.extend(pending(self.root))
         return active
 
     def idle(self):

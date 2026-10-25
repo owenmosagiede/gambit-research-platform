@@ -74,12 +74,12 @@ Opening or refreshing any page does not create a research request.
 ## Removed interface surfaces
 
 PIT Data Library and the Research batches panel are no longer part of the shipped
-workspace navigation or markup. Their scripts, `library.js` and `batches.js`, are
-retained as dormant assets for deployment compatibility but are not loaded, so
-they perform no browsing or polling from this interface. The underlying PIT data,
-source prices, Features, Targets and read APIs remain intact. Batch APIs and the
-server scheduler remain intact in this interface-only change; full backend batch
-retirement requires a separate reviewed source release.
+workspace navigation or markup. The dormant PIT script is not loaded. The former `batches.js` asset is inert
+and is no longer served; it performs no browsing or polling. The underlying PIT data,
+source prices, Features, Targets and read APIs remain intact. Research batch APIs return an explicit retirement response, the old operator CLI
+is disabled, and the worker no longer dispatches batches. Individual experiment
+submission and execution remain available. Historical operational evidence is
+retained through read-only readers.
 
 Authenticated sessions add Sign out beneath the navigation. Its layout keeps the
 label on one line. Logout still uses the existing CSRF-protected POST form.

@@ -1,3 +1,8 @@
+> Research batch execution has since been retired. This document retains the
+> historical migration procedure and its read-only batch-evidence reconciliation.
+> It does not authorize creating or resuming batches. See
+> [batch retirement](batch-retirement-release.md) for the current release checks.
+
 # Currency-reference FX migration
 
 This migration replaces the 18 legacy cross-sectional (CS) universe definitions

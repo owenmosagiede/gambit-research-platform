@@ -1,0 +1,19 @@
+{
+  "schema": "batch_retirement_review_v1",
+  "base_commit": "65146dc8ca1cc83aee6e7515d30cf4aa6318bbd4",
+  "python": "3.14.8 (main, Oct 11 2026, 23:02:34) [GCC 13.3.0]",
+  "profile": "research_execution_0.8",
+  "before_fingerprint": "bd1557ec216b03866c54dc93a5c0a9b4ae273a690471caa801ecf915ef45bdb7",
+  "after_fingerprint": "0828f436efee8d04e78e8931942da4ad02ff79637d7750589b64137d977f0ac3",
+  "before_implementation_key": "f0ce07ab3da287782ffb5d3eb5da91f4cac3022d384e3533e68c58299bc35855",
+  "after_implementation_key": "f68a27114766ff1b98e73f95894b69186c2527b685e7beb85d8dcbfafd6cdc38",
+  "before_changed_files": {
+    "data/fx_batch_reconciliation.py": "dcf5c852fd8124d3ffecbda56f903e835143a69aba8a2f506b870a2f41931cac",
+    "data/fx_operational_retirement.py": "b363c3f55ee424cb625d54e838e92dfc7985d757dead4a0aac2f32a13f9b18a9",
+    "runtime/research_batches.py": "4a17403f3a0e752009d2b789f5e088cd1a25047e2ab31d3a5506093fd3450d89",
+    "runtime/research_jobs.py": "3af6fb626a1a5298e45bdd975b03c3a5f0951dfa9296d24339b0a0d8b8048fd8"
+  },
+  "added_files": [
+    "data/legacy_batch_evidence.py"
+  ]
+}
