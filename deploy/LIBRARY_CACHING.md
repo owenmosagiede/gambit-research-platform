@@ -55,7 +55,12 @@ execution events once and verifies their chains, envelopes and intake references
 It never takes `research-writer`, publishes receipts, repairs projections or wakes
 the worker. Incomplete or corrupt records are reported as issues; normal command
 and worker recovery remain responsible for repair. Missing display labels never
-hide a verified job. Loading and failed refreshes are distinct from empty results
+hide a verified job. Compact verified submission/journal metadata is retained in
+a separate cache, bounded to 1,024 entries per root and four roots per process.
+Every reuse checks file identity; complete verification repeats after an hour.
+Full frozen member plans are discarded, and events, receipts, incidents and worker
+health are read afresh. Absent journals are never cached across requests.
+Loading and failed refreshes are distinct from empty results
 in the interface, and failed refreshes retain clearly marked last-known records.
 
 Benchmark cold, repeated and post-five-second reads separately. Compare canonical

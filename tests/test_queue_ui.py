@@ -41,7 +41,7 @@ function snap(){views.push({board:tree(ids['queue-board']),ledger:tree(ids['ledg
 (async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),context);await flush();snap();
 for(const step of input.steps){
  if(step==='poll'){const t=[...timers].find(([,t])=>t.ms===5000);if(t){timers.delete(t[0]);t[1].fn();}}
- if(step==='timeout'){const t=[...timers].find(([,t])=>t.ms===20000);if(t){timers.delete(t[0]);t[1].fn();}}
+ if(step==='timeout'){const t=[...timers].find(([,t])=>t.ms===20000||t.ms===60000);if(t){timers.delete(t[0]);t[1].fn();}}
  if(step==='refresh')ids['queue-refresh'].listeners.click();
  if(typeof step==='object'&&step.settle!==undefined){const p=pending[step.settle];if(step.error)p.reject(Error('network'));else p.resolve(response(step.value||p.value));}
  if(typeof step==='object'&&step.click){walk(ids['queue-board']).find(n=>n.tag==='button'&&n.textContent===step.click)?.listeners.click();}
@@ -69,10 +69,24 @@ class QueueUITests(unittest.TestCase):
             self.assertNotIn('0 of 0',view['ledgerStatus'])
         self.assertIn('Loading',views[0]['status'])
         self.assertEqual(views[0]['queueBusy'],'true')
+        self.assertIn(60000,views[0]['timers'])
+        self.assertNotIn(20000,views[0]['timers'])
         self.assertEqual(len(views[1]['calls']),1)
         self.assertIn('unavailable',views[-1]['status'])
         self.assertIn('unavailable',views[-1]['ledgerStatus'])
         self.assertEqual(views[-1]['queueBusy'],'false')
+
+    def test_first_read_gets_sixty_seconds_then_refresh_gets_twenty_with_records_visible(self):
+        views=ui([catalog('succeeded')],[{'settle':0},'poll','timeout'],hold=[0,1])
+        self.assertIn(60000,views[0]['timers'])
+        self.assertNotIn(20000,views[0]['timers'])
+        self.assertIn(20000,views[2]['timers'])
+        self.assertNotIn(60000,views[2]['timers'])
+        self.assertEqual(views[2]['queueBusy'],'true')
+        self.assertIn(REQUEST_ID,all_text(views[2]['ledger']))
+        self.assertEqual(views[-1]['queueBusy'],'false')
+        self.assertIn(REQUEST_ID,all_text(views[-1]['ledger']))
+        self.assertIn('last verified',views[-1]['ledgerStatus'])
 
     def test_empty_state_is_shown_only_after_a_verified_response(self):
         empty=catalog();empty['items']=[]

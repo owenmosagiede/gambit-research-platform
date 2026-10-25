@@ -18,7 +18,7 @@ from api.feature_recipes import InvalidFeatureRecipeQuery, list_feature_recipes
 from api.feature_library import InvalidFeatureQuery, FeatureNotFound, list_feature_library, get_feature_resolution
 from api.signal_summaries import list_signal_summaries, list_signal_outputs, get_signal_output_detail
 from api.experiment_labels import with_experiment_labels
-from api.experiment_views import list_experiments, get_experiment
+from api.experiment_views import ExperimentView, get_experiment
 from research.contracts import readiness, request_id, ResearchError, ResearchConflict, ResearchBlocked
 from research.store import ResearchStore
 from services.research_worker import WebResearchJobs
@@ -95,7 +95,9 @@ class ApplicationRoutes:
             return
         if target.path=='/api/experiments':
             if target.query:self.error(400,'UNSUPPORTED_QUERY','Use the queue endpoint without query parameters.',head);return
-            try:value=with_experiment_labels(root,jobs,list_experiments(jobs))
+            try:
+                view=ExperimentView(jobs)
+                value=with_experiment_labels(root,view,view.list())
             except Exception:self.error(503,'QUEUE_UNAVAILABLE','The experiment queue could not be verified.',head);return
             self.send_json(200,value,head);return
         if target.path.startswith('/api/experiments/'):

@@ -327,15 +327,19 @@
     if (entry.outputs_deferred) {
       outputContent.append(el("p", "Open to verify stored outputs. Research results above are available independently.", "field-note"));
       let loading = false;
+      const showOutputs = () => {
+        summary.textContent = `Stored outputs & recipe · ${entry.outputs.length} instrument${entry.outputs.length === 1 ? "" : "s"}`;
+        outputContent.replaceChildren(storedOutputContent(entry));
+      };
       const load = async () => {
-        if (loading || !entry.outputs_deferred) return;
+        if (loading) return;
+        if (!entry.outputs_deferred) { showOutputs(); return; }
         loading = true; outputContent.setAttribute("aria-busy", "true");
         outputContent.replaceChildren(el("p", "Loading stored outputs…", "field-note"));
         try {
           await loadOutputs(entry);
           if (!entries.includes(entry)) return;
-          summary.textContent = `Stored outputs & recipe · ${entry.outputs.length} instrument${entry.outputs.length === 1 ? "" : "s"}`;
-          outputContent.replaceChildren(storedOutputContent(entry));
+          showOutputs();
         } catch (_error) {
           const retry = el("button", "Retry stored outputs", "text-button"); retry.type = "button";
           retry.addEventListener("click", load);

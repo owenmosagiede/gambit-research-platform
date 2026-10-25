@@ -1,6 +1,7 @@
 """Website snapshots never wait for intake or repair scientific authority."""
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -9,8 +10,9 @@ import uuid
 
 from api.application import ApplicationRoutes
 from api.catalog_cache import CatalogCache
-from api.experiment_views import get_experiment, list_experiments
-from research.store import lock
+from api.experiment_views import ExperimentView, _metadata_cache, get_experiment, list_experiments
+from research.contracts import canonical, digest
+from research.store import install_bytes, lock
 from runtime.experiment_identity import IdentityIndex, save
 from runtime.research_jobs import ResearchJobs
 from test_research_runtime import Adapter, KernelSpy, intent, profile
@@ -93,6 +95,17 @@ class ExperimentViewsTests(unittest.TestCase):
         self.assertEqual(value['items'], []); self.assertEqual(value['issues'][0]['request_id'], rid)
         self.assertEqual(before, self.files())
 
+    def test_existing_integrity_incident_survives_a_broken_submission(self):
+        rid = self.submit(); path = self.jobs._submission_path(rid)
+        path.write_text('broken')
+        incident = self.jobs._incident(path, ValueError('bad envelope'))
+        before = self.files(); value = list_experiments(self.jobs)
+        self.assertEqual(value['issues'], [])
+        self.assertEqual(value['items'][0]['job']['incident'], incident)
+        self.assertTrue(value['items'][0]['job']['operational_failure'])
+        self.assertIsNone(value['items'][0]['intent'])
+        self.assertEqual(before, self.files())
+
     def test_new_event_appears_next_refresh_and_finished_trials_remain_visible(self):
         rid = self.submit()
         self.assertEqual(list_experiments(self.jobs)['items'][0]['job']['status'], 'queued')
@@ -131,6 +144,73 @@ class ExperimentViewsTests(unittest.TestCase):
         self.assertEqual([item['job']['request_id'] for item in value['items']], [rid])
         self.assertEqual(value['issues'][0]['request_id'], alias)
         self.assertEqual(before, self.files())
+
+    def test_verified_compact_metadata_is_reused_but_events_remain_fresh(self):
+        rid = self.submit(); journal_reader = IdentityIndex.journal
+        with patch.object(self.jobs, '_submission', wraps=self.jobs._submission) as envelopes, \
+             patch.object(IdentityIndex, 'journal', autospec=True,
+                          side_effect=journal_reader) as journals, \
+             patch.object(self.jobs, '_event_snapshot', wraps=self.jobs._event_snapshot) as events:
+            first = self.read('/api/experiments')
+            second = self.read('/api/experiments')
+            self.assertEqual(first[0], 200); self.assertEqual(second[0], 200)
+            self.assertEqual(envelopes.call_count, 1)
+            self.assertEqual(journals.call_count, 1)
+            self.assertEqual(events.call_count, 2)
+        view = ExperimentView(self.jobs); view.get(rid)
+        self.assertNotIn('members', view.originals[rid]['frozen_plan'])
+        self.assertNotIn('implementation', view.originals[rid])
+        self.assertEqual(set(view.journals[rid]['submission']), {'record_sha256'})
+        self.assertEqual(view.cache.limit, 1024)
+        self.assertEqual(_metadata_cache.cache_info().maxsize, 4)
+        self.jobs._update(rid, status='p1', stage='P1 research')
+        self.assertEqual(get_experiment(self.jobs, rid)['status'], 'p1')
+
+    def test_cached_envelope_tamper_with_restored_mtime_is_not_accepted(self):
+        rid = self.submit(); self.assertEqual(len(list_experiments(self.jobs)['items']), 1)
+        path = self.jobs._submission_path(rid); old = path.stat()
+        record = json.loads(path.read_bytes())
+        record['created_at'] = '2000-01-01T00:00:00.000000+00:00'
+        record['record_sha256'] = digest({key: value for key, value in record.items() if key != 'record_sha256'})
+        replacement = canonical(record) + b'\n'
+        self.assertEqual(len(replacement), old.st_size)
+        path.write_bytes(replacement); os.utime(path, ns=(old.st_atime_ns, old.st_mtime_ns))
+        before = self.files(); value = list_experiments(self.jobs)
+        self.assertEqual(value['items'], []); self.assertTrue(value['issues'])
+        self.assertEqual(before, self.files())
+
+    def test_atomic_metadata_replacement_revalidates_and_bad_journal_is_rejected(self):
+        rid = self.submit(); index = IdentityIndex(self.jobs)
+        self.assertEqual(len(list_experiments(self.jobs)['items']), 1)
+        path = self.jobs._submission_path(rid)
+        install_bytes(path, path.read_bytes(), mutable=True)
+        with patch.object(self.jobs, '_submission', wraps=self.jobs._submission) as reader:
+            self.assertEqual(len(list_experiments(self.jobs)['items']), 1)
+            self.assertEqual(reader.call_count, 1)
+        journal = index.journal(rid); journal['scientific_identity'] = '0' * 64
+        save(index.journal_path(rid), journal, mutable=True)
+        before = self.files(); value = list_experiments(self.jobs)
+        self.assertEqual(value['items'], []); self.assertTrue(value['issues'])
+        self.assertEqual(before, self.files())
+
+    def test_absent_journal_is_not_cached_across_publication(self):
+        rid = self.submit(); index = IdentityIndex(self.jobs)
+        path = index.journal_path(rid); journal_bytes = path.read_bytes(); path.unlink()
+        first = get_experiment(self.jobs, rid)
+        self.assertNotIn('submission_receipt', first)
+        install_bytes(path, journal_bytes)
+        second = get_experiment(self.jobs, rid)
+        self.assertEqual(second['submission_receipt']['request_id'], rid)
+
+    def test_legacy_envelope_without_frozen_plan_remains_visible(self):
+        rid = self.submit(); index = IdentityIndex(self.jobs)
+        index.journal_path(rid).unlink()
+        original = self.jobs._submission(rid); original.pop('frozen_plan')
+        original['record_sha256'] = digest({key: value for key, value in original.items() if key != 'record_sha256'})
+        install_bytes(self.jobs._submission_path(rid), canonical(original) + b'\n', mutable=True)
+        status, value = self.read('/api/experiments')
+        self.assertEqual(status, 200); self.assertEqual(len(value['items']), 1)
+        self.assertEqual(value['items'][0]['presentation']['state'], 'unavailable')
 
 
 if __name__ == '__main__': unittest.main()

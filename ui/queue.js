@@ -223,7 +223,9 @@
     loading = true; refresh.disabled = true;
     if (!last) renderUnavailable();
     board.setAttribute("aria-busy", "true"); $("ledger-items")?.setAttribute("aria-busy", "true");
-    const controller = new AbortController(), deadline = window.setTimeout(() => controller.abort(), 20000);
+    // Give the first verified history read time to warm its cache. Later
+    // refreshes can time out sooner while the last verified records stay visible.
+    const controller = new AbortController(), deadline = window.setTimeout(() => controller.abort(), last ? 20000 : 60000);
     try {
       const response = await fetch("/api/experiments", {method: "GET", credentials: "same-origin", mode: "same-origin", cache: "no-store", signal: controller.signal});
       if (!response.ok) throw Error("Queue unavailable");

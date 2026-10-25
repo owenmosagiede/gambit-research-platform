@@ -454,6 +454,19 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertNotIn('Loading stored outputs',flatten(final['detail']))
         self.assertEqual(len(final['requests']),2)
 
+    def test_completed_output_request_is_reused_after_research_details_rerender(self):
+        item=deferred_group();item['details_deferred']=True
+        research_href=f"/api/research-results/{item['id']}"
+        research_data={'recipe_id':item['id'],'relationships':recorded_group()['research']['relationships']}
+        output_data={'schema_version':'1.0.0','recipe':item['recipe'],'outputs':[output()],'issues':[]}
+        final=ui([item],hold=[research_href,item['outputs_href']],steps=[
+            {'action':'select','id':item['id']},{'action':'outputs'},
+            {'action':'settle','index':0,'value':research_data},
+            {'action':'settle','index':1,'value':output_data},{'action':'outputs'}])[-1]
+        self.assertIn('AUDUSD',flatten(final['detail']))
+        self.assertIn('TRIAL_P2_a',flatten(final['detail']))
+        self.assertEqual(len(final['requests']),3)
+
     def test_cold_catalog_can_complete_after_thirty_five_seconds(self):
         states=ui([self.group], hold=['/api/signal-library-summaries'], steps=[
             {'action':'advance','ms':35000}, {'action':'settle','index':0}])
