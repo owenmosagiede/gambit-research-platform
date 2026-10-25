@@ -79,18 +79,20 @@ def research(linked=False):
             'description': 'Authoritative relationship records retain Scope, Target and horizon.' if linked else 'No tested relationships are stored.'}
 
 
-def group(index=1, k=63, *, outputs=None, linked=False, internal=False):
+def group(index=1, k=63, *, outputs=None, linked=True, internal=False):
     identifier = 'FEATURE_RECIPE_' + f'{index:064x}'
     return {'kind': 'reusable_fx_recipe', 'id': identifier, 'recipe': ref(identifier),
-            'name': 'Log Return Downside Semivolatility' if internal else 'Log Skip Recent Momentum',
-            'source': {'label': 'Closing prices', 'input_contract': {'value_semantics': 'price', 'frequency': 'daily'}},
+            'name': '21-day log downside semivolatility' if internal else f'{k}-day log momentum · skip 5 days',
+            'source': {'label': 'Closing prices', 'input_contract': {'value_semantics': 'price', 'frequency': 'daily', 'observation_clock': 'scheduled_weekdays'}},
             'transformations': chain(k, internal), 'observation_count': None, 'research': research(linked),
             'outputs': outputs if outputs is not None else [output(index, k=k, internal=internal)]}
 
 
 def ces():
     item = signal(90, ces=True)
-    return {'kind': 'stored_signal', 'id': item['signal_id'], 'signal': item}
+    item['scientific_state'] = 'results_linked'
+    linked = research(True); linked['relationships'][0]['signal_id'] = item['signal_id']
+    return {'kind': 'stored_signal', 'id': item['signal_id'], 'signal': item, 'research': linked}
 
 
 def detail(item, *, linked=False, ces=False):
@@ -172,7 +174,7 @@ class Element {
 const ids = Object.fromEntries(["signal-table-container", "signal-library-status", "signal-detail-body", "signal-detail-status",
   "signal-detail-title", "experiment-inputs", "signal-page", "pit-sidebar", "signal-sidebar", "sidebar-signal-status",
   "sidebar-signal-issues", "signal-library-issues", "sidebar-signal-retry", "signal-library-retry", "sidebar-signal-items",
-  "signal-detail", "signal-detail-retry", "library-items", "pit-page", "signal-detail-home", "signal-search", "signal-provider", "signal-state", "signal-from", "signal-to", "signal-clear"].map(id => [id, new Element(id)]));
+  "signal-detail", "signal-detail-retry", "library-items", "signal-detail-home", "ledger-page", "signal-back"].map(id => [id, new Element(id)]));
 const skip = new Element("a"), nav = [], windowListeners = {}, requests = [], pending = [], signals = [];
 const timers = new Map(); let clock = 0, nextTimer = 0;
 const responses = input.responses; let catalogIndex = 0;
@@ -185,10 +187,6 @@ const context = {document: {getElementById: id => ids[id], createElement: tag =>
     clearTimeout: id => timers.delete(id),
     addEventListener: (name, fn) => windowListeners[name] = fn}, AbortController,
   fetch: async (url, options) => {
-    // Legacy-detail tests isolate the summary path; dedicated registry tests
-    // include and assert the bootstrap request explicitly.
-    if(url === "/api/feature-library" && input.registry === null) return output(null);
-    if(url === "/api/feature-library" && input.registry !== null) {requests.push({url,method:options.method});signals.push(options.signal);return output(input.registry);}
     requests.push({url, method:options.method}); signals.push(options.signal);
     if (input.hold.includes(url)) return new Promise((resolve,reject) => {
       pending.push({url,resolve,reject});
@@ -209,8 +207,8 @@ function snapshot() {
     detail:read(ids["signal-detail-body"]), title:ids["signal-detail-title"].textContent, status:ids["signal-detail-status"].textContent,
     detailHidden:ids["signal-detail"].hidden, catalogStatus:ids["signal-library-status"].textContent, busy:ids["signal-detail"].attributes["aria-busy"],
     catalogRetryHidden:ids["signal-library-retry"].hidden, detailRetryHidden:ids["signal-detail-retry"].hidden,
-    stateOptions:ids["signal-state"].children.map(option => ({value:option.value, label:option.textContent})),
-    selectedState:ids["signal-state"].value,
+    issues:ids["signal-library-issues"].textContent, issuesHidden:ids["signal-library-issues"].hidden,
+    experimentHidden:ids["experiment-inputs"].hidden, signalsHidden:ids["signal-page"].hidden, skipHref:skip.href,
     requests, aborted:signals.map(signal => signal.aborted)})));
 }
 (async () => {
@@ -221,9 +219,6 @@ function snapshot() {
       for(const [id,timer] of [...timers]) if(timer.at <= clock) {timers.delete(id);timer.fn();}
     }
     else if(step.action === "navigate") { context.window.location.hash=step.hash; windowListeners["hashchange"](); }
-    else if(step.action === "filter") {
-      ids["signal-"+step.key].value=step.value;ids["signal-"+step.key].listeners.input();
-    } else if(step.action === "clear") ids["signal-clear"].click();
     else if(step.action === "select") {
       const row=find(ids["signal-table-container"],node=>node.dataset.entryId===step.id);
       find(row,node=>node.tag==="button").click();
@@ -245,7 +240,7 @@ function snapshot() {
     response_map = {}
     for entry in entries:
         if entry['kind'] == 'stored_signal':
-            response_map['/api/signal-library/' + entry['id']] = detail(entry['signal'], ces=True)
+            response_map['/api/signal-library/' + entry['id']] = detail(entry['signal'], ces=True, linked=True)
         else:
             for output_item in entry['outputs']:
                 for mat in output_item['materializations']:
@@ -285,48 +280,88 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.group = group(outputs=[output(1), output(2, 'EURUSD')])
         self.legacy = ces()
 
-    def test_unmaterialized_recipes_are_visible_and_searchable_without_dates(self):
+    def test_verified_research_remains_visible_without_stored_outputs(self):
         item=group(outputs=[])
         views=ui([item],[{'action':'select','id':item['id']}])
         self.assertEqual(len(rows(views[0]['table'])),1)
         self.assertIn('No stored outputs are catalogued',flatten(views[-1]['detail']))
-        self.assertEqual(rows(views[0]['table'])[0][-1],'Untested')
+        self.assertEqual(rows(views[0]['table'])[0][-1],'Research results available')
 
-    def test_registry_cards_appear_before_slow_catalog_and_survive_failure(self):
+    def test_registration_catalog_is_never_used_as_a_fallback(self):
         item=group(outputs=[])
         registry={'feature_count':1,'features':[{'id':item['id'],'reference':item['recipe'],'name':item['name'],
             'kind':'reusable_fx_recipe','transformations':item['transformations'],'signal_id':None}]}
         states=ui([],registry=registry,hold=['/api/signal-library-summaries'],steps=[{'action':'settle','index':0,'error':True}])
-        self.assertEqual(len(rows(states[0]['table'])),1)
-        self.assertEqual(rows(states[0]['table'])[0][-1],'Checking research status')
-        self.assertEqual(len(rows(states[-1]['table'])),1)
+        self.assertEqual(rows(states[0]['table']),[])
+        self.assertEqual(rows(states[-1]['table']),[])
         self.assertFalse(states[-1]['catalogRetryHidden'])
-        self.assertEqual([r['url'] for r in states[0]['requests']],['/api/feature-library','/api/signal-library-summaries'])
+        self.assertEqual([r['url'] for r in states[0]['requests']],['/api/signal-library-summaries'])
+
+    def test_registration_or_preparation_alone_cannot_enter_the_library(self):
+        for item in (group(linked=False), group(outputs=[], linked=False)):
+            with self.subTest(prepared=bool(item['outputs'])):
+                view = ui([item])[0]
+                self.assertEqual(rows(view['table']), [])
+                self.assertFalse(view['catalogRetryHidden'])
+        legacy = ces(); legacy.pop('research')
+        self.assertEqual(rows(ui([legacy])[0]['table']), [])
+
+    def test_empty_researched_catalog_has_an_honest_empty_state(self):
+        view = ui([])[0]
+        self.assertEqual(view['catalogStatus'], '0 researched Signals')
+        self.assertIn('No researched Signals yet', flatten(view['table']))
+        self.assertIn('Prepared observations alone do not count', flatten(view['table']))
+        self.assertTrue(view['catalogRetryHidden'])
+
+    def test_legacy_pit_hash_uses_experiment_without_pit_or_filter_elements(self):
+        for route in ('#pit', '#pit-page'):
+            view = ui([], initial_hash=route)[0]
+            self.assertFalse(view['experimentHidden'])
+            self.assertTrue(view['signalsHidden'])
+            self.assertEqual(view['skipHref'], '#experiment-inputs')
+            self.assertEqual(view['requests'], [])
+
+    def test_partial_catalog_discloses_missing_records_without_replacing_verified_entries(self):
+        data = catalog_for(self.group); data['issues'] = [{'code': 'unverified_record'}]
+        view = ui([self.group], catalog=data)[0]
+        self.assertEqual(len(rows(view['table'])), 1)
+        self.assertFalse(view['issuesHidden'])
+        self.assertIn('Verified entries are shown', view['issues'])
+        self.assertFalse(view['catalogRetryHidden'])
+
+    def test_superseded_catalog_request_cannot_replace_newer_verified_results(self):
+        first = group(1); later = group(2, k=21)
+        states = ui([first], hold=['/api/signal-library-summaries'], steps=[
+            {'action': 'retry', 'element': 'signal-library-retry'},
+            {'action': 'settle', 'index': 1, 'value': catalog_for(later)},
+            {'action': 'settle', 'index': 0, 'value': catalog_for(first)}])
+        self.assertTrue(states[-1]['aborted'][0])
+        self.assertEqual(rows(states[-1]['table'])[0][0], later['name'])
 
     def test_cold_catalog_can_complete_after_thirty_five_seconds(self):
         states=ui([self.group], hold=['/api/signal-library-summaries'], steps=[
             {'action':'advance','ms':35000}, {'action':'settle','index':0}])
         self.assertEqual(states[1]['aborted'], [False])
         self.assertEqual(len(rows(states[-1]['table'])), 1)
-        self.assertEqual(states[-1]['catalogStatus'], '1 of 1 library entry')
+        self.assertEqual(states[-1]['catalogStatus'], '1 researched Signal')
         self.assertTrue(states[-1]['catalogRetryHidden'])
 
-    def test_unresponsive_catalog_times_out_and_keeps_registered_cards(self):
+    def test_unresponsive_catalog_times_out_without_inventing_cards(self):
         item=group(outputs=[])
         registry={'feature_count':1,'features':[{'id':item['id'],'reference':item['recipe'],
             'name':item['name'],'kind':'reusable_fx_recipe','transformations':item['transformations'],'signal_id':None}]}
         states=ui([], registry=registry, hold=['/api/signal-library-summaries'], steps=[
             {'action':'advance','ms':60000}])
         self.assertTrue(states[-1]['aborted'][-1])
-        self.assertEqual(len(rows(states[-1]['table'])), 1)
+        self.assertEqual(rows(states[-1]['table']), [])
         self.assertFalse(states[-1]['catalogRetryHidden'])
         self.assertTrue(all(r['method']=='GET' for r in states[-1]['requests']))
 
     def test_grouped_fx_summary_has_exact_five_cells_and_no_instrument_details(self):
         view = ui([self.group])[0]
-        self.assertEqual(rows(view['table']), [['Log Skip Recent Momentum', 'Closing prices',
-            'Log Level → Skip Recent Difference (k=63, s=5)', 'N/A', 'Untested']])
-        self.assertEqual(view['catalogStatus'], '1 of 1 library entry')
+        self.assertEqual(rows(view['table']), [['63-day log momentum · skip 5 days', 'Closing prices',
+            'Log Level → Skip Recent Difference (k=63, s=5)', 'N/A', 'Research results available']])
+        self.assertEqual(view['catalogStatus'], '1 researched Signal')
         summary = flatten(view['table']) + flatten(view['table'])
         for forbidden in ('AUDUSD', 'EURUSD', 'Twelve Data', 'log_USD_per_AUD', 'SIGNAL_', 'MATERIALIZATION_', '2024', '2 observations'):
             self.assertNotIn(forbidden, summary)
@@ -347,17 +382,18 @@ class SignalRecipeUiTests(unittest.TestCase):
         view = ui([self.group, self.legacy])[0]
         legacy = rows(view['table'])[1]
         self.assertIn(self.legacy['signal']['name'], legacy[0])
-        self.assertIn(self.legacy['id'], legacy[0])
+        self.assertNotIn(self.legacy['id'], legacy[0])
         self.assertIn('CES0500000003', legacy[1]); self.assertIn('FRED / ALFRED', legacy[1])
-        self.assertEqual(legacy[4], 'Untested')
+        self.assertEqual(legacy[4], 'Research results available')
         self.assertIn('2 observations', flatten(view['table']))
 
     def test_recipe_click_reveals_output_coverage_readiness_without_fetching_or_computing(self):
         view = ui([self.group], [{'action':'select','id':self.group['id']}])[-1]
-        self.assertEqual(view['title'], 'Log Skip Recent Momentum')
+        self.assertEqual(view['title'], '63-day log momentum · skip 5 days')
         body = flatten(view['detail'])
         for required in ('AUDUSD', 'EURUSD', 'Twelve Data', 'Historical replay: blocked', 'Live use: unresolved',
-                         '2 valid', 'Stored instrument outputs', 'sample does not establish coverage'):
+                         '2 valid', 'Stored instrument outputs', 'sample does not establish coverage',
+                         'Feature lookback', 'forecast horizon separately measures future returns'):
             self.assertIn(required, body)
         self.assertEqual(len(view['requests']), 1)
 
@@ -401,7 +437,7 @@ class SignalRecipeUiTests(unittest.TestCase):
         view = ui([self.legacy], [{'action':'select','id':self.legacy['id']}])[-1]
         self.assertEqual(view['requests'][-1]['url'], '/api/signal-library/' + self.legacy['id'])
         self.assertEqual(view['title'], self.legacy['signal']['name'])
-        self.assertIn('Research results: not tested', flatten(view['detail']))
+        self.assertIn('Research results available', flatten(view['detail']))
 
     def test_stale_detail_cannot_replace_newer_recipe_selection(self):
         other = group(3, k=21)
@@ -452,7 +488,7 @@ class SignalRecipeUiTests(unittest.TestCase):
                 self.assertTrue(view['catalogRetryHidden'])
 
     def test_invalid_links_or_duplicate_recipe_ids_fail_closed(self):
-        bad_research = group(); bad_research['research']['relationship_count'] = 1
+        bad_research = group(); bad_research['research']['relationship_count'] = 2
         bad_href = group(); bad_href['outputs'][0]['detail_href'] = 'https://other.test/output'
         cases = [[bad_research], [bad_href], [self.group, self.group]]
         for entries in cases:
@@ -470,11 +506,11 @@ class SignalRecipeUiTests(unittest.TestCase):
         sections = sections(view['detail'])
         self.assertEqual(len(sections), 2)
         first, second = map(flatten, sections)
-        for text in ['TS · 21 scheduled weekdays', 'AUDUSD', 'Price Return', 'VALIDATED', 'primary effect', '0.25', '0.12',
+        for text in ['TS · 21-day forecast horizon', 'AUDUSD', 'Price Return', 'VALIDATED', 'primary effect', '0.25', '0.12',
                      'P1 · 2015-01-01 – 2022-01-01 (exclusive)', 'P2 · 2022-01-01 – 2026-09-01 (exclusive)',
                      'TRIAL_P1_a', 'TRIAL_P2_a', 'RSPEC_fixture']:
             self.assertIn(text, first)
-        for text in ['CS · 63 scheduled weekdays', 'FTMO_UNIVERSE', 'FAILED', '-0.08', 'Unavailable',
+        for text in ['CS · 63-day forecast horizon', 'FTMO_UNIVERSE', 'FAILED', '-0.08', 'Unavailable',
                      'P2 · 2022-01-01 – 2025-01-01 (exclusive)', 'TRIAL_P2_b', 'RSPEC_other']:
             self.assertIn(text, second)
         self.assertNotIn('FTMO_UNIVERSE', first)
@@ -559,6 +595,32 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertIn('TRIAL_P2_a', body)
         self.assertEqual(len(final['requests']), 3)
         self.assertEqual(final['requests'][1]['url'], old['outputs'][0]['materializations'][0]['href'])
+
+    def test_disappearing_researched_selection_is_removed_after_refresh(self):
+        item = recorded_group()
+        final = ui([item], [{'action': 'select', 'id': item['id']},
+                           {'action': 'refresh', 'detail': refresh_event()}],
+                   catalogs=[catalog_for(item), catalog_for()])[-1]
+        self.assertEqual(rows(final['table']), [])
+        self.assertTrue(final['detailHidden'])
+        self.assertEqual(final['detail']['children'], [])
+
+    def test_removed_output_cannot_keep_stale_observations_after_refresh(self):
+        item = recorded_group(); updated = deepcopy(item); updated['outputs'] = []
+        final = ui([item], [{'action': 'open', 'id': sid(), 'mid': mid()},
+                           {'action': 'refresh', 'detail': refresh_event()}],
+                   catalogs=[catalog_for(item), catalog_for(updated)])[-1]
+        self.assertIn('No stored outputs are catalogued', flatten(final['detail']))
+        self.assertNotIn('Stored output details', flatten(final['detail']))
+        self.assertNotIn('LINEAGE_', flatten(final['detail']))
+
+    def test_all_recorded_outcomes_remain_available_without_validation_filter(self):
+        for outcome in ('rejected', 'PRECHECK', 'UNRESOLVED', 'FAILED'):
+            item = recorded_group()
+            item['research']['relationships'][0].update(p1_status='rejected', p2_status=outcome)
+            view = ui([item], [{'action': 'select', 'id': item['id']}])[-1]
+            self.assertEqual(len(rows(view['table'])), 1)
+            self.assertIn(outcome, flatten(view['detail']))
 
     def test_invalid_structured_results_or_refresh_event_fail_closed(self):
         item = recorded_group(); item['research']['relationships'][0]['results'][0]['period']['end_exclusive'] = '2010-01-01'

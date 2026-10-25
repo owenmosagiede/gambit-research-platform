@@ -1,4 +1,4 @@
-"""Read-only batch monitoring: restart-safe counts and honest stale status."""
+"""Batch monitor is dormant; its retained asset remains read-only in isolation."""
 import json
 from pathlib import Path
 import shutil
@@ -58,6 +58,13 @@ function snap(){views.push({detail:text(ids['batch-detail']),buttons:walk(ids['b
 
 
 class BatchUITests(unittest.TestCase):
+    def test_batch_monitor_is_absent_from_shipped_workspace(self):
+        html = (ROOT / 'ui/index.html').read_text()
+        self.assertNotIn('/batches.js', html)
+        self.assertNotIn('Research batches', html)
+        for name in ('batch-title', 'batch-select', 'batch-status', 'batch-detail', 'batch-refresh'):
+            self.assertNotIn(f'id="{name}"', html)
+
     def listing(self): return {'batches': [{'batch_id': BID, 'name': 'Momentum pilot'}]}
 
     def test_saved_counts_preparation_timestamp_and_no_launch(self):

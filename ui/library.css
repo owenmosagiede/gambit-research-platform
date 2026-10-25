@@ -156,12 +156,9 @@ select:disabled { cursor: default; background: var(--g-quiet); color: var(--g-mu
 .empty-table { border: 1px solid var(--g-border); padding: 28px; border-radius: var(--g-radius); font-size: 14px; color: var(--g-muted); line-height: 1.7; }
 .research-note { padding: 16px 18px; background: var(--g-quiet); border-radius: var(--g-radius); font-size: 13px; line-height: 1.7; color: var(--g-muted); }
 .research-note strong { display: block; color: var(--g-text); font-weight: 500; margin-bottom: 3px; }
-form {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 20px;
-}
-form > div { min-width: 0; }
+/* The authenticated session inserts this form after workspace navigation. */
+.library form[action="/logout/"] { display: block; margin: 0; }
+.library form[action="/logout/"] button { white-space: nowrap; }
 .experiment-contract-inputs { margin-top: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
 .experiment-contract-inputs > div { min-width: 0; }
 .contract-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
@@ -256,7 +253,6 @@ main:focus, #details-title:focus { outline: none; }
 
 @media (max-width: 1200px) {
   .experiment-contract-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .form-actions { padding-top: 0; }
 }
 @media (max-width: 800px) {
@@ -274,7 +270,7 @@ main:focus, #details-title:focus { outline: none; }
 @media (max-width: 500px) {
   .experiment-contract-inputs, .contract-rules { grid-template-columns: minmax(0, 1fr); }
   .contract-reference { padding: 16px; }
-  form, .detail-grid, .dataset-list { grid-template-columns: minmax(0, 1fr); }
+  .detail-grid, .dataset-list { grid-template-columns: minmax(0, 1fr); }
   .dataset-details h2 { font-size: 22px; }
   .stat-card { padding: 12px; }
   .stat-card dd { font-size: 18px; }

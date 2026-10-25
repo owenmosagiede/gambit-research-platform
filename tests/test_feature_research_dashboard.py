@@ -20,7 +20,7 @@ SPEC={'id':'RSPEC_TEST','version':'2.0.0','content_sha256':digest('spec')}
 def fixture(root, mode='CS', horizon=21, p2='VALIDATED', direction='POSITIVE', scope='G10'):
     s=ResearchStore(root)
     relation=s.put('relationship',{'mode':mode,'horizon':horizon,'scope':scope,'p2':p2,'direction':direction},
-        {'recipe':{'id':RECIPE},'scope':{'id':scope,'version':'1.0.0','content_sha256':digest(scope)},
+        {'recipe':{'id':RECIPE,'version':'1.0.0','content_sha256':digest(RECIPE)},'scope':{'id':scope,'version':'1.0.0','content_sha256':digest(scope)},
          'mode':mode,'horizon':horizon,'target_family':'price_return','expected_direction':direction})
     rows=[{'date':str(date(2020,1,1)+timedelta(days=i)), 'instrument':'EURUSD','feature':str(i/1000),
            'target':str(i/3000), 'lineage':{'fixture_row':i}} for i in range(1301)]
@@ -85,6 +85,12 @@ class DashboardAPITests(unittest.TestCase):
         fixture(self.root);fixture(self.root,horizon=7,direction='NEGATIVE',scope='EURUSD',mode='TS')
         r=feature_research(self.root,RECIPE)['relationships'];self.assertEqual(len(r),2)
         self.assertEqual({(v['scope']['id'],v['expected_direction'],v['horizon']) for v in r},{('G10','POSITIVE',21),('EURUSD','NEGATIVE',7)})
+    def test_corrupt_unrelated_link_is_reported_without_hiding_verified_results(self):
+        fixture(self.root)
+        store=ResearchStore(self.root);path=store.path('link','RESEARCHLINK_'+'f'*64);path.write_text('{')
+        result=feature_research(self.root,RECIPE)
+        self.assertEqual(len(result['relationships']),1)
+        self.assertEqual(result['issues'][0]['record_id'],path.stem)
     def test_cs_chart_uses_all_dates_and_actual_spacing(self):
         t=fixture(self.root)[0];d=trial_evidence(self.root,t['id'])
         self.assertEqual(d['chart']['points'],[{'x':'2020-01-02','y':.5,'date':'2020-01-02'}, {'x':'2020-01-06','y':.25,'date':'2020-01-06'}])
@@ -125,7 +131,8 @@ const ctx={window,document:{createElement:t=>new Node(t),createElementNS:(_,t)=>
 fetch:async(url,opts)=>{requests.push({url,method:opts.method});if(input.hold?.includes(url))return new Promise(resolve=>pending.push({url,resolve}));return {ok:!!input.responses[url],json:async()=>input.responses[url]};}};
 const flush=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
 const snapshots=[];const text=n=>[n.textContent,...n.children.map(text)].join(' ');
-function snap(){snapshots.push({text:text(host),requests:[...requests],buttons:all(host,n=>n.tag==='button').map(n=>({label:n.textContent,disabled:n.disabled,pressed:n.attributes['aria-pressed']})),svgs:all(host,n=>n.tag==='svg').length});}
+const visible=n=>n.tag==='details' ? n.children.filter(c=>c.tag==='summary').map(visible).join(' ') : [n.textContent,...n.children.map(visible)].join(' ');
+function snap(){snapshots.push({text:text(host),primaryText:visible(host),selectOptions:all(host,n=>n.tag==='option').map(n=>n.textContent),requests:[...requests],buttons:all(host,n=>n.tag==='button').map(n=>({label:n.textContent,disabled:n.disabled,pressed:n.attributes['aria-pressed']})),svgs:all(host,n=>n.tag==='svg').length});}
 (async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),ctx);window.SignalResearch.mount(host,input.entry);await flush();snap();
 for(const step of input.steps){if(step.action==='button'){const b=find(host,n=>n.tag==='button'&&n.textContent===step.label);if(!b)throw Error('Missing button '+step.label);if(!b.disabled)b.listeners.click();}
 else if(step.action==='context'){const s=find(host,n=>n.tag==='select'&&n.attributes['aria-label']==='Scope · hypothesis');s.value=all(s,n=>n.tag==='option')[step.index].value;s.listeners.change();}
@@ -136,8 +143,8 @@ await flush();snap();}process.stdout.write(JSON.stringify(snapshots));})().catch
 
 class DashboardUITests(unittest.TestCase):
     setUp = DashboardAPITests.setUp
-    def ui(self,steps=(),hold=()):
-        data=feature_research(self.root,RECIPE);responses={'/api/feature-research/'+RECIPE:data}
+    def ui(self,steps=(),hold=(),data=None):
+        data=data if data is not None else feature_research(self.root,RECIPE);responses={'/api/feature-research/'+RECIPE:data}
         for r in data['relationships']:
             for t in r['results']:
                 path='/api/trial-evidence/'+t['authority']['id'];responses[path]=trial_evidence(self.root,t['authority']['id'])
@@ -152,6 +159,7 @@ class DashboardUITests(unittest.TestCase):
         self.assertIn('101–200 of 1,301 saved rows',v[3]['text']);self.assertTrue(all(r['method']=='GET' for r in v[3]['requests']))
     def test_unmaterialized_untested_definition_has_honest_empty_state(self):
         v=self.ui()[0];self.assertIn('No research results yet',v['text']);self.assertEqual(v['svgs'],0);self.assertEqual(len(v['requests']),1)
+        self.assertNotIn('Experiment page',v['text']);self.assertNotIn('registered',v['text'])
     def test_precheck_and_rejected_do_not_show_fake_validation_charts(self):
         for outcome in ('PRECHECK','NOT_RUN'):
             with self.subTest(outcome=outcome):
@@ -168,6 +176,63 @@ class DashboardUITests(unittest.TestCase):
         fixture(self.root,mode='TS');v=self.ui()[0]
         self.assertIn('predictive coefficient β',v['text']);self.assertNotIn('Daily IC direction',v['text']);self.assertNotIn('Cumulative rank IC',v['text'])
         self.assertTrue(next(b for b in v['buttons'] if b['label']=='7')['disabled'])
+    def test_forecast_horizon_and_readable_scope_keep_exact_ids_in_provenance(self):
+        fixture(self.root)
+        data=feature_research(self.root,RECIPE)
+        data['relationships'][0]['scope_label']='USD currency basket'
+        view=self.ui(data=data)[0]
+        self.assertIn('Forecast horizon · scheduled weekdays',view['primaryText'])
+        self.assertIn('21-day forecast horizon',view['primaryText'])
+        self.assertIn('USD currency basket',view['primaryText'])
+        self.assertNotIn(RECIPE,view['primaryText'])
+        self.assertNotIn('TRIAL_',view['primaryText'])
+        self.assertNotIn(SPEC['id'],view['primaryText'])
+        self.assertIn(RECIPE,view['text'])
+        self.assertIn(SPEC['id'],view['text'])
+
+    def test_multiple_saved_branches_use_readable_labels_not_hash_suffixes(self):
+        fixture(self.root)
+        data=feature_research(self.root,RECIPE)
+        other=deepcopy(data['relationships'][0]);other['projection']['id']='RESEARCHLINK_'+'d'*64
+        data['relationships'].append(other)
+        view=self.ui(data=data)[0]
+        options=' '.join(view['selectOptions'])
+        self.assertIn('Saved result 1',options);self.assertIn('Saved result 2',options)
+        self.assertNotIn('dddddddddddd',options)
+        self.assertNotIn(other['projection']['id'],view['primaryText'])
+
+    def test_partial_research_warning_preserves_verified_results_and_exact_refs(self):
+        fixture(self.root)
+        data=feature_research(self.root,RECIPE)
+        data['issues']=[{'code':'UNAVAILABLE_RESEARCH_LINK','record_id':'RESEARCHLINK_'+'b'*64,
+                        'message':'A saved result could not be verified.'}]
+        view=self.ui(data=data)[0]
+        self.assertIn('Some research records are unavailable',view['primaryText'])
+        self.assertIn('mean rank IC',view['primaryText'])
+        self.assertIn('0.125',view['primaryText'])
+        self.assertEqual(view['svgs'],1)
+        self.assertIn('Retry research',[b['label'] for b in view['buttons']])
+        self.assertNotIn(data['issues'][0]['record_id'],view['primaryText'])
+        self.assertIn(data['issues'][0]['record_id'],view['text'])
+
+    def test_all_unavailable_research_does_not_claim_nothing_was_tested(self):
+        data={'schema_version':'1.0.0','recipe_id':RECIPE,'relationships':[],
+              'issues':[{'code':'UNAVAILABLE_RESEARCH_LINK','record_id':'RESEARCHLINK_bad',
+                         'message':'A saved result could not be verified.'}]}
+        view=self.ui(data=data)[0]
+        self.assertIn('Research verification incomplete',view['primaryText'])
+        self.assertIn('No verified results available',view['primaryText'])
+        self.assertNotIn('No research results yet',view['primaryText'])
+        self.assertEqual(view['svgs'],0)
+        self.assertIn('Retry research',[b['label'] for b in view['buttons']])
+
+    def test_invalid_partial_warning_projection_fails_closed(self):
+        fixture(self.root)
+        data=feature_research(self.root,RECIPE);data['issues']={'not':'an array'}
+        view=self.ui(data=data)[0]
+        self.assertIn('Saved research could not be verified',view['text'])
+        self.assertEqual(view['svgs'],0)
+
     def test_stale_evidence_response_cannot_replace_new_stage(self):
         t=fixture(self.root);v=self.ui([{'action':'button','label':'P2 Validation'},{'action':'settle','index':0}],hold=['/api/trial-evidence/'+t[0]['id']])
         self.assertIn('Validation outcome',v[-1]['text']);self.assertNotIn('Admission checklist',v[-1]['text']);self.assertEqual(v[-1]['svgs'],1)

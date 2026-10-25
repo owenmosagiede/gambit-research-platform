@@ -18,12 +18,14 @@ from unittest.mock import patch
 from api import signal_library, signal_summaries
 from data.feature_store import FeatureStore, publish_feature, read_materialization
 from data.feature_store_contracts import make_library_entry
-from data.reusable_feature_contracts import INPUT_CONTRACT, RECIPE_KIND, make_record
+from data.reusable_feature_contracts import INPUT_CONTRACT, CURRENCY_INPUT_CONTRACT, RECIPE_KIND, make_record
 from data.transformations.engine import execute_recipe
 from data.transformations.identity import digest, make_feature_definition, reference
 from data.transformations.registry import Registry
 from test_feature_store import persistence_fixture, _copy_metadata_closure
 from test_signal_library_api import inventory, running, request
+from research.store import ResearchStore
+from research.contracts import ref
 
 
 def fake_reference(prefix, seed):
@@ -74,6 +76,26 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         FeatureStore(self.root).install_record(entry)
         return entry
 
+    def record_research(self,recipe=None,horizons=(21,),decision='rejected',validation=None,branch='original'):
+        """Terminal immutable records, with no numerical execution or payloads."""
+        recipe=recipe or self.arguments['feature'];store=ResearchStore(self.root);links=[]
+        for horizon in horizons:
+            relation_body={'recipe':reference(recipe),'scope':fake_reference('SCOPE_','USD'),
+                'mode':'CS','target_family':'price_return','expected_direction':'POSITIVE','horizon':horizon}
+            relation=store.put('relationship',relation_body,relation_body)
+            key={'relationship':ref(relation),'stage':'P1','horizon':horizon,
+                'research_spec':fake_reference('RSPEC_','spec'),'period':{'start_inclusive':'2020-01-01','end_exclusive':'2022-01-01'},'branch':branch}
+            trial=store.put('trial',key,{'stage':'P1','admission':decision,'metrics':{},'sample':{},
+                'artifact_manifests':[],'execution_status':'not_computable' if decision=='unresolved' else 'completed'})
+            admission=store.put('admission',{'trial':ref(trial)}, {'relationship':ref(relation),'trial':ref(trial),'decision':decision})
+            vals=[]
+            if validation:
+                vals=[ref(store.put('validation',{'trial':ref(trial)}, {'relationship':ref(relation),'discovery_trial':ref(trial),
+                    'evaluation_trial':None,'decision':validation,'reason_codes':['DISCOVERY_EFFECT_CONTRADICTS_EXPECTED_DIRECTION']}))]
+            body={'relationship':ref(relation),'trial_results':[ref(trial)],'admission_results':[ref(admission)],'validation_results':vals}
+            links.append(store.put('link',body,body))
+        return links
+
     def fx_item(self,symbol='AUDUSD',operator='TR_BASE_momentum_skip_diff',params=None):
         """Metadata-only output fixture; its verified-loader boundary is mocked."""
         params=params or ({'basis':'log','w':21} if operator=='TR_BASE_vol_downside' else
@@ -113,7 +135,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         return reusable,item
 
     @contextmanager
-    def fx_outputs(self,pairs,*,unmaterialized=()):
+    def fx_outputs(self,pairs,*,unmaterialized=(),researched=True):
         store=FeatureStore(self.root);original=signal_summaries._load_output_metadata
         outputs={item['signal_id']:item for _,item in pairs}
         mapping={item['feature']['id']:{'recipe':recipe,'feature':reference(item['feature']),
@@ -125,12 +147,15 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             return (store,[deepcopy(outputs[identifier])]) if identifier in outputs else original(root,identifier,**kwargs)
         def project(feature):return deepcopy(mapping[feature['id']]['recipe'])
         for recipe,_ in [*pairs,*unmaterialized]:store.install_record(recipe)
+        if researched:
+            for recipe,_ in pairs:self.record_research(recipe)
         with patch('data.reusable_features.list_reusable_fx_recipes',return_value=list({r['id']:r for r,_ in [*pairs,*unmaterialized]}.values())), patch.object(signal_summaries,'_load_output_metadata',side_effect=load), \
              patch.object(signal_summaries,'reusable_recipe_mapping_context',return_value=(mapping,project)):
             yield
 
     def test_non_fx_summary_and_verified_detail_are_preserved(self):
         old=signal_library.list_signal_library(self.root)['signals'][0]
+        self.record_research()
         result=self.list();self.assertEqual(result['schema_version'],'1.0.0')
         self.assertEqual(result['entry_count'],1);self.assertEqual(result['issues'],[])
         entry=result['entries'][0]
@@ -153,8 +178,8 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertIsNone(group['observation_count'])
         self.assertEqual(len(group['outputs']),2)
         self.assertEqual({o['source']['series_id'] for o in group['outputs']},{'AUDUSD','EURUSD'})
-        self.assertEqual(group['research']['state'],'untested')
-        self.assertEqual(group['research']['relationship_count'],0)
+        self.assertEqual(group['research']['state'],'results_linked')
+        self.assertEqual(group['research']['relationship_count'],1)
         self.assertNotIn('metrics',group)
 
     def test_distinct_parameters_remain_separate_even_with_identical_display_names(self):
@@ -165,13 +190,112 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertEqual({g['id'] for g in groups},{a[0]['id'],b[0]['id']})
         self.assertTrue(all(len(g['outputs'])==1 for g in groups))
 
-    def test_registry_only_recipes_appear_in_signal_library(self):
+    def test_registry_and_preparation_only_recipes_are_excluded(self):
         stored=self.fx_item();unprepared=self.fx_item(operator='TR_BASE_distribution_skew')
-        with self.fx_outputs([stored],unmaterialized=[unprepared]):result=self.list()
-        ids={entry['id'] for entry in result['entries']}
-        self.assertIn(stored[0]['id'],ids);self.assertIn(unprepared[0]['id'],ids)
-        untested=next(x for x in result['entries'] if x['id']==unprepared[0]['id'])
-        self.assertEqual(untested['outputs'],[]);self.assertEqual(untested['research']['state'],'untested')
+        with self.fx_outputs([stored],unmaterialized=[unprepared],researched=False):result=self.list()
+        self.assertEqual(result['entries'],[])
+        self.assertEqual(result['issues'],[])
+
+    def test_106_registered_definitions_and_five_outcomes_yield_one_researched_signal(self):
+        template,_=self.fx_item();recipes=[];store=FeatureStore(self.root)
+        for contract in (INPUT_CONTRACT,CURRENCY_INPUT_CONTRACT):
+            for k in [63,*range(1,53)]:
+                body=deepcopy(template['body']);body['input_contract']=deepcopy(contract)
+                body['steps'][-1]['parameters'][0]['value']['value']=str(k)
+                recipe=make_record(RECIPE_KIND,body,'Synthetic registered momentum')
+                store.install_record(recipe);recipes.append(recipe)
+        self.assertEqual(len({r['id'] for r in recipes}),106)
+        selected=recipes[53]
+        self.record_research(selected,(1,7,63))
+        self.record_research(selected,(21,),decision='admitted',validation='FAILED')
+        self.record_research(selected,(252,),decision='unresolved')
+        before=inventory(self.root)
+        with (patch('data.reusable_features.list_reusable_fx_recipes',return_value=recipes),
+              patch.object(ResearchStore,'verify_artifact',side_effect=AssertionError('No numerical artifacts'))):
+            result=self.list()
+        self.assertEqual(result['entry_count'],1);self.assertEqual(result['issues'],[])
+        entry=result['entries'][0];self.assertEqual(entry['recipe'],reference(selected))
+        self.assertEqual(entry['research']['relationship_count'],5)
+        self.assertEqual(entry['research']['trial_count'],5)
+        self.assertEqual({r['p1_status'] for r in entry['research']['relationships']},{'admitted','rejected','unresolved'})
+        self.assertEqual(next(r for r in entry['research']['relationships'] if r['horizon']==21)['p2_status'],'FAILED')
+        self.assertEqual(inventory(self.root),before)
+
+    def test_corrupt_links_are_isolated_and_exact_record_is_reported(self):
+        good=self.record_research(horizons=(1,7))
+        path=ResearchStore(self.root).path('link',good[0]['id']);path.write_text('{')
+        result=self.list();self.assertEqual(result['entry_count'],1)
+        self.assertEqual(result['entries'][0]['research']['relationship_count'],1)
+        self.assertEqual(result['issues'][0]['record_id'],good[0]['id'])
+        self.assertEqual(result['issues'][0]['code'],'UNAVAILABLE_RESEARCH_LINK')
+        self.assertNotIn(str(self.root),json.dumps(result))
+
+    def test_missing_trial_or_wrong_admission_does_not_qualify_as_researched(self):
+        links=self.record_research(horizons=(1,7));store=ResearchStore(self.root)
+        store.path('trial',links[0]['body']['trial_results'][0]['id']).unlink()
+        other=deepcopy(links[1]['body']);other['admission_results']=links[0]['body']['admission_results']
+        store.path('link',links[1]['id']).unlink();store.put('link',other,other)
+        result=self.list();self.assertEqual(result['entries'],[])
+        self.assertEqual(len(result['issues']),2)
+
+    def test_exact_recipe_hash_mismatch_is_not_silently_joined(self):
+        links=self.record_research();store=ResearchStore(self.root)
+        relation=store.resolve('relationship',links[0]['body']['relationship'])
+        body=deepcopy(relation['body']);body['recipe']['content_sha256']='f'*64
+        changed=store.put('relationship',body,body)
+        original=store.resolve('trial',links[0]['body']['trial_results'][0]);key=deepcopy(original['scientific_key']);key['relationship']=ref(changed)
+        trial=store.put('trial',key,original['body'])
+        admission=store.put('admission',{'trial':ref(trial)}, {'relationship':ref(changed),'trial':ref(trial),'decision':'rejected'})
+        link={'relationship':ref(changed),'trial_results':[ref(trial)],'admission_results':[ref(admission)],'validation_results':[]}
+        store.path('link',links[0]['id']).unlink();store.put('link',link,link)
+        result=self.list();self.assertEqual(result['entries'],[])
+        self.assertEqual(result['issues'][0]['code'],'UNAVAILABLE_RESEARCHED_FEATURE')
+
+    def test_partial_branches_deduplicate_but_independent_research_is_retained(self):
+        self.record_research(decision='admitted')
+        self.record_research(decision='admitted',validation='FAILED')
+        self.record_research(decision='admitted',validation='FAILED',branch='independent repeat')
+        result=self.list();research=result['entries'][0]['research']
+        self.assertEqual(research['relationship_count'],1)
+        self.assertEqual(len(research['relationships']),2)
+        self.assertEqual(research['trial_count'],2)
+
+    def test_currency_output_dispatch_uses_pinned_projector_and_exact_reference(self):
+        from data import fx_currency_features as currency
+        recipe,output=self.fx_item()
+        body=deepcopy(recipe['body']);body['input_contract']=deepcopy(CURRENCY_INPUT_CONTRACT)
+        recipe=make_record(RECIPE_KIND,body,'Currency momentum')
+        source=deepcopy(output['feature']['body']['recipe'])
+        source['evaluation_policy']=fake_reference('POL_TRANSFORM_','currency')
+        source['evaluation_policy']['id']='POL_TRANSFORM_EVALUATION_FX_CURRENCY_SNAPSHOT'
+        feature=make_feature_definition(source,'Currency output')
+        binding={'feature':reference(feature),'configuration_id':'configuration'}
+        catalog={'body':{'recipes':[{'configuration':{'id':'configuration'},'recipe':reference(recipe)}],'bindings':[binding]}}
+        project=lambda supplied:deepcopy(recipe)
+        with (patch.object(currency,'context',return_value=(None,catalog,None)),
+              patch.object(currency,'records',return_value={recipe['id']:recipe}),
+              patch.object(currency,'projector',return_value=project) as approved,
+              patch.object(signal_summaries,'reusable_recipe_mapping_context',side_effect=AssertionError('Currency output reached canonical TS mapping'))):
+            dispatch=signal_summaries._recipe_projector(self.root)
+            self.assertEqual(reference(dispatch(feature)),reference(recipe))
+            self.assertEqual(reference(dispatch(feature)),reference(recipe))
+            self.assertEqual(approved.call_count,1)
+            changed=deepcopy(feature);changed['body']['recipe']['output_node']='different'
+            with self.assertRaisesRegex(ValueError,'exact completed currency mapping'):dispatch(changed)
+
+    def test_every_approved_momentum_variant_has_a_parameter_specific_human_label(self):
+        from api.research_labels import recipe_label
+        from data.fx_feature_recipes import configurations,MOMENTUM_CONFIGURATION_PROFILE
+        from data.reusable_features import _definition
+        registry=Registry(Path(__file__).resolve().parents[1])
+        variants=configurations(registry,MOMENTUM_CONFIGURATION_PROFILE)
+        self.assertEqual(len(variants),53)
+        # Presentation only: this policy reference is sufficient to construct
+        # immutable synthetic recipes; no source data or execution is involved.
+        policy={'id':'POLICY_TEST','version':'1.0.0'}
+        labels=[recipe_label(_definition(registry,policy,variant)) for variant in variants]
+        self.assertEqual(len(set(labels)),53)
+        self.assertIn('63-day log momentum',labels)
 
     def test_authoritative_research_joins_existing_recipe_without_changing_outputs(self):
         from api.catalog_cache import CatalogCache
@@ -181,19 +305,21 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         (self.root/'config').mkdir(exist_ok=True)
         (self.root/'config/research_execution.json').write_text(json.dumps(profile()))
         request = intent(mode='CS'); request['feature'] = {'id':recipe['id'],'version':recipe['version']}
-        jobs = ResearchJobs(self.root, adapter=Adapter(), kernels=KernelSpy())
+        class ExactAdapter(Adapter):
+            def resolve_plan(self,*args):
+                plan=super().resolve_plan(*args);plan['recipe']=reference(recipe);return plan
+        jobs = ResearchJobs(self.root, adapter=ExactAdapter(), kernels=KernelSpy())
         self.addCleanup(jobs.close)
         cache = CatalogCache()
         read = lambda: cache.get_verified('signals', self.root, self.list)
-        with self.fx_outputs([(recipe,output)]):
+        with self.fx_outputs([(recipe,output)],researched=False):
             before = read()
-            self.assertEqual(next(e for e in before['entries'] if e['id']==recipe['id'])['research']['state'], 'untested')
+            self.assertEqual(before['entries'],[])
             jobs.submit(request); jobs.run_pending_once()
             result = read()
         self.assertEqual(jobs.get(request['request_id'])['status'],'succeeded')
         group = next(entry for entry in result['entries'] if entry['id']==recipe['id'])
-        self.assertEqual(group['outputs'], next(e for e in before['entries'] if e['id']==recipe['id'])['outputs'])
-        self.assertEqual(result['entry_count'],2)  # Existing CES-style fixture plus one FX recipe.
+        self.assertEqual(result['entry_count'],1)
         self.assertEqual(len(group['outputs']),1)
         self.assertIsNone(group['observation_count'])
         self.assertEqual(group['research']['relationship_count'],5)
@@ -205,15 +331,13 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             for trial_result in relationship['results']:
                 authority=jobs.store.resolve('trial',trial_result['authority'])
                 self.assertEqual(trial_result['metrics'],authority['body']['metrics'])
-        legacy = next(entry for entry in result['entries'] if entry['id']==self.signal_id)
-        self.assertEqual(legacy['signal']['feature'],signal_library.list_signal_library(self.root)['signals'][0]['feature'])
 
     def test_readable_momentum_name_and_internal_log_basis_preserve_operator_chain(self):
         momentum=self.fx_item();downside=self.fx_item('USDJPY','TR_BASE_vol_downside')
         with self.fx_outputs([momentum,downside]):result=self.list()
         groups={entry['id']:entry for entry in result['entries']}
         group=groups[momentum[0]['id']]
-        self.assertEqual(group['name'],'Log Skip Recent Momentum')
+        self.assertEqual(group['name'],'63-day log momentum, skip 5 days')
         self.assertEqual(group['source']['label'],'Closing prices')
         self.assertEqual([s['label'] for s in group['transformations']],['Log Level','Skip Recent Difference'])
         self.assertEqual(group['transformations'][-1]['parameters'],momentum[0]['body']['steps'][-1]['parameters'])
@@ -240,7 +364,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.link_research()
         # The old endpoint retains its explicitly unresearched contract.
         with self.assertRaises(ValueError):signal_library.get_signal_detail(self.root,self.signal_id)
-        result=self.list();self.assertEqual(result['entry_count'],1)
+        result=self.list();self.assertEqual(result['entry_count'],0) # Unresolvable historical pointers are not verified trial evidence.
         detail=self.detail();research=detail['research']
         self.assertNotIn(research['state'],('untested','validated'))
         self.assertEqual(research['relationship_count'],1)
@@ -259,9 +383,11 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertNotIn(group['research']['state'],('untested','validated'))
         self.assertEqual(group['research']['relationship_count'],1)
         self.assertEqual(len(group['outputs']),2)
-        self.assertIn(a[1]['signal_id'],json.dumps(group['research']))
+        self.assertEqual(group['research']['trial_count'],1)
+        self.assertNotIn(self.relationships()[0]['trial_results'][0]['id'],json.dumps(group['research']))
 
     def test_malformed_output_isolated_and_corrupt_payload_rejected(self):
+        self.record_research()
         bad=self.root/signal_library.ENTRIES/('SIGNAL_'+'f'*64);bad.mkdir();(bad/'bad.json').write_text('{')
         result=self.list();self.assertEqual(result['entry_count'],1);self.assertEqual(len(result['issues']),1)
         self.assertNotIn(str(self.root),json.dumps(result))
@@ -272,6 +398,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertEqual(self.list()['entry_count'],1)  # Catalog presence does not certify payload integrity.
 
     def test_catalog_never_loads_observations_or_trial_artifacts(self):
+        self.record_research()
         with patch.object(signal_summaries,'read_materialization',side_effect=AssertionError('No payload reads')),patch('research.store.ResearchStore.verify_artifact',side_effect=AssertionError('No artifact reads')):
             result=self.list()
         self.assertEqual(result['entry_count'],1)
@@ -292,6 +419,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertEqual(inventory(self.root),before)
 
     def test_http_caches_refresh_after_a_separate_process_publishes_output(self):
+        self.record_research()
         args=deepcopy(self.arguments)
         args['result']=execute_recipe(args['input_series'],args['feature']['body']['recipe'],['2020-03-15'],
             registry=Registry(self.root),implementation=reference(args['implementation']))
@@ -319,6 +447,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             self.assertEqual(inventory(self.root),after_publication)
 
     def test_warm_catalog_rechecks_corrupt_metadata_and_recovers_after_repair(self):
+        self.record_research()
         from api.catalog_cache import CatalogCache
         from data.feature_store import record_path
         cache=CatalogCache()

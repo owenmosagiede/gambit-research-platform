@@ -35,20 +35,35 @@
     if (cls) element.className = cls;
     return element;
   };
-  function selectedName(id, reference) {
-    for (const option of Array.from($(id)?.options || [])) {
-      try {
-        const value = JSON.parse(option.value);
-        if (value.id === reference.id && value.version === reference.version) return option.textContent;
-      } catch (_error) { /* Placeholder options have no reference. */ }
+  function selection(item) {
+    const p = item.presentation;
+    if (p?.state === "verified" && [p.title, p.subtitle, p.feature_label, p.scope_label, p.target_label].every(v => typeof v === "string" && v.length)) {
+      return {Feature: p.feature_label, Scope: p.scope_label, Title: p.title, Subtitle: p.subtitle, Target: p.target_label};
     }
-    return reference.id;
+    return {Feature: "Saved experiment", Scope: item.intent?.scope.id || "Scope unavailable", Title: "Saved experiment",
+      Subtitle: "Saved input labels could not be verified. Expand the record for its exact selections.",
+      Target: "Forward price return · five forecast horizons"};
   }
-  function selection(intent) {
-    return {Feature: selectedName("feature", intent.feature), Target: "Price Return · all five horizons",
-      Scope: selectedName("scope", intent.scope), "Expected Direction": intent.expected_direction === "POSITIVE" ? "Positive" : "Negative"};
+  function references(card, item) {
+    const details = node("details", undefined, "definition-panel");
+    details.append(node("summary", "Exact selections and record IDs"));
+    details.append(node("p", `Request: ${item.job.request_id}`, "queue-id"));
+    if (item.intent) {
+      for (const [label, key] of [["Feature", "feature"], ["Scope", "scope"]]) {
+        const reference = item.intent[key];
+        details.append(node("p", `${label}: ${reference.id} · version ${reference.version}`, "queue-id"));
+      }
+      details.append(node("p", `Expected direction: ${item.intent.expected_direction}`, "field-note"));
+    }
+    if (item.presentation?.state === "verified") {
+      for (const [label, key] of [["Feature definition", "feature_reference"], ["Scope definition", "scope_reference"], ["Frozen membership", "membership_snapshot"]]) {
+        const value = item.presentation[key];
+        if (value) details.append(node("p", `${label}: ${JSON.stringify(value)}`, "queue-id"));
+      }
+    }
+    card.append(details);
   }
-  const outcome = value => ({pending:"Pending", admitted:"Admitted", rejected:"Rejected", not_admitted:"Not admitted", not_run:"Not run", VALIDATED:"Validated", FAILED:"Failed", UNRESOLVED:"Unresolved"}[value] || value);
+  const outcome = value => ({pending:"Pending", admitted:"Admitted", rejected:"Rejected", unresolved:"Inconclusive", not_admitted:"Not admitted", not_run:"Not run", VALIDATED:"Validated", FAILED:"Failed", UNRESOLVED:"Inconclusive"}[value] || value);
   function addDetails(card, item) {
     const j = item.job;
     card.id = `trial-${j.request_id}`;
@@ -67,7 +82,7 @@
     if (reasons.length) { const list = node("ul", undefined, "card-reasons"); for (const b of reasons) list.append(node("li", b.message)); card.append(list); }
     if (j.horizons.length) {
       const list = node("ul", undefined, "card-horizons");
-      for (const h of [...j.horizons].sort((a,b) => a.horizon-b.horizon)) list.append(node("li", `${h.horizon} · P1: ${outcome(h.p1_status)} · P2: ${outcome(h.p2_status)}`));
+      for (const h of [...j.horizons].sort((a,b) => a.horizon-b.horizon)) list.append(node("li", `${h.horizon}-day forecast · P1: ${outcome(h.p1_status)} · P2: ${outcome(h.p2_status)}`));
       card.append(list);
     }
     if (j.operational_failure) card.append(node("p", "Operational failure; this is not a statistical rejection. Saved evidence is preserved."));
@@ -81,7 +96,7 @@
       const column = node("section", undefined, "queue-column"), heading = node("h3", title);
       heading.append(node("span", String(rows.length), "queue-count")); column.append(heading);
       for (const item of rows) {
-        const job = item.job, names = item.intent ? selection(item.intent) : null;
+        const job = item.job, names = item.intent ? selection(item) : null;
         const card = node("article", undefined, "queue-card"); card.dataset.requestId = job.request_id;
         if (key === "attention" && job.attempt_id) {
           const remove = node("button", "×", "queue-remove"); remove.type = "button";
@@ -89,12 +104,13 @@
           remove.title = "Remove from queue · saved records stay in Trial Ledger";
           remove.addEventListener("click", () => dismiss(item)); card.append(remove);
         }
-        card.append(node("span", job.request_id, "queue-id"), node("h4", names ? names.Feature : "Submission evidence unavailable"));
-        if (names) card.append(node("p", `${names.Scope} · ${names.Target} · ${names["Expected Direction"]}`));
+        card.append(node("h4", names ? names.Title : "Submission evidence unavailable"));
+        if (names) card.append(node("p", names.Subtitle), node("p", names.Target, "field-note"));
         card.append(node("p", `${labels[job.status]}${item.queue_position ? ` · Waiting position ${item.queue_position}` : ""}`),
           node("p", `${job.progress.completed} of ${job.progress.total} work items completed`), node("p", job.message));
         if (job.status === "succeeded") card.append(node("p", "Execution complete. Scientific outcomes are listed separately for each horizon."));
         addDetails(card, item);
+        references(card, item);
         column.append(card);
       }
       if (!rows.length) column.append(node("p", "No submissions", "field-note"));
@@ -128,12 +144,12 @@
     const from = $("ledger-from").value, to = $("ledger-to").value;
     const all = last.items.filter(item => finished.has(item.job.status));
     const rows = all.filter(item => {
-      const names = item.intent ? selection(item.intent) : {};
+      const names = item.intent ? selection(item) : {};
       const day = item.job.updated_at.slice(0, 10);
       return (!state || item.job.status === state) && (!from || day >= from) && (!to || day <= to) &&
         (!search || JSON.stringify([names, item.intent, item.job.request_id]).toLowerCase().includes(search));
     }).sort((a,b) => b.job.updated_at.localeCompare(a.job.updated_at) || a.job.request_id.localeCompare(b.job.request_id));
-    const signature = JSON.stringify([rows.map(item => [item, item.intent ? selection(item.intent) : null]), dismissed, search, state, from, to]);
+    const signature = JSON.stringify([rows.map(item => [item, item.intent ? selection(item) : null]), dismissed, search, state, from, to]);
     if (signature === ledgerRendered) return;
     ledgerRendered = signature;
     const expanded = new Set(Array.from(list.children).filter(card => card.open).map(card => card.dataset.requestId));
@@ -141,25 +157,27 @@
     if (from && to && from > to) { note.textContent = "Finished from must be on or before Finished through."; return; }
     note.textContent = `${rows.length} of ${all.length} saved submissions. ${last.issues.length ? "Some records could not be verified; see queue status." : "Each entry preserves its original selections and horizon outcomes."}`;
     for (const item of rows) {
-      const j = item.job, names = item.intent ? selection(item.intent) : null;
+      const j = item.job, names = item.intent ? selection(item) : null;
       const card = node("details", undefined, "ledger-card"); card.dataset.requestId = j.request_id; card.open = expanded.has(j.request_id) || focusedRequest === j.request_id;
       const summary = node("summary");
-      summary.append(node("strong", names ? names.Feature : "Submission evidence unavailable"),
-        node("span", names ? `${names.Scope} · ${names.Target} · ${names["Expected Direction"]}` : j.request_id),
+      summary.append(node("strong", names ? names.Title : "Submission evidence unavailable"),
+        node("span", names ? names.Subtitle : j.request_id),
         node("span", `${labels[j.status]} · ${j.updated_at.slice(0, 19).replace("T", " ")} UTC${isDismissed(item) ? " · Removed from queue" : ""}`));
-      card.append(summary, node("p", j.request_id, "queue-id"), node("p", j.message, "field-note"));
+      card.append(summary, node("p", names ? names.Target : "", "field-note"), node("p", j.message, "field-note"));
+      if (item.presentation?.schedule_note) card.append(node("p", item.presentation.schedule_note, "field-note"));
       if (j.blockers.length) card.append(node("p", j.blockers.map(b => b.message).join(" "), "field-note"));
       const scroll = node("div", undefined, "table-scroll"), table = node("table", undefined, "signal-table");
       const head = node("thead"), heading = node("tr");
-      for (const title of ["Horizon · scheduled weekdays", "P1", "P2"]) { const cell = node("th", title); cell.scope = "col"; heading.append(cell); }
+      for (const title of ["Forecast horizon · scheduled weekdays", "P1 · discovery", "P2 · validation"]) { const cell = node("th", title); cell.scope = "col"; heading.append(cell); }
       head.append(heading); const body = node("tbody");
       for (const h of [...j.horizons].sort((a,b) => a.horizon - b.horizon)) {
-        const row = node("tr"); row.append(node("td", String(h.horizon)), node("td", h.p1_status), node("td", h.p2_status)); body.append(row);
+        const row = node("tr"); row.append(node("td", String(h.horizon)), node("td", outcome(h.p1_status)), node("td", outcome(h.p2_status))); body.append(row);
       }
       table.append(head, body); scroll.append(table); card.append(scroll);
       card.append(node("p", `${j.results.length} stored research result links. Completed execution does not mean a validated relationship.`, "field-note"));
       // History is self-contained; there is no separate progress panel.
       addDetails(card, {...item,job:{...j,horizons:[],blockers:[]}});
+      references(card, item);
       if (isDismissed(item)) {
         const restore = node("button", "Show in queue", "text-button ledger-restore"); restore.type = "button";
         restore.addEventListener("click", () => {
@@ -205,7 +223,7 @@
         }
       }
       // Keep buttons and scroll positions stable when the saved queue is unchanged.
-      const signature = JSON.stringify([dismissed, last.items.map(item => [item, item.intent ? selection(item.intent) : null])]);
+      const signature = JSON.stringify([dismissed, last.items.map(item => [item, item.intent ? selection(item) : null])]);
       if (signature !== rendered) { render(last); rendered = signature; }
       renderLedger();
       updateStatus();
