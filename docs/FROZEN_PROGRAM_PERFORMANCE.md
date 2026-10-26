@@ -103,6 +103,9 @@ Recheck these identities at the actual cutover; these are not permission to act.
 1. Complete review and merge only with authorization. Build the official source
    archive and passing release-check receipt from that exact main commit. Retain
    the original deployed archive, new archive, equivalence report and checks.
+   Recheck that the service Python and every installed package still match the
+   observed environment and unchanged `requirements-cloud.lock`; a dependency
+   change requires separate review. Use the service interpreter for cutover.
    Stage the reviewed release-control script and its dependencies outside the
    installed application, from that verified artifact. This is an explicit
    operator-control update, not an implicit service/configuration installation.
@@ -130,7 +133,7 @@ Recheck these identities at the actual cutover; these are not permission to act.
 6. Run `program_cutover.py plan` with that approval, both archives, the original
    operator and exact evidence. Review the resulting plan hash. Run `apply` with
    that exact hash only after approval. The command rechecks quiescence, backup,
-   release-control/backup locks, worker/executor/writer locks, and Feature/lineage
+   release-control/backup locks, worker/executor/writer locks, and Feature/Target/lineage
    publication locks, in their established order. It verifies all pins again,
    publishes approval with access for the existing `gambit` service identity,
    saves before-images and a durable receipt, and installs only allowed code.
@@ -142,15 +145,41 @@ Recheck these identities at the actual cutover; these are not permission to act.
    Then, as part of the approved window, start the existing worker and web
    services. Check external worker health, `/healthz`, existing health service,
    immutable attempt provenance and normal progress on the **existing queue**.
-   Do not submit a new pilot. Confirm that the hourly reader can still verify
-   the unchanged manifest and research results; keep scientific passes distinct
-   from operational completion.
+   Do not submit a new pilot. The existing hourly reader requires the original
+   executor and must not silently accept a changed fingerprint. Stage and test
+   the separate approval-aware metadata reader before the window; activate it
+   only as part of the approved cutover, retaining the prior verified-pass
+   checkpoint and immutable relationship identities. Require it to verify the
+   exact approval, unchanged manifest and research results without reading
+   numerical payloads. Keep scientific passes distinct from operational
+   completion. This release does not modify the active reader or its schedule.
 
 The command's CLI lists the required file arguments. Exact hashes, approval and
 reviewed plan are mandatory; it has no `--force` or `--ignore-backlog` option.
 The normal `release_server.py` remains idle-only and must not be used to bypass
 this separate program migration. Intake and service lifecycle are deliberately
 not automated by the cutover tool.
+
+### Staged hourly reader
+
+`tools/frozen_program_status.py` is a separate metadata-only candidate; it does
+not connect over SSH, write checkpoints, repair records or change a schedule.
+After approved activation, the existing local SSH/health/process wrapper calls
+the installed `read_status` with the original manifest, exact resume-003 operator
+and exact installed approval reference. It retains worker/service health and
+process observations. The reader accepts historical trials only by approved
+immutable references, and new trials only with the approved executor, exact
+trial intent and request execution provenance. Existing scientific pass gates
+remain in force; numerical artifact manifests and payloads are not read.
+
+The wrapper then calls `merge_checkpoint(report, previous_checkpoint)` locally.
+Advance the last-successful checkpoint file only when `checkpoint_advanced` is
+true; otherwise save an incomplete diagnostic separately and retain that file.
+Known pass identities and the last successful observation survive incomplete
+reads, so an old pass is never announced again after an access failure. Preserve
+the existing heartbeat frequency and notification preferences. Before activating
+this wrapper, verify checkpoint continuity and health-field integration during
+the approved window; the current reader remains untouched by this PR.
 
 ## Recovery
 

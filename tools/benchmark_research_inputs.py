@@ -7,6 +7,7 @@ Target reconstruction, phase isolation, kernels, artifacts and the request worke
 are real. This is not a production-scale forecast or a provider I/O benchmark.
 """
 import argparse
+import ast
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 import hashlib
@@ -49,21 +50,48 @@ def locked_environment(source):
             'python': sys.version, 'platform': platform.platform(), 'cpu_count': os.cpu_count()}
 
 
+def compare_saved_closures(old, new):
+    if 'research.contracts' not in sys.modules:
+        sys.path.insert(0, str(ROOT / 'src'))
+    spec = importlib.util.spec_from_file_location('research_benchmark_closure', ROOT / 'tools/research_benchmark_closure.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    return module.compare_closures(old, new)
+
+
 def compare_reports(old, new):
     fields = ('case', 'loaded_inputs_sha256', 'complete_calculation_sha256', 'phase_access', 'horizons')
     if not old['loaded_inputs_sha256'] or not old['complete_calculation_sha256']:
         raise ValueError('Empty evidence cannot prove scientific equivalence')
     differences = [key for key in fields if old[key] != new[key]]
+    if 'saved_scientific_closure' not in old or 'saved_scientific_closure' not in new:
+        raise ValueError('Saved authoritative result closure is required')
+    saved = compare_saved_closures(old['saved_scientific_closure'], new['saved_scientific_closure'])
+    if not saved['exact_saved_scientific_equality']: differences.append('saved_scientific_closure')
     return {'case': old['case'], 'exact_scientific_equality': not differences,
-            'differing_evidence': differences,
+            'differing_evidence': differences, 'saved_closure_comparison': saved,
             'baseline_wall_seconds': old['end_to_end']['wall_seconds'],
             'optimized_wall_seconds': new['end_to_end']['wall_seconds']}
+
+
+def fixture_builder_identity(source_text):
+    names = {'build', 'fixture_boundary', 'load_source', 'source_copy', 'copy_store', 'canonical', 'sha'}
+    functions = [node for node in ast.parse(source_text).body if isinstance(node, ast.FunctionDef) and node.name in names]
+    if {node.name for node in functions} != names: raise ValueError('Fixture builder source is incomplete')
+    return sha(ast.dump(ast.Module(body=functions, type_ignores=[]), include_attributes=False).encode())
 
 
 def tree_identity(root):
     names = {str(p.relative_to(root)): sha(p.read_bytes()) for p in root.rglob('*')
              if p.is_file() and p.suffix not in ('.pyc', '.lock') and '__pycache__' not in p.parts}
     return {'sha256': sha(canonical(names)), 'files': len(names)}
+
+
+def copy_store(source, target, *, merge=False):
+    if sys.platform == 'darwin':
+        # APFS clone files share immutable payload extents until changed.
+        subprocess.run(['cp', '-cR', str(source) + ('/.' if merge else ''), str(target)], check=True)
+    else:
+        shutil.copytree(source, target, dirs_exist_ok=merge)
 
 
 def source_copy(source, target, revision=None):
@@ -116,7 +144,7 @@ def fixture_boundary(root, fixture):
         yield
 
 
-def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=None, production_shape=False):
+def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=None, production_shape=False, resume_checkpoint=None):
     load_source(source)
     from data.feature_store import FeatureStore
     from data.fx_feature_recipes import build_fx_feature, get_fx_policy, _typed_parameters
@@ -133,6 +161,19 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
     from test_research_policy_inputs import scheduled_profile
     f = StoredResearchEndToEndTests(methodName='runTest'); f.setUp()
     try:
+        if resume_checkpoint:
+            metadata = json.loads((resume_checkpoint / 'metadata.json').read_text())
+            if (metadata['schema'] != 'isolated_momentum_fixture_checkpoint_v1'
+                    or metadata['baseline_commit'] != BASELINE_COMMIT
+                    or metadata['production_shape'] != production_shape or metadata['members'] != member_count
+                    or metadata['lineage'] != os.environ.get('GAMBIT_FX_LINEAGE_STORAGE', 'loose')):
+                raise ValueError('Checkpoint build provenance differs')
+            checkpoint = resume_checkpoint / 'store'
+            actual = {str(p.relative_to(checkpoint)): sha(p.read_bytes()) for p in checkpoint.rglob('*')
+                      if p.is_file() and p.suffix not in ('.pyc', '.lock') and '__pycache__' not in p.parts}
+            if actual != metadata['files']: raise ValueError('Checkpoint files changed')
+            copy_store(checkpoint, f.root, merge=True)
+            print('Resumed exact baseline fixture checkpoint', len(actual), 'files', flush=True)
         # The legacy five-member fixture remains a regression control. The
         # larger fixture uses 18 synthetic preoriented USD sources, and the real
         # currency application/Feature/Target paths. Provider traversal is excluded.
@@ -201,7 +242,14 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
                 row['id'] = 'FXPRICE_' + digest(row); prices.append(row)
             f.states[binding['id']] = (snapshot, prices)
             existing[symbol] = {'instrument_id': symbol, 'price_snapshot': binding}
-            materialize(f.root, binding, f.fx.batch, knowledge_cutoff=cutoff)
+            saved_targets = []
+            if resume_checkpoint:
+                for path in (f.root / 'storage/catalog/target_store').glob('*/manifest.json'):
+                    row = json.loads(path.read_text())
+                    if row.get('price_snapshot') == binding and row['input_key']['knowledge_cutoff'] == cutoff:
+                        saved_targets.append(row)
+            if len(saved_targets) != 5:
+                materialize(f.root, binding, f.fx.batch, knowledge_cutoff=cutoff)
         f.symbols[:] = desired; f.current[:] = [existing[s] for s in desired]
         registry_source = Registry(source)
         _copy_metadata_closure(f.root, [registry_source.operator('TR_BASE_smooth_ew_change')])
@@ -233,7 +281,10 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
             profile['target_selection'].update(selection_scope='currency_price_catalog', price_catalog=catalog_ref)
         from research.contracts import canonical as rc, ref
         pp = f.root / 'definitions/research_specs' / profile['id'] / (profile['version'] + '.json')
-        pp.parent.mkdir(parents=True); pp.write_bytes(rc(profile) + b'\n')
+        pp.parent.mkdir(parents=True, exist_ok=True)
+        if pp.exists() and pp.read_bytes() != rc(profile) + b'\n':
+            raise ValueError('Checkpoint research profile differs')
+        pp.write_bytes(rc(profile) + b'\n')
         (f.root / 'config/research_execution.json').write_bytes(rc({'research_spec': ref(profile)}) + b'\n')
         plans = {}; expected_p2 = {}
         for label, operator, parameters in (
@@ -311,7 +362,7 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
                    'source_admission': 'synthetic exact pinned source fixture; real source provider traversal excluded',
                    'fixture_population': 'three recipes and opposite-direction control, not the production population'}
         (f.root / 'benchmark-fixture.json').write_bytes(canonical(fixture) + b'\n')
-        shutil.copytree(f.root, destination)
+        copy_store(f.root, destination)
     finally:
         f.doCleanups()
     return {**tree_identity(destination), 'members': fixture['members'],
@@ -351,7 +402,12 @@ def run(source, fixture_root, case, output, *, warm=False):
     from research.p1_discovery import run_p1
     from research.p2_validation import run_p2
     from runtime.research_jobs import ResearchJobs, implementation
-    fixture = json.loads((fixture_root / 'benchmark-fixture.json').read_text())
+    fixture_path = fixture_root / 'benchmark-fixture.json'
+    fixture = json.loads(fixture_path.read_text())
+    fixture_holder = {'serialized_bytes': fixture_path.stat().st_size,
+        'source_rows': sum(len(value[1]) for value in fixture['states'].values()),
+        'rss_high_water_before_worker_bytes': performance.peak_rss_bytes(),
+        'note': 'Source states stay in memory as a synthetic admission fixture; process RSS includes this holder and startup. RSS deltas are not cache-size estimates.'}
     plan = fixture['plans'][case]; captured = {}; calculations = {}; access = []
     def identity(value):
         with performance.measure('benchmark.equivalence_capture'):
@@ -384,6 +440,8 @@ def run(source, fixture_root, case, output, *, warm=False):
             p2 = sorted(int(v.split('.')[1]) for v in access if v.startswith('P2.'))
             if p2 != fixture['expected_p2'][case]: raise AssertionError(('Unexpected P2 access', case, p2))
             runtime = profile.report()
+            from research_benchmark_closure import capture_closure
+            saved_closure = capture_closure(jobs.store, job, expected_implementation=implementation())
             before = tree_identity(fixture_root)
             again, created = jobs.submit(request)
             if created or again['results'] != job['results'] or len(calculations) != len(access):
@@ -408,8 +466,9 @@ def run(source, fixture_root, case, output, *, warm=False):
                       'input_temperature_runs': input_runs, 'loaded_inputs_sha256': captured,
                       'complete_calculation_sha256': calculations, 'phase_access': access,
                       'horizons': job['horizons'], 'committed_retry_unchanged': True,
+                      'saved_scientific_closure': saved_closure,
                       'process_environment': locked_environment(source),
-                      'source_admission_boundary': fixture['source_admission'],
+                      'source_admission_boundary': fixture['source_admission'], 'fixture_holder': fixture_holder,
                       'lineage_storage_mode': os.environ.get('GAMBIT_FX_LINEAGE_STORAGE', 'loose')}
             output.write_text(json.dumps(report, indent=2) + '\n')
         finally:
@@ -426,9 +485,11 @@ def main():
     p.add_argument('--production-shape', action='store_true',
                    help='12185 synthetic source dates, 449 P1 weekdays and 1216 P2 weekdays; no production observations')
     p.add_argument('--scheduled-dates', type=int, choices=(2600,), help='Long-history currency fixture')
+    p.add_argument('--resume-checkpoint', type=Path, help='Resume an exact checksummed isolated baseline fixture checkpoint')
     p.add_argument('--fixture-cache', type=Path, help='Optional local synthetic fixture cache, checksummed before reuse')
     p.add_argument('--lineage', choices=('loose', 'packed_v1'), default='loose',
                    help='Physical lineage mode; identical for baseline and optimized')
+    p.add_argument('--order', choices=('baseline-first', 'optimized-first'), default='baseline-first')
     p.add_argument('--parallel', type=int, choices=(1, 2), default=1,
                    help='Offline independent-store subprocess experiment only; not a production coordinator')
     p.add_argument('--child', choices=('build', 'run'))
@@ -437,7 +498,7 @@ def main():
     p.add_argument('--case', choices=CASES)
     a = p.parse_args()
     if a.child == 'build':
-        a.output.write_text(json.dumps(build(a.source, a.fixture, member_count=a.members, cases=a.cases, scheduled_dates=a.scheduled_dates, production_shape=a.production_shape), indent=2) + '\n'); return
+        a.output.write_text(json.dumps(build(a.source, a.fixture, member_count=a.members, cases=a.cases, scheduled_dates=a.scheduled_dates, production_shape=a.production_shape, resume_checkpoint=a.resume_checkpoint), indent=2) + '\n'); return
     if a.child == 'run':
         run(a.source, a.fixture, a.case, a.output, warm=a.warm); return
     if not a.baseline: p.error('--baseline is required')
@@ -458,29 +519,39 @@ def main():
         command = [sys.executable, str(optimized / 'tools/benchmark_research_inputs.py')]
         cache_key = {'baseline_commit': BASELINE_COMMIT, 'members': a.members, 'cases': a.cases,
                      'scheduled_dates': a.scheduled_dates, 'production_shape': a.production_shape, 'lineage': a.lineage,
-                     'tool_sha256': sha(Path(__file__).read_bytes()), 'environment': locked_environment(base)}
+                     'fixture_builder_sha256': fixture_builder_identity(Path(__file__).read_text()), 'environment': locked_environment(base)}
         if a.fixture_cache and a.fixture_cache.exists():
             metadata = json.loads((a.fixture_cache / 'metadata.json').read_text())
-            if metadata['key'] != cache_key or tree_identity(a.fixture_cache / 'store') != metadata['fixture']:
+            prior_key = dict(metadata['key'])
+            if 'tool_sha256' in prior_key:
+                builder_source = (a.fixture_cache / 'builder_source.py').read_bytes()
+                if sha(builder_source) != prior_key.pop('tool_sha256'):
+                    raise ValueError('Original fixture builder source checksum differs')
+                prior_key['fixture_builder_sha256'] = fixture_builder_identity(builder_source.decode())
+            if prior_key != cache_key or tree_identity(a.fixture_cache / 'store') != metadata['fixture']:
                 raise ValueError('Synthetic fixture cache differs from exact build configuration')
-            shutil.copytree(a.fixture_cache / 'store', fixture)
+            copy_store(a.fixture_cache / 'store', fixture)
             (a.output / 'fixture.json').write_text(json.dumps(metadata['fixture_summary'], indent=2) + '\n')
         else:
             subprocess.run(command + ['--child', 'build', '--source', str(base), '--fixture', str(fixture),
                            '--output', str(a.output / 'fixture.json'), '--members', str(a.members), '--cases', *a.cases]
                            + (['--scheduled-dates', str(a.scheduled_dates)] if a.scheduled_dates else [])
-                           + (['--production-shape'] if a.production_shape else []), env=env, check=True)
+                           + (['--production-shape'] if a.production_shape else [])
+                           + (['--resume-checkpoint', str(a.resume_checkpoint.resolve())] if a.resume_checkpoint else []), env=env, check=True)
             if a.fixture_cache:
                 a.fixture_cache.mkdir(parents=True, exist_ok=False)
-                shutil.copytree(fixture, a.fixture_cache / 'store')
+                shutil.copy2(Path(__file__), a.fixture_cache / 'builder_source.py')
+                copy_store(fixture, a.fixture_cache / 'store')
                 (a.fixture_cache / 'metadata.json').write_text(json.dumps({'key': cache_key,
                     'fixture': tree_identity(fixture),
                     'fixture_summary': json.loads((a.output / 'fixture.json').read_text())}, indent=2) + '\n')
         versions = {}
-        for version, source in (('baseline', base), ('optimized', optimized)):
+        execution_order = [('baseline', base), ('optimized', optimized)]
+        if a.order == 'optimized-first': execution_order.reverse()
+        for version, source in execution_order:
             stores = []
             for case in a.cases:
-                store = tmp / (version + '-' + case); shutil.copytree(fixture, store); stores.append(store)
+                store = tmp / (version + '-' + case); copy_store(fixture, store); stores.append(store)
             started = time.perf_counter(); version_reports = []; active = []
             for number, case in enumerate(a.cases):
                 store = stores[number]
@@ -493,19 +564,22 @@ def main():
                         if process.wait() != 0: raise RuntimeError('Benchmark child failed: ' + str(result_path))
                         version_reports.append(json.loads(result_path.read_text()))
                     active = []
-            versions[version] = {'observed_batch_wall_seconds': time.perf_counter() - started,
+            elapsed = time.perf_counter() - started
+            for store in stores: shutil.rmtree(store)
+            versions[version] = {'observed_batch_wall_seconds': elapsed,
                                  'reports': version_reports}
         comparisons = []
         for old, new in zip(versions['baseline']['reports'], versions['optimized']['reports']):
             comparisons.append(compare_reports(old, new))
         summary = {'schema': 'research_performance_comparison_v1', 'baseline_commit': actual,
-                   'fixture': json.loads((a.output / 'fixture.json').read_text()), 'parallel_processes': a.parallel,
+                   'fixture': json.loads((a.output / 'fixture.json').read_text()), 'parallel_processes': a.parallel, 'execution_order': [v for v, _ in execution_order],
                    'synthetic_member_count': a.members, 'lineage_storage_mode': a.lineage,
                    'scheduled_source_dates': 12185 if a.production_shape else a.scheduled_dates or 'original E2E interval',
                    'all_exact': all(c['exact_scientific_equality'] for c in comparisons), 'cases': comparisons,
                    'baseline_batch_wall_seconds': versions['baseline']['observed_batch_wall_seconds'],
                    'optimized_batch_wall_seconds': versions['optimized']['observed_batch_wall_seconds'],
-                   'production_data_used': False, 'production_coordinator_implemented': False,
+                   'production_data_used': False,
+                   'checkpoint_metadata_sha256': sha((a.resume_checkpoint / 'metadata.json').read_bytes()) if a.resume_checkpoint else None, 'production_coordinator_implemented': False,
                    'limitations': ['Synthetic source admission/catalog discovery; real stored Feature/Target and runtime paths.',
                                   'Warm means repeated P1 input access in one context; normal requests start fresh.',
                                   'Process RSS is lifetime maximum, not incremental cache memory.',
