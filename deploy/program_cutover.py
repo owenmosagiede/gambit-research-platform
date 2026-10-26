@@ -19,6 +19,7 @@ sys.path.insert(0, str(PROJECT/'src'))
 sys.path.insert(0, str(PROJECT/'tools'))
 sys.path.insert(0, str(PROJECT/'deploy'))
 import release_server as release
+import retired_definitions
 from release_bundle import verify, sha, canonical
 from research.contracts import digest, ref, HORIZONS, scientific
 from research.store import read_json, inside
@@ -303,7 +304,35 @@ class Machine(release.Machine):
                 raise RuntimeError('Program intake process is still present; allow it to finish')
 
 
-def check_evidence(approval, release_manifest, checks_bytes, equivalence_bytes):
+def check_retirement_evidence(retirement, equivalence_bytes, proposal=None):
+    """Bind the optional historical exception to the human-reviewed evidence."""
+    if equivalence_bytes is None:
+        if retirement is not None:
+            raise RuntimeError('Retirement requires the reviewed release evidence index')
+        return
+    evidence = json.loads(equivalence_bytes)
+    binding = evidence.get('retirement_context') if isinstance(evidence, dict) else None
+    if retirement is None:
+        if binding is not None:
+            raise RuntimeError('Reviewed retirement context must not be omitted')
+        return
+    if (evidence.get('schema') != 'frozen_program_release_evidence_v1'
+            or binding != retirement.binding):
+        raise RuntimeError('Retirement context differs from reviewed release evidence')
+    if proposal is not None and (
+            sha(equivalence_bytes) != proposal['evidence']['equivalence_sha256']
+            or retirement.source_sha256 != proposal['source_archive_sha256']
+            or retirement.target_sha256 != proposal['target_archive_sha256']):
+        raise RuntimeError('Retirement evidence or archives differ from approval')
+
+
+def code_plan(root, manifest, files, archive_sha256, retirement=None):
+    if retirement is None:
+        return release.plan(root, manifest, files)
+    return retirement.code_plan(root, manifest, files, archive_sha256)
+
+
+def check_evidence(approval, release_manifest, checks_bytes, equivalence_bytes, retirement=None):
     """The human review pins both evidence files, not just the archive name."""
     evidence = approval['proposal']['evidence']
     if (sha(checks_bytes) != evidence['tests_sha256']
@@ -314,30 +343,32 @@ def check_evidence(approval, release_manifest, checks_bytes, equivalence_bytes):
             or checks.get('commit') != release_manifest['commit']
             or checks.get('dirty_checkout') is not False or checks.get('production_data_used') is not False):
         raise RuntimeError('Clean passing release checks for this exact commit are required')
+    check_retirement_evidence(retirement, equivalence_bytes, approval['proposal'])
 
 
 def check_original_release(machine, approval, *, source_manifest, source_files,
-                           source_archive_sha256, operator_bytes):
+                           source_archive_sha256, operator_bytes, retirement=None):
     proposal = approval['proposal']
     if (source_archive_sha256 != proposal['source_archive_sha256']
             or sha(operator_bytes) != proposal['operator_sha256']):
         raise RuntimeError('Frozen source archive or intake operator differs from approval')
-    prior = release.plan(machine.root, source_manifest, source_files)
+    prior = code_plan(machine.root, source_manifest, source_files, source_archive_sha256, retirement)
     if prior['changes'] or prior['blockers']:
         raise RuntimeError('Installed code differs from the approved original archive')
 
 
 def propose(machine, manifest_bytes, release_manifest, files, *, operator_sha256,
             source_manifest, source_files, source_archive_sha256, target_archive_sha256,
-            checks_bytes, equivalence_bytes):
+            checks_bytes, equivalence_bytes, retirement=None):
     """Construct a reviewable, inert proposal only at the quiescent boundary.
 
     This does not install an approval, change a queue, or alter the manifest.
     The source archive proves the complete installed code, not an assumed tag.
     """
     machine.quiescent(sha(manifest_bytes))
-    prior = release.plan(machine.root, source_manifest, source_files)
-    future = release.plan(machine.root, release_manifest, files)
+    check_retirement_evidence(retirement, equivalence_bytes)
+    prior = code_plan(machine.root, source_manifest, source_files, source_archive_sha256, retirement)
+    future = code_plan(machine.root, release_manifest, files, target_archive_sha256, retirement)
     if prior['changes'] or prior['blockers'] or future['blockers']:
         raise RuntimeError('Source archive or proposed code plan differs from the reviewed migration')
     old = implementation_at(machine.root)
@@ -354,13 +385,21 @@ def propose(machine, manifest_bytes, release_manifest, files, *, operator_sha256
         from_implementation=old, to_implementation=new, cohort=snapshot['cohort'],
         evidence={'tests_sha256': sha(checks_bytes), 'equivalence_sha256': sha(equivalence_bytes)},
         source_archive_sha256=source_archive_sha256, target_archive_sha256=target_archive_sha256)
-    check_evidence({'proposal': proposal}, release_manifest, checks_bytes, equivalence_bytes)
+    check_evidence({'proposal': proposal}, release_manifest, checks_bytes, equivalence_bytes, retirement)
     return proposal
 
 
-def make_plan(machine, manifest_bytes, release_manifest, files, approval, archive_sha256):
+def make_plan(machine, manifest_bytes, release_manifest, files, approval, archive_sha256,
+              *, retirement=None, equivalence_bytes=None):
     validate_approval(approval)
     proposal = approval['proposal']
+    check_retirement_evidence(retirement, equivalence_bytes, proposal)
+    if retirement is not None:
+        # Repeat the complete source comparison under apply's maintenance locks.
+        prior = code_plan(machine.root, retirement.source_manifest, retirement.source_files,
+                          retirement.source_sha256, retirement)
+        if prior['changes'] or prior['blockers']:
+            raise RuntimeError('Installed code differs from the approved original archive')
     from runtime.execution_compatibility import approvals
     rows = proposal['cohort']
     rids = {r['request_id'] for r in rows}; canonical_ids = {r['canonical_request_id'] for r in rows}
@@ -388,7 +427,7 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
             prospective[name[4:]] = sha(data)
     if prospective != expected or proposal['to_implementation']['numeric_environment'] != {'python': sys.version}:
         raise RuntimeError('Release implementation or Python differs from approval')
-    code = release.plan(machine.root, release_manifest, files)
+    code = code_plan(machine.root, release_manifest, files, archive_sha256, retirement)
     if code['blockers']:
         raise RuntimeError('Code plan has registry/runtime/removal blockers')
     result = {'schema': 'frozen_program_cutover_plan_v1', 'approval': ref(approval),
@@ -396,6 +435,10 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
         'source_archive_sha256': proposal['source_archive_sha256'], 'operator_sha256': proposal['operator_sha256'],
         'code': code, 'snapshot': snapshot,
         'restart_automatic': False, 'requires_complete_intake_and_safe_drain': True}
+    if retirement is not None:
+        result.update(schema='frozen_program_cutover_plan_v2',
+                      retirement_context=retirement.binding,
+                      equivalence_sha256=sha(equivalence_bytes))
     result['plan_sha256'] = digest(result)
     return result
 
@@ -408,7 +451,8 @@ def _locks(stack, machine):
         release.guard(stack, machine.root/'storage/temporary'/name)
 
 
-def apply(machine, manifest_bytes, release_manifest, files, approval, archive_sha256, expected_plan):
+def apply(machine, manifest_bytes, release_manifest, files, approval, archive_sha256, expected_plan,
+          *, retirement=None, equivalence_bytes=None):
     """Already-approved, already-quiescent migration only. Never grants approval."""
     validate_approval(approval)
     with ExitStack() as guards:
@@ -421,13 +465,17 @@ def apply(machine, manifest_bytes, release_manifest, files, approval, archive_sh
                    if json.loads(p.read_text()).get('status') in {'installing','rollback_required'}]
         if pending:
             raise RuntimeError('Recover unfinished release first')
-        plan = make_plan(machine, manifest_bytes, release_manifest, files, approval, archive_sha256)
+        plan = make_plan(machine, manifest_bytes, release_manifest, files, approval, archive_sha256,
+                         retirement=retirement, equivalence_bytes=equivalence_bytes)
         if plan['plan_sha256'] != expected_plan:
             raise RuntimeError('Reviewed cutover plan changed')
         rid = 'program-' + release_manifest['commit'] + '-' + uuid.uuid4().hex[:12]
         folder = machine.state/rid; folder.mkdir(exist_ok=False)
         record = dict(plan, release_id=rid, status='installing', changes=plan['code']['changes'],
                       started_at=datetime.now(timezone.utc).isoformat())
+        if retirement is not None:
+            retirement.persist(folder/'retirement')
+            release.atomic(folder/'release-evidence.json', equivalence_bytes, mode=0o600)
         for row in record['changes']:
             if row['before'] is not None:
                 target = folder/'before'/row['path']; target.parent.mkdir(parents=True, exist_ok=True)
@@ -447,13 +495,21 @@ def apply(machine, manifest_bytes, release_manifest, files, approval, archive_sh
                 raise RuntimeError('Research authority changed during cutover')
             if implementation_at(machine.root) != approval['proposal']['to_implementation']:
                 raise RuntimeError('Installed executor differs from approval')
+            if retirement is not None:
+                retirement.revalidate(machine.root)
             record['status'] = 'installed_stopped'
         except BaseException:
             # Data changes require inspection, not a cosmetic code rollback.
             record['status'] = 'rollback_required'
             try:
                 if machine.snapshot(manifest_bytes) == plan['snapshot']:
+                    if retirement is not None:
+                        retirement.revalidate(machine.root)
                     release.restore(machine, folder, record)
+                    if retirement is not None:
+                        retirement.revalidate(machine.root)
+                    if machine.snapshot(manifest_bytes) != plan['snapshot']:
+                        raise RuntimeError('Research authority changed during code restoration')
                     record['status'] = 'rolled_back_stopped'
             except BaseException:
                 pass # Keep the recoverable receipt and services stopped.
@@ -479,7 +535,26 @@ def recover(machine, manifest_bytes, release_id):
         machine.quiescent(record['manifest_sha256'])
         if machine.snapshot(manifest_bytes) != record['snapshot']:
             raise RuntimeError('Research advanced: retain new records; use reviewed forward repair or reverse compatibility')
+        retirement = None
+        if record.get('schema') == 'frozen_program_cutover_plan_v2' or 'retirement_context' in record:
+            if record.get('schema') != 'frozen_program_cutover_plan_v2':
+                raise RuntimeError('Recovery retirement schema differs')
+            retirement = retired_definitions.load_saved(folder/'retirement')
+            evidence = retired_definitions.trusted_bytes(folder/'release-evidence.json')
+            if (retirement.binding != record['retirement_context']
+                    or sha(evidence) != record['equivalence_sha256']
+                    or retirement.source_sha256 != record['source_archive_sha256']
+                    or retirement.target_sha256 != record['archive_sha256']):
+                raise RuntimeError('Recovery retirement evidence differs')
+            from runtime.execution_compatibility import resolve
+            approved = resolve(machine.root, record['approval'])
+            check_retirement_evidence(retirement, evidence, approved['proposal'])
+            retirement.revalidate(machine.root)
         release.restore(machine, folder, record)
+        if retirement is not None:
+            retirement.revalidate(machine.root)
+        if machine.snapshot(manifest_bytes) != record['snapshot']:
+            raise RuntimeError('Research authority changed during code restoration')
         record['status'] = 'rolled_back_stopped'
         release.atomic(folder/'receipt.json', canonical(record), mode=0o600)
         return record
@@ -497,8 +572,21 @@ def main():
     parser.add_argument('--checks', type=Path); parser.add_argument('--equivalence', type=Path)
     parser.add_argument('--source-archive', type=Path); parser.add_argument('--source-sha256')
     parser.add_argument('--operator', type=Path); parser.add_argument('--operator-sha256')
+    parser.add_argument('--retirement-plan', type=Path)
+    parser.add_argument('--retirement-status', type=Path)
+    parser.add_argument('--retirement-receipt', type=Path)
     parser.add_argument('--plan-sha256'); parser.add_argument('--release-id')
     args = parser.parse_args(); machine = Machine(args.root, args.state, args.backup)
+    retirement = None
+    retirement_paths = {'plan': args.retirement_plan, 'status': args.retirement_status,
+                        'receipt': args.retirement_receipt}
+    if any(retirement_paths.values()):
+        if args.action not in ('propose', 'plan', 'apply') or not all(retirement_paths.values()):
+            parser.error('Retirement requires all three exact evidence files for propose, plan or apply')
+        if not all((args.archive, args.sha256, args.source_archive, args.source_sha256)):
+            parser.error('Retirement requires both exact protected archives')
+        retirement = retired_definitions.load_context(retirement_paths,
+            args.source_archive, args.source_sha256, args.archive, args.sha256)
     raw = args.manifest.read_bytes()
     if args.action == 'snapshot':
         result = machine.snapshot(raw)
@@ -515,7 +603,7 @@ def main():
         result = propose(machine, raw, manifest, files, operator_sha256=args.operator_sha256,
             source_manifest=source, source_files=source_files, source_archive_sha256=args.source_sha256,
             target_archive_sha256=args.sha256, checks_bytes=args.checks.read_bytes(),
-            equivalence_bytes=args.equivalence.read_bytes())
+            equivalence_bytes=args.equivalence.read_bytes(), retirement=retirement)
     else:
         if not all((args.approval, args.archive, args.sha256, args.checks, args.equivalence,
                     args.source_archive, args.source_sha256, args.operator)):
@@ -523,15 +611,18 @@ def main():
         approval = read_json(args.approval); manifest, files = verify(args.archive, args.sha256)
         source, source_files = verify(args.source_archive, args.source_sha256)
         validate_approval(approval)
-        check_evidence(approval, manifest, args.checks.read_bytes(), args.equivalence.read_bytes())
+        equivalence_bytes = args.equivalence.read_bytes()
+        check_evidence(approval, manifest, args.checks.read_bytes(), equivalence_bytes, retirement)
         check_original_release(machine, approval, source_manifest=source, source_files=source_files,
-            source_archive_sha256=args.source_sha256, operator_bytes=args.operator.read_bytes())
+            source_archive_sha256=args.source_sha256, operator_bytes=args.operator.read_bytes(), retirement=retirement)
         if args.action == 'plan':
-            result = make_plan(machine, raw, manifest, files, approval, args.sha256)
+            result = make_plan(machine, raw, manifest, files, approval, args.sha256,
+                               retirement=retirement, equivalence_bytes=equivalence_bytes)
         else:
             if not args.plan_sha256:
                 parser.error('Apply requires the reviewed cutover plan SHA256')
-            result = apply(machine, raw, manifest, files, approval, args.sha256, args.plan_sha256)
+            result = apply(machine, raw, manifest, files, approval, args.sha256, args.plan_sha256,
+                           retirement=retirement, equivalence_bytes=equivalence_bytes)
     print(json.dumps(result, indent=2))
 
 
