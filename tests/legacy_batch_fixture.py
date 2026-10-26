@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import date
 import shutil
 import uuid
+from unittest.mock import patch
 
 from data.legacy_batch_evidence import BASE, checked, preview, rows
 from research.contracts import canonical, digest, normalize_submission, request_id
@@ -54,7 +55,13 @@ class ArchivedBatchFixture:
                 'scheduled_member_rows': {phase: weekdays(period)*len(plan['members']) for phase, period in plan['periods'].items()}})
             # Ordinary jobs produce real synthetic authority; the archived batch
             # files merely describe their provenance and never dispatch work.
-            self.jobs.submit(dict(intent, request_id=rid)); self.jobs.run_pending_once()
+            self.jobs.submit(dict(intent, request_id=rid))
+            # These archived batches predate per-attempt profiling. Retain normal
+            # queue selection, executor locks and research execution, without
+            # inventing new request-linked diagnostics in historical fixtures.
+            # Current worker profiling is exercised by its own runtime tests.
+            with patch.object(self.jobs, '_run', self.jobs._execute):
+                self.jobs.run_pending_once()
             if self.jobs._read_job(rid)['status'] != 'succeeded':
                 raise AssertionError('Synthetic direct research did not complete')
             save(directory / 'dispatch' / f'{index}.json', {'index': index, 'state': 'submitted', 'request_id': rid, 'at': now()})
