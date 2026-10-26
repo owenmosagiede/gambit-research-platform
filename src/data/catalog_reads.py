@@ -74,7 +74,20 @@ def catalog_reads(root):
 
 
 @contextmanager
-def reading(path):
+def reading(path, *, scientific=True):
+    # Execution verification has its own bounded lifecycle and dependency witnesses.
+    # This hook does not turn the UI projection cache into scientific authority.
+    from data.verified_inputs import reading as verified_reading
+    if scientific:
+        with verified_reading(path), _ui_reading(path):
+            yield
+    else:
+        with _ui_reading(path):
+            yield
+
+
+@contextmanager
+def _ui_reading(path):
     context = _CURRENT.get()
     if context is None:
         yield

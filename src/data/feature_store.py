@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
+from research.performance import measure
 from data.alfred_onboarding import Store, stable_read, strict_json
 from data.transformations.contracts import normalize_reference, normalize_result, token
 from data.transformations.identity import (canonical_bytes, digest, reference,
@@ -59,6 +60,7 @@ class FeatureStore:
         self.root=Path(root).resolve()
         self.io=Store(self.root)
         self._resolved={}
+        self._resolved_capture={}
         self._payloads={}
         self._native_rows={}
         from data.lineage_packs import PackedLineage
@@ -92,6 +94,7 @@ class FeatureStore:
         self.io.install(record_path(record),canonical_bytes(record)+b'\n')
         return reference(record)
 
+    @measure('catalog.feature_resolution')
     def resolve(self, binding):
         from data.verified_inputs import memo
         # Window-specific causal lineage can dwarf the useful input cache and is
@@ -101,15 +104,21 @@ class FeatureStore:
         return memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding))
 
     def _resolve_record(self, binding):
+        from data.verified_inputs import current, dependency_capture, probe, probe_definition
         normalize_reference(binding)
         key=(binding['id'],binding['version'],binding['content_sha256'])
-        if key in self._resolved:return deepcopy(self._resolved[key])
+        capture=dependency_capture()
+        if key in self._resolved and (current(self.root) is None or
+                (capture is not None and self._resolved_capture.get(key) is capture)):
+            return deepcopy(self._resolved[key])
         identifier,version=binding['id'],binding['version']
         relative=None
         matches=[]
         for folder in ('feature_recipes','features','datasets','source_views','transformations','policies','providers','scopes'):
             candidate=f'definitions/{folder}/{identifier}/{version}.json'
-            if self.path(candidate).is_file():matches.append(candidate)
+            candidate_path=self.path(candidate)
+            probe_definition(candidate_path)
+            if candidate_path.is_file():matches.append(candidate)
         if len(matches)>1:raise PublicationError('Ambiguous definition identity')
         if matches:relative=matches[0]
         if relative is None:
@@ -122,6 +131,7 @@ class FeatureStore:
                 if identifier.startswith(prefix):relative=f'storage/catalog/{folder}/{identifier}.json';break
         if relative is None:raise PublicationError('Unsupported immutable reference kind: '+identifier)
         loose = self.path(relative)
+        probe(loose)
         packed = self._packed_lineage.resolve(binding, rebuild_missing=not loose.exists()) if identifier.startswith('LINEAGE_') else None
         record = strict_json(stable_read(loose)) if loose.exists() else packed
         if record is None:
@@ -135,6 +145,8 @@ class FeatureStore:
         # Exact numerical reuse is bounded separately by verified_inputs.
         if not identifier.startswith('MATERIALIZATION_'):
             self._resolved[key]=deepcopy(record)
+            if capture is not None:self._resolved_capture[key]=capture
+            else:self._resolved_capture.pop(key,None)
         return record
 
     def payload(self, member):
@@ -143,8 +155,9 @@ class FeatureStore:
         return memo(self.root, 'payload', key, lambda: self._verified_payload(member))
 
     def _verified_payload(self, member):
+        from data.verified_inputs import current
         relative=f"storage/payloads/sha256/{member['blob_sha256'][:2]}/{member['blob_sha256']}.{member['format']}"
-        if relative not in self._payloads:
+        if relative not in self._payloads or current(self.root) is not None:
             if self.path(relative).is_file():
                 self._payloads[relative]=stable_read(self.path(relative),member['blob_sha256'])
             else:
@@ -217,7 +230,8 @@ class FeatureStore:
     def writer(self):
         path=self.path('storage/temporary/feature-store-publication.lock');path.parent.mkdir(parents=True,exist_ok=True)
         with path.open('a+b') as lock:
-            fcntl.flock(lock,fcntl.LOCK_EX)
+            with measure('lock.wait.feature_publication'):
+                fcntl.flock(lock,fcntl.LOCK_EX)
             try:yield
             finally:fcntl.flock(lock,fcntl.LOCK_UN)
 

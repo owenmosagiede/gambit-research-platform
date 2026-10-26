@@ -1,10 +1,19 @@
 """Bounded, execution-local reuse of verified immutable inputs.
 
 No process-global cached data, disk cache, or persistent verification claims.
-A context is discarded on restart, cancellation, failure or completion. Returned
-values are private copies: downstream calculations cannot mutate cached evidence.
+A context is discarded on restart, cancellation, failure or completion. Ordinary
+values are private copies; compact lookups are recursively immutable. Both tiers
+share the same total bound, with at most half reserved for compact lookups.
+
+A cache entry is published only after its ordinary independent verifier succeeds.
+File identities (including ctime and resolved paths), negative definition lookup
+directories and lineage catalog generations witness the exact reads. Hits check
+those witnesses and propagate them into enclosing entries. Changed dependencies
+evict the entry and run its full verifier again. No verification survives a phase
+or request boundary, and standalone inspection remains independently verified.
 """
 from collections import OrderedDict, Counter
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
@@ -12,10 +21,103 @@ from datetime import date, timedelta
 import sys
 from pathlib import Path
 from time import perf_counter
+from types import MappingProxyType
 from data.transformations.identity import digest
+from research.performance import measure, counter, gauge
 
 _CURRENT = ContextVar('verified_research_inputs', default=None)
 _PHASE = ContextVar('verified_research_phase', default=None)
+_DEPENDENCIES = ContextVar('verified_input_dependencies', default=None)
+
+
+def dependency_capture():
+    """Identity of a loader's read set, not a reusable verification claim.
+
+    A reader may reuse its own records within this same load: publication still
+    checks the whole read set after the verifier returns. A later or nested load
+    has another identity and must independently read or use a guarded memo hit.
+    """
+    return _DEPENDENCIES.get()
+
+
+class ChangedInput(ValueError):
+    pass
+
+
+def _signature(path):
+    path = Path(path)
+    try:
+        link, target = path.lstat(), path.stat()
+    except FileNotFoundError:
+        return None
+    def fields(value):
+        return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
+                value.st_mtime_ns, value.st_ctime_ns)
+    return fields(link), fields(target), str(path.resolve())
+
+
+def _remember(path, signature):
+    dependencies = _DEPENDENCIES.get()
+    if dependencies is not None:
+        path = path if isinstance(path, str) and path.startswith('/') else str(Path(path).absolute())
+        if path in dependencies and dependencies[path] != signature:
+            raise ChangedInput('Verified input changed during reading: ' + path)
+        dependencies[path] = signature
+
+
+def probe(path):
+    """Capture negative lookups too: an appended conflicting definition matters."""
+    dependencies = _DEPENDENCIES.get()
+    if dependencies is not None:
+        path = str(Path(path).absolute())
+        if path not in dependencies:
+            _remember(path, _signature(path))
+
+
+def probe_definition(path):
+    """An absent definition is witnessed by its nearest existing directory.
+
+    Thousands of lineage IDs cannot be definitions. Their negative lookups can
+    share the frozen registry-directory witness, while any newly added alias
+    still changes that witness and forces independent resolution.
+    """
+    if _DEPENDENCIES.get() is None:
+        return
+    path = Path(path)
+    while not path.exists() and path.parent != path:
+        path = path.parent
+    probe(path)
+
+
+@contextmanager
+def reading(path):
+    dependencies = _DEPENDENCIES.get()
+    if dependencies is None:
+        yield
+        return
+    path = str(Path(path).absolute())
+    if path in dependencies:
+        # The first read's witness remains authoritative. Checking the complete
+        # set at publication detects a change during any repeated read, without
+        # resolving and stat-ing common registry/pack paths thousands of times.
+        yield
+        return
+    _remember(path, _signature(path))
+    try:
+        yield
+    finally:
+        _remember(path, _signature(path))
+
+
+def _freeze(value):
+    """No mutable containers can escape the compact cache."""
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze(item) for item in value)
+    if value is None or type(value) in (str, bytes, bool, int, float):
+        return value
+    raise TypeError('Unsupported compact verified input value')
 
 
 class VerifiedInputs:
@@ -25,40 +127,102 @@ class VerifiedInputs:
         self.max_bytes = max_bytes
         self.bytes = 0
         self.entries = OrderedDict()
+        self.compact_entries = OrderedDict()
+        self.compact_bytes = 0
+        self.compact_limit = max_bytes // 2
+        self.high_water_bytes = 0
         self.active_phase = None
         self.counts = Counter()
         self.seconds = Counter()
 
-    def memo(self, kind, key, loader):
+    def memo(self, kind, key, loader, *, compact=False):
         phase = _PHASE.get()
         if phase is None:
-            return loader()
-        identity = (phase['key'], kind, digest(key))
-        if identity in self.entries:
-            self.counts[kind + '.hits'] += 1
-            value, size = self.entries.pop(identity)
-            self.entries[identity] = (value, size)
-            return deepcopy(value)
+            return _freeze(loader()) if compact else loader()
+        with measure('inputs.hashing'):
+            identity = (phase['key'], kind, digest(key))
+        entries = self.compact_entries if compact else self.entries
+        if identity in entries:
+            value, size, dependencies = entries[identity]
+            with measure('inputs.cache_witness'):
+                counter('cache.witness_checks', len(dependencies))
+                valid = all(_signature(path) == signature for path, signature in dependencies.items())
+            if not valid:
+                self._remove(entries, identity, compact)
+                self.counts[kind + '.invalidations'] += 1
+                counter('cache.' + kind + '.invalidations')
+            else:
+                for path, signature in dependencies.items():
+                    _remember(path, signature)
+                self.counts[kind + '.hits'] += 1
+                counter('cache.' + kind + '.hits')
+                entries.move_to_end(identity)
+                if compact:
+                    return value
+                with measure('inputs.copy'):
+                    return deepcopy(value)
+        self.counts[kind + '.misses'] += 1
+        counter('cache.' + kind + '.misses')
         start = perf_counter()
-        # A failed loader never publishes a verification result.
-        value = loader()
+        dependencies = {}
+        token = _DEPENDENCIES.set(dependencies)
+        try:
+            with measure('cache.load.' + kind):
+                value = loader()
+        finally:
+            _DEPENDENCIES.reset(token)
+        with measure('inputs.cache_witness'):
+            counter('cache.witness_checks', len(dependencies))
+            if not all(_signature(path) == signature for path, signature in dependencies.items()):
+                raise ChangedInput('Verified input changed before cache publication')
+        for path, signature in dependencies.items():
+            _remember(path, signature)
         self.seconds[kind] += perf_counter() - start
         self.counts[kind + '.loads'] += 1
-        size = retained_size(value)
-        if size <= self.max_bytes:
+        counter('cache.' + kind + '.loads')
+        with measure('inputs.copy'):
+            stored = _freeze(value) if compact else deepcopy(value)
+        size = retained_size((identity, stored, dependencies))
+        limit = self.compact_limit if compact else self.max_bytes - self.compact_bytes
+        if size <= limit:
+            if compact:
+                while self.compact_entries and self.compact_bytes + size > self.compact_limit:
+                    self._evict(self.compact_entries, True)
             while self.entries and self.bytes + size > self.max_bytes:
-                _, (_, removed) = self.entries.popitem(last=False)
-                self.bytes -= removed
-                self.counts['evictions'] += 1
-            self.entries[identity] = (deepcopy(value), size)
+                self._evict(self.entries, False)
+            entries[identity] = (stored, size, dependencies)
             self.bytes += size
+            if compact:
+                self.compact_bytes += size
+            self.high_water_bytes = max(self.high_water_bytes, self.bytes)
+            gauge('cache.retained_bytes', self.bytes)
+            gauge('cache.compact_retained_bytes', self.compact_bytes)
         else:
             self.counts['oversize'] += 1
-        return value
+            counter('cache.oversize')
+        return stored if compact else value
+
+    def _remove(self, entries, identity, compact):
+        _, size, _ = entries.pop(identity)
+        self.bytes -= size
+        if compact:
+            self.compact_bytes -= size
+
+    def _evict(self, entries, compact):
+        identity = next(iter(entries))
+        self._remove(entries, identity, compact)
+        self.counts['evictions'] += 1
+        self.counts[identity[1] + '.evictions'] += 1
+        counter('cache.evictions')
+        counter('cache.' + identity[1] + '.evictions')
 
     def clear(self):
         self.entries.clear()
+        self.compact_entries.clear()
         self.bytes = 0
+        self.compact_bytes = 0
+        gauge('cache.retained_bytes', 0)
+        gauge('cache.compact_retained_bytes', 0)
 
 
 @contextmanager
@@ -103,14 +267,22 @@ def memo(root, kind, key, loader):
     return loader() if context is None else context.memo(kind, key, loader)
 
 
+def compact_memo(root, kind, key, loader):
+    context = current(root)
+    return _freeze(loader()) if context is None else context.memo(kind, key, loader, compact=True)
+
+
 def phase_end(root, fallback):
     phase = _PHASE.get()
     return phase['end'] if current(root) is not None and phase else fallback
 
 
 def verified_prices(store, binding, policy, loader):
+    def verify():
+        with measure('source_prices.verify'):
+            return loader(store, binding, policy)
     return memo(store.root, 'prices', {'snapshot': binding, 'policy': policy},
-                lambda: loader(store, binding, policy))
+                verify)
 
 
 def retained_size(value):
@@ -121,8 +293,10 @@ def retained_size(value):
             return 0
         seen.add(id(item))
         total = sys.getsizeof(item)
-        if isinstance(item, dict):
+        if isinstance(item, Mapping):
             total += sum(count(k) + count(v) for k, v in item.items())
+            if isinstance(item, MappingProxyType):
+                total += sys.getsizeof(dict(item))  # include the owned backing dict
         elif isinstance(item, (tuple, list, set, frozenset)):
             total += sum(count(v) for v in item)
         return total

@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SUITES = [
     'test_fx_currency', 'test_fx_currency_migration', 'test_fx_migration_index', 'test_fx_catalog_preflight', 'test_fx_migration_control', 'test_feature_resolution',
     'test_scopes', 'test_scope_api', 'test_scope_ui', 'test_fx_transformations', 'test_fx_targets',
-    'test_experiment_identity',
+    'test_experiment_identity', 'test_execution_compatibility', 'test_program_intake_compatibility',
+    'test_research_performance', 'test_performance_benchmark', 'test_program_cutover',
     'test_research_batches', 'test_batch_retirement_release', 'test_batch_http', 'test_batch_ui',
     'test_momentum_preparation_operator', 'test_lineage_packs', 'test_fx_feature_store', 'test_verified_inputs', 'test_research_inputs',
     'test_release_workflow', 'test_contracts', 'test_transformation_numeric',
