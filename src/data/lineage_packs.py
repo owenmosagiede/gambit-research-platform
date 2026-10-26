@@ -19,6 +19,7 @@ import zlib
 
 from data.alfred_onboarding import stable_read, strict_json
 from data.catalog_reads import reading
+from research.performance import measure
 from data.fx_feature_contracts import validate_record
 from data.transformations.contracts import normalize_reference
 from data.transformations.identity import canonical_bytes, digest, reference
@@ -51,7 +52,8 @@ def _locked(store):
     path = store.path(LOCK)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a+b') as stream:
-        fcntl.flock(stream, fcntl.LOCK_EX)
+        with measure('lock.wait.lineage_index'):
+            fcntl.flock(stream, fcntl.LOCK_EX)
         try:
             yield
         finally:
@@ -176,9 +178,13 @@ class PackedLineage:
     def _find(self, binding, *, rebuild_missing):
         store = self.store
         if not store.path(CATALOG).exists():
+            from data.verified_inputs import probe
+            # A new pack catalog may introduce a conflicting lineage identity.
+            # Unrelated trial/publication folders do not alter this absence.
+            probe(store.path(CATALOG))
             parent = store.path('storage/catalog')
             if parent.exists():
-                with reading(parent):
+                with reading(parent, scientific=False):
                     pass
             return None
         key = _key(binding)

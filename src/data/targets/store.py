@@ -5,6 +5,7 @@ import fcntl
 import re
 from pathlib import Path
 from jsonschema import Draft202012Validator
+from research.performance import measure
 
 from data.alfred_onboarding import stable_read, strict_json
 from data.feature_store import FeatureStore, PublicationError
@@ -112,6 +113,7 @@ class TargetStore(FeatureStore):
         self.io.install(path,canonical_bytes(record)+b'\n')
         return reference(record)
 
+    @measure('catalog.target_resolution')
     def resolve(self, binding):
         from data.verified_inputs import memo
         if str(binding.get('id', '')).startswith(('LINEAGE_', 'PIT_OPERAND_', 'MATERIALIZATION_')):
@@ -143,7 +145,8 @@ class TargetStore(FeatureStore):
         path=self.path('storage/temporary/target-store-publication.lock')
         path.parent.mkdir(parents=True,exist_ok=True)
         with path.open('a+b') as handle:
-            fcntl.flock(handle,fcntl.LOCK_EX)
+            with measure('lock.wait.target_publication'):
+                fcntl.flock(handle,fcntl.LOCK_EX)
             try:
                 yield
             finally:

@@ -24,6 +24,7 @@ from data.targets.fx import (_approved_policy, _price_snapshot, _definition, _sc
 from data.transformations.contracts import normalize_time
 from data.transformations.identity import canonical_bytes, digest, reference
 from research.contracts import KERNEL_POLICIES
+from research.performance import measure, counter
 
 HORIZONS = (1, 7, 21, 63, 252)
 APPROVALS = ('clock_compatibility', 'retrospective_alignment', 'validation_exposure', 'missing_evidence')
@@ -367,7 +368,8 @@ def _verified_feature(root, binding):
         # Research uses observations and manifest, not the large source operand
         # copies returned for standalone inspection. Verification above is full.
         return {'manifest': item['manifest'], 'observations': item['observations']}
-    return load()  # FX research reader owns the single bounded verification cache
+    with measure('feature.verify'):
+        return load()  # FX research reader owns the bounded verification cache
 
 
 def _check_output(item, member, plan, period):
@@ -384,7 +386,7 @@ def _check_output(item, member, plan, period):
 def prepare_phase(root, plan, phase, progress=None, cancelled=None, admission=None):
     from data.verified_inputs import phase_inputs
     _phase(plan, phase, admission)  # admission/boundaries before any cache access
-    with phase_inputs(root, plan, phase):
+    with phase_inputs(root, plan, phase), measure('feature.preparation'):
         return _prepare_phase(root, plan, phase, progress, cancelled, admission)
 
 
@@ -434,6 +436,12 @@ def _prepare_phase(root, plan, phase, progress=None, cancelled=None, admission=N
             _check_output(item, member, plan, period)
             output['materializations'].append(saved['materialization'])
         output['materializations'] = sorted({r['id']: r for r in output['materializations']}.values(), key=lambda r: r['id'])
+        # Retain only the verified columns needed by all horizons, while this
+        # member's independently verified materializations are still warm.
+        from data.verified_inputs import current
+        if current(root) is not None:
+            _feature_lookup(root, member, output, plan, period)
+            _target_prices(root, member, plan, period)
         prepared['members'].append(output)
     prepared['prepared_id'] = 'PREPARED_' + digest(prepared)
     return prepared
@@ -477,6 +485,36 @@ def _phase_target_rows(store, manifest, period):
 
 
 def _load_target(root, member, plan, period, horizon):
+    with measure('target.verify'):
+        return _load_target_verified(root, member, plan, period, horizon)
+
+
+def _target_prices(root, member, plan, period):
+    """Verified phase endpoints, without retaining the full provenance tree.
+
+    The ordinary source verifier first checks all canonical operands. Only fields
+    read by construct_rows are projected, and only dates its phase-safe intervals
+    can select. Each horizon still independently reconstructs every Target row.
+    """
+    from data.verified_inputs import verified_prices, compact_memo
+    def load():
+        with measure('inputs.target_endpoints'):
+            counter('inputs.target_endpoints.builds')
+            snapshot, prices = verified_prices(TargetStore(root), member['price_snapshot'],
+                                               plan['batch_policy'], _price_snapshot)
+            if len({row['reference_time'] for row in prices}) != len(prices):
+                raise InputsBlocked('Duplicate canonical price dates')
+            fields = ('id', 'reference_time', 'value', 'status', 'original_ingested_at')
+            return {'snapshot': canonical_bytes(snapshot), 'prices': [
+                {key: row[key] for key in fields if key in row}
+                for row in prices
+                if period['start_inclusive'] <= row['reference_time'] < period['end_exclusive']]}
+    return compact_memo(root, 'target_endpoints', {
+        'snapshot': member['price_snapshot'], 'batch_policy': plan['batch_policy'],
+        'period': period, 'knowledge_cutoff': plan['knowledge_cutoff']}, load)
+
+
+def _load_target_verified(root, member, plan, period, horizon):
     store = TargetStore(root); binding = member['targets'][str(horizon)]
     manifest = validate_target_manifest(strict_json(stable_read(store.path(
         'storage/catalog/target_store/' + binding['materialization']['id'] + '/manifest.json'))))
@@ -486,8 +524,9 @@ def _load_target(root, member, plan, period, horizon):
         raise InputsBlocked('Frozen Target dependencies differ')
     store.verify_closure([manifest])
     definition = store.resolve(binding['definition'])
-    from data.verified_inputs import verified_prices, memo
-    snapshot, prices = verified_prices(store, member['price_snapshot'], plan['batch_policy'], _price_snapshot)
+    from data.verified_inputs import memo
+    endpoints = _target_prices(root, member, plan, period)
+    snapshot, prices = strict_json(endpoints['snapshot']), endpoints['prices']
     schedule_payload = strict_json(store.payload(manifest['schedule']))
     schedule, anchors, policy = memo(root, 'target_schedule',
         {'batch': plan['batch_policy'], 'snapshot': member['price_snapshot']},
@@ -506,7 +545,8 @@ def _load_target(root, member, plan, period, horizon):
     safe = {'mode': 'market_schedule', 'mark_ids': ['DATE_' + day for day in safe_dates]}
     # Recalculate only the phase's safe labels; future/validation labels are never
     # passed to construct_rows or returned to a P1 worker.
-    expected = construct_rows(definition, prices, schedule, safe, plan['knowledge_cutoff']) if safe_dates else []
+    with measure('target.reconstruct'):
+        expected = construct_rows(definition, prices, schedule, safe, plan['knowledge_cutoff']) if safe_dates else []
     if expected != rows:
         raise InputsBlocked('Phase Target rows do not reproduce their frozen endpoints and arithmetic')
     return rows, exclusions
@@ -515,8 +555,41 @@ def _load_target(root, member, plan, period, horizon):
 def load_phase(root, plan, prepared, phase, horizon, admission=None):
     from data.verified_inputs import phase_inputs
     _phase(plan, phase, admission, horizon)
-    with phase_inputs(root, plan, phase):
+    with phase_inputs(root, plan, phase), measure('inputs.loading'):
         return _load_phase(root, plan, prepared, phase, horizon, admission)
+
+
+def _feature_lookup(root, member, outputs, plan, period):
+    """Exact phase/member cache; all overlap comparisons precede compaction.
+
+    Values contain only immutable scalars and reference tuples. A caller cannot
+    mutate verified evidence through the lookup or a returned aligned row.
+    """
+    from data.verified_inputs import compact_memo
+    key = {'member': {k: member[k] for k in ('instrument_id', 'feature', 'price_snapshot', 'source_view')},
+           'materializations': outputs['materializations'], 'period': period,
+           'batch_policy': plan['batch_policy'], 'knowledge_cutoff': plan['knowledge_cutoff']}
+    def build():
+        with measure('inputs.feature_lookup'):
+            counter('inputs.feature_lookup.builds')
+            features = {}
+            for binding in outputs['materializations']:
+                item = _verified_feature(root, binding)
+                if reference(item['manifest']) != binding:
+                    raise InputsBlocked('Prepared Feature materialization reference differs')
+                _check_output(item, member, plan, period)
+                for row in item['observations']:
+                    when = row['reference_time']
+                    old = features.get(when)
+                    if old is not None and {k: v for k, v in old.items() if k not in ('materialization_id', 'lineage', 'vintage_id')} != {
+                            k: v for k, v in row.items() if k not in ('materialization_id', 'lineage', 'vintage_id')}:
+                        raise InputsBlocked('Overlapping prepared Feature observations disagree')
+                    if old is None:
+                        features[when] = row
+            return {when: (row['value'], row['status'], row['reason_code'], row['materialization_id'],
+                           tuple(row['lineage'][k] for k in ('id', 'version', 'content_sha256')))
+                    for when, row in features.items()}
+    return compact_memo(root, 'feature_lookup', key, build)
 
 
 def _load_phase(root, plan, prepared, phase, horizon, admission=None):
@@ -532,40 +605,28 @@ def _load_phase(root, plan, prepared, phase, horizon, admission=None):
         return load(root, plan, prepared, phase, horizon, period)
     rows, coverage = [], []
     for member, outputs in zip(plan['members'], prepared['members']):
-        features = {}
-        for binding in outputs['materializations']:
-            item = _verified_feature(root, binding)
-            if reference(item['manifest']) != binding:
-                raise InputsBlocked('Prepared Feature materialization reference differs')
-            _check_output(item, member, plan, period)
-            for row in item['observations']:
-                when = row['reference_time']
-                old = features.get(when)
-                if old is not None and {k: v for k, v in old.items() if k not in ('materialization_id', 'lineage', 'vintage_id')} != {
-                        k: v for k, v in row.items() if k not in ('materialization_id', 'lineage', 'vintage_id')}:
-                    raise InputsBlocked('Overlapping prepared Feature observations disagree')
-                if old is None:
-                    features[when] = row
+        features = _feature_lookup(root, member, outputs, plan, period)
         targets, exclusions = _load_target(root, member, plan, period, horizon)
         valid_count = 0
-        for target in targets:
-            feature = features.get(target['prediction_anchor'])
-            valid = feature is not None and feature['status'] == 'valid' and target['status'] == 'valid'
-            valid_count += int(valid)
-            reasons = ([] if feature and feature['status'] == 'valid' else [feature['reason_code'] if feature else 'FEATURE_NOT_AVAILABLE'])
-            if target['status'] != 'valid':
-                reasons.append(target['reason_code'])
-            rows.append({'date': target['prediction_anchor'], 'instrument': member['instrument_id'],
-                'feature': feature['value'] if feature and feature['status'] == 'valid' else None,
-                'target': target['value'] if target['status'] == 'valid' else None,
-                'target_entry': target['entry_time'], 'target_end': target['exit_time'], 'valid': valid,
-                'status': 'valid' if valid else 'unavailable', 'reason_codes': reasons,
-                'available_at': None, 'target_available_at': None, 'historical_eligibility_certified': False,
-                'lineage': {'feature_materialization': feature['materialization_id'] if feature else None,
-                    'feature_lineage': feature['lineage'] if feature else None,
-                    'target_materialization': member['targets'][str(horizon)]['materialization'],
-                    'target_row_id': target['id'], 'target_operands': target['operands'],
-                    'price_snapshot': member['price_snapshot']}})
+        with measure('inputs.alignment'):
+            for target in targets:
+                feature = features.get(target['prediction_anchor'])
+                valid = feature is not None and feature[1] == 'valid' and target['status'] == 'valid'
+                valid_count += int(valid)
+                reasons = ([] if feature and feature[1] == 'valid' else [feature[2] if feature else 'FEATURE_NOT_AVAILABLE'])
+                if target['status'] != 'valid':
+                    reasons.append(target['reason_code'])
+                rows.append({'date': target['prediction_anchor'], 'instrument': member['instrument_id'],
+                    'feature': feature[0] if feature and feature[1] == 'valid' else None,
+                    'target': target['value'] if target['status'] == 'valid' else None,
+                    'target_entry': target['entry_time'], 'target_end': target['exit_time'], 'valid': valid,
+                    'status': 'valid' if valid else 'unavailable', 'reason_codes': reasons,
+                    'available_at': None, 'target_available_at': None, 'historical_eligibility_certified': False,
+                    'lineage': {'feature_materialization': feature[3] if feature else None,
+                        'feature_lineage': dict(zip(('id', 'version', 'content_sha256'), feature[4])) if feature else None,
+                        'target_materialization': member['targets'][str(horizon)]['materialization'],
+                        'target_row_id': target['id'], 'target_operands': target['operands'],
+                        'price_snapshot': member['price_snapshot']}})
         coverage.append({'instrument_id': member['instrument_id'], 'scheduled_rows': len(targets),
             'valid_rows': valid_count, 'unavailable_rows': len(targets) - valid_count, 'exclusions': exclusions,
             'feature_unavailable_windows': deepcopy(outputs['unavailable'])})

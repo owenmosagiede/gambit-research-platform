@@ -205,7 +205,7 @@ class IdentityIndex:
             except (ValueError, KeyError, TypeError, OSError) as exc:
                 raise ResearchConflict('Saved results require reconciliation: ' + str(exc)) from exc
 
-    def matches(self, packet, index=None):
+    def matches(self, packet, index=None, *, request_id=None):
         index = self.load() if index is None else index
         if index['issues']:
             raise ResearchConflict('History requires reconciliation: ' + index['issues'][0]['error'])
@@ -230,6 +230,10 @@ class IdentityIndex:
             if original['record_sha256'] != item['record_sha256'] or digest(original['implementation']) != item['implementation_key']:
                 raise ResearchConflict('Indexed submission changed; reconciliation required')
             relation = release_relation(original['implementation'], packet['implementation'])
+            if relation != 'equivalent' and request_id is not None:
+                from runtime.execution_compatibility import authorize_intake
+                if authorize_intake(self.root,request_id,packet,original=original):
+                    relation = 'equivalent'
             if relation == 'different':
                 continue
             if relation != 'equivalent':

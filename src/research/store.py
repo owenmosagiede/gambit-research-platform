@@ -3,6 +3,7 @@ from pathlib import Path
 from contextlib import contextmanager
 import fcntl, hashlib, json, os, tempfile
 from .contracts import canonical,digest,ref,scientific,identifier,ResearchError,ResearchConflict
+from .performance import measure
 
 FOLDERS={'relationship':'signal_library/relationships','trial':'trial_ledger/records',
  'admission':'admission_ledger/records','validation':'validation_ledger/records',
@@ -28,6 +29,7 @@ def read_json(p):
         data = p.read_bytes()
     return json.loads(data,object_pairs_hook=pairs,parse_constant=lambda v:(_ for _ in ()).throw(ResearchError('Nonfinite JSON')))
 
+@measure('publication.bytes')
 def install_bytes(path,data,*,mutable=False):
     path.parent.mkdir(parents=True,exist_ok=True)
     if path.exists() and not mutable:
@@ -51,7 +53,10 @@ def install_bytes(path,data,*,mutable=False):
 def lock(root,name,nonblocking=False):
     p=inside(root,'storage/catalog/operations/'+name+'.lock');p.parent.mkdir(parents=True,exist_ok=True)
     with p.open('a+b') as f:
-        try:fcntl.flock(f,fcntl.LOCK_EX|(fcntl.LOCK_NB if nonblocking else 0))
+        label = name.replace('-', '_') if name in {'research-writer', 'research-executor', 'research-worker-service'} else 'other'
+        try:
+            with measure('lock.wait.' + label):
+                fcntl.flock(f,fcntl.LOCK_EX|(fcntl.LOCK_NB if nonblocking else 0))
         except BlockingIOError:yield False;return
         try:yield True
         finally:fcntl.flock(f,fcntl.LOCK_UN)
@@ -62,6 +67,7 @@ class ResearchStore:
         identifier(identity)
         if kind not in FOLDERS or not identity.startswith(PREFIX[kind]+'_'):raise ResearchError('Wrong research record type')
         return inside(self.root,'storage/catalog/'+FOLDERS[kind]+'/'+identity+'.json')
+    @measure('publication.record')
     def put(self,kind,key,body):
         record=scientific({'schema_version':'0.8.0','record_type':'research_'+kind,'version':'1.0.0',
             'id':PREFIX[kind]+'_'+digest(key),'scientific_key':key,'body':body})
@@ -80,10 +86,12 @@ class ResearchStore:
     def find(self,kind,key):
         identity=PREFIX[kind]+'_'+digest(key)
         return self.get(kind,identity) if self.path(kind,identity).is_file() else None
+    @measure('publication.payload')
     def payload(self,role,value):
         data=canonical(value)+b'\n';sha=hashlib.sha256(data).hexdigest()
         install_bytes(inside(self.root,f'storage/payloads/sha256/{sha[:2]}/{sha}.json'),data)
         return {'role':role,'blob_sha256':sha,'format':'json','byte_count':len(data)}
+    @measure('publication.artifact')
     def artifact(self,key,values):
         members=[self.payload(k,v) for k,v in sorted(values.items())]
         body={'schema_version':'0.8.0','record_type':'research_artifact','version':'1.0.0',
@@ -91,6 +99,7 @@ class ResearchStore:
         body['id']='ARTIFACT_'+digest(body)
         install_bytes(inside(self.root,'storage/catalog/trial_artifacts/'+body['id']+'/manifest.json'),canonical(body)+b'\n')
         return body
+    @measure('verification.trial_artifact')
     def verify_artifact(self,reference):
         identifier(reference['id']);p=inside(self.root,'storage/catalog/trial_artifacts/'+reference['id']+'/manifest.json');a=read_json(p)
         if ref(a)!=reference or a['id']!='ARTIFACT_'+digest({k:v for k,v in a.items() if k!='id'}):raise ResearchError('Artifact manifest mismatch')
