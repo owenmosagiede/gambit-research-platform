@@ -21,10 +21,11 @@ from contextvars import ContextVar
 from copy import deepcopy
 from datetime import date, timedelta
 import sys
+import json
 from pathlib import Path
 from time import perf_counter
 from types import MappingProxyType
-from data.transformations.identity import digest
+from data.transformations.identity import digest, canonical_bytes
 from research.performance import measure, counter, gauge
 
 _CURRENT = ContextVar('verified_research_inputs', default=None)
@@ -296,8 +297,21 @@ def verified_prices(store, binding, policy, loader):
     def verify():
         with measure('source_prices.verify'):
             return loader(store, binding, policy)
-    return memo(store.root, 'prices', {'snapshot': binding, 'policy': policy},
-                verify)
+    if current(store.root) is None or _PHASE.get() is None:
+        return verify()
+    def encoded():
+        snapshot, prices = verify()
+        # These are canonical persisted JSON values already checked by the full
+        # source verifier. Retain their exact bytes instead of a second Python
+        # object graph. No fields or precision are dropped, and each caller gets
+        # private decoded containers. Ordinary memo witnesses still cover every
+        # dependency and the bytes count against the same shared cache limit.
+        with measure('inputs.price_encode'):
+            return canonical_bytes([snapshot, prices])
+    data = memo(store.root, 'prices', {'snapshot': binding, 'policy': policy}, encoded)
+    with measure('inputs.price_decode'):
+        snapshot, prices = json.loads(data)
+    return snapshot, prices
 
 
 @contextmanager

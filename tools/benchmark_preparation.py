@@ -152,7 +152,9 @@ def compare(before, after):
         proof.require(item['lineage']['prepared_id'] == after['prepared']['prepared_id'], 'unknown prepared identity')
         item['lineage']['prepared_id'] = prepared['prepared_id']
     proof.require(loaded == before['loaded'], 'aligned values, missingness, Target lineage or phase changed')
-    proof.require(after['decisions'] == before['decisions'], 'P1 scientific decisions changed')
+    # P1 artifacts embed the aligned sample and its exact producer lineage.
+    # Translate only the references already proven above, never metric fields.
+    proof.require(translate(after['decisions']) == before['decisions'], 'P1 scientific decisions changed')
     proof.require(before['dimensions'] == after['dimensions'], 'fixture dimensions changed')
     proof.require(after['cache_high_water_bytes'] <= 128*1024*1024, 'retained cache exceeded budget')
     return {'exact_scientific_equality':True, 'publications_verified':len(checked['phases']),

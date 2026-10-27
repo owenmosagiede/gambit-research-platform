@@ -19,7 +19,10 @@ def report(code):
     value.update(prepared=prepared,loaded=[{'lineage':{'prepared_id':prepared['prepared_id']},'target':'unchanged',
         'feature_materialization':p['verified']['manifest']['id'],
         'feature_lineage':bench.proof.reference(p['lineages'][0])} for p in value['phases'].values()],
-        decisions=[{'admission':'rejected'}],dimensions={'fixture':True},cache_high_water_bytes=1024,
+        decisions=[{'admission':'rejected','artifacts':{'aligned_sample':[
+            {'lineage':{'feature_lineage':bench.proof.reference(p['lineages'][0]),
+                        'feature_materialization':p['verified']['manifest']['id']}}
+            for p in value['phases'].values()]}}],dimensions={'fixture':True},cache_high_water_bytes=1024,
         performance={},source_admission_boundary='isolated synthetic')
     return value
 

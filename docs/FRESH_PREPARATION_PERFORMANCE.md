@@ -3,7 +3,10 @@
 This change keeps the current member's fully verified price history in the
 execution-local cache while preparing its bounded Feature windows. It changes
 only eviction preference. Every hit still checks the complete dependency witness
-and propagates it into enclosing verifiers. Caller values remain private copies.
+and propagates it into enclosing verifiers. Fully verified snapshot/price values
+are retained as lossless canonical JSON bytes, reducing the retained object graph
+and repeated deep copies. Every caller receives private decoded containers;
+decimal strings, large integers, nulls and all provenance fields remain exact.
 A source too large to retain is verified normally. Temporary payloads and series
 may bypass retention rather than displacing that member's price entry. The total
 retained-cache limit stays 128 MiB; compact lookups retain their 64 MiB sublimit.

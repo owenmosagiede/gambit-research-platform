@@ -24,6 +24,33 @@ from decimal import Decimal
 
 
 class ContextTests(unittest.TestCase):
+    def test_price_bytes_preserve_exact_values_private_copies_and_dependency_checks(self):
+        from data.verified_inputs import verified_prices, retained_size
+        from data.alfred_onboarding import stable_read
+        from types import SimpleNamespace
+        with TemporaryDirectory() as folder:
+            root=Path(folder);path=root/'source';path.write_bytes(b'good')
+            plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
+            original=({'id':'exact'},[{'value':'1.2345678901234567890123456789','available_at':None,
+                'input_dependencies':[{'id':str(i),'flag':True,'integer':2**64}]} for i in range(200)])
+            calls=[]
+            def load(*args):
+                calls.append(1)
+                if stable_read(path)!=b'good':raise ValueError('tampered source')
+                return deepcopy(original)
+            with execution_inputs(root,'code') as context,phase_inputs(root,plan,'P1'):
+                first=verified_prices(SimpleNamespace(root=root),'snapshot','policy',load)
+                self.assertEqual(first,original)
+                first[1][0]['input_dependencies'][0]['id']='caller mutation'
+                self.assertEqual(verified_prices(SimpleNamespace(root=root),'snapshot','policy',load),original)
+                entry=next(v for k,v in context.entries.items() if k[1]=='prices')
+                self.assertIsInstance(entry[0],bytes)
+                self.assertLess(retained_size(entry[0]),retained_size(original))
+                self.assertEqual(len(calls),1)
+                path.write_bytes(b'evil')
+                with self.assertRaisesRegex(ValueError,'tampered'):
+                    verified_prices(SimpleNamespace(root=root),'snapshot','policy',load)
+
     def test_current_price_survives_pressure_without_extending_budget_or_skipping_witnesses(self):
         from data.alfred_onboarding import stable_read
         with TemporaryDirectory() as folder:
