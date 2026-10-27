@@ -35,18 +35,45 @@ def implementation_at(root):
             'numeric_environment': {'python': sys.version}, 'fingerprint': digest(files)}
 
 
-def authority_inventory(root):
-    """Metadata only, including all historical authority, not only this cohort.
+# The inventory is deliberately bounded by research authority, not market-data
+# volume. Never recurse through the catalog root: lineage/Feature data can dwarf
+# the experiment ledger. Unrelated research authority remains a rollback fence.
+AUTHORITY_SCOPE = 'frozen_program_research_metadata_v1'
+AUTHORITY_ROOTS = (
+    'definitions', 'config',
+    'storage/catalog/submissions', 'storage/catalog/attempts',
+    'storage/catalog/trial_ledger', 'storage/catalog/admission_ledger',
+    'storage/catalog/validation_ledger', 'storage/catalog/research_plans',
+    'storage/catalog/research_exposure', 'storage/catalog/research_implementations',
+    'storage/catalog/trial_artifacts',
+    'storage/catalog/signal_library/relationships',
+    'storage/catalog/signal_library/research_links',
+    'storage/catalog/operations/experiment_intake/requests',
+    'storage/catalog/operations/execution_compatibility/attempts',
+    'storage/catalog/operations/execution_compatibility/trial_intents',
+    'storage/catalog/operations/submission_incidents',
+    'storage/catalog/operations/research_batches',
+)
 
-    Observations and artifact payloads are not read. Content-addressed payloads
-    are protected by their manifests and the normal verifying readers.
-    Disposable caches, locks, heartbeats and diagnostic counters are excluded.
+
+def authority_inventory(root):
+    """Hash bounded research metadata, never data catalogs or payloads.
+
+    Completed/partial trials, event order, reserved intake and new execution
+    authority are still fenced, including research outside the target program.
+    Definitions/configuration are preserved. Feature/Target/source/lineage data
+    are immutable inputs, verified by the frozen bindings and normal execution
+    readers; this code-only deployment cannot write those namespaces.
     """
     root = Path(root)
     result = {}
-    for base in (root/'definitions', root/'config', root/'storage/catalog'):
-        if base.is_symlink():
-            raise RuntimeError('Authority namespace cannot be a symlink')
+    for relative in AUTHORITY_ROOTS:
+        base = root/relative
+        for parent in (base, *base.parents):
+            if parent.is_symlink():
+                raise RuntimeError('Authority namespace cannot be a symlink')
+            if parent == root:
+                break
         if not base.exists():
             continue
         for p in sorted(base.rglob('*')):
@@ -54,16 +81,13 @@ def authority_inventory(root):
                 raise RuntimeError('Authority path cannot be a symlink')
             if not p.is_file():
                 continue
-            relative = p.relative_to(root).as_posix()
-            if '/operations/' in relative:
-                if any(part in relative for part in ('/experiment_intake/requests/',
-                        '/execution_compatibility/attempts/', '/execution_compatibility/trial_intents/')):
-                    pass
-                else:
-                    continue
+            # An artifact directory can only contribute its manifest. Numerical
+            # evidence lives in payload storage and is never part of this read.
+            if relative == 'storage/catalog/trial_artifacts' and p.name != 'manifest.json':
+                continue
             if not p.resolve().is_relative_to(root.resolve()):
                 raise RuntimeError('Authority path is not a regular in-store file')
-            result[relative] = sha(p.read_bytes())
+            result[p.relative_to(root).as_posix()] = sha(p.read_bytes())
     return result
 
 
@@ -198,7 +222,7 @@ def capture(root, manifest_bytes):
     from data.legacy_batch_evidence import pending
     if pending(root):
         raise RuntimeError('Unapproved legacy batch remains pending')
-    result = {'manifest_sha256': sha(manifest_bytes), 'cohort': cohort,
+    result = {'authority_scope': AUTHORITY_SCOPE, 'manifest_sha256': sha(manifest_bytes), 'cohort': cohort,
               'states': states, 'authority': authority_inventory(root)}
     result['snapshot_sha256'] = digest(result)
     return result
@@ -357,7 +381,7 @@ def check_original_release(machine, approval, *, source_manifest, source_files,
         raise RuntimeError('Installed code differs from the approved original archive')
 
 
-def propose(machine, manifest_bytes, release_manifest, files, *, operator_sha256,
+def _proposal_bundle(machine, manifest_bytes, release_manifest, files, *, operator_sha256,
             source_manifest, source_files, source_archive_sha256, target_archive_sha256,
             checks_bytes, equivalence_bytes, retirement=None):
     """Construct a reviewable, inert proposal only at the quiescent boundary.
@@ -386,7 +410,56 @@ def propose(machine, manifest_bytes, release_manifest, files, *, operator_sha256
         evidence={'tests_sha256': sha(checks_bytes), 'equivalence_sha256': sha(equivalence_bytes)},
         source_archive_sha256=source_archive_sha256, target_archive_sha256=target_archive_sha256)
     check_evidence({'proposal': proposal}, release_manifest, checks_bytes, equivalence_bytes, retirement)
-    return proposal
+    return {'proposal': proposal, 'snapshot': snapshot, 'code_plan': future}
+
+
+def propose(machine, manifest_bytes, release_manifest, files, **evidence):
+    return _proposal_bundle(machine, manifest_bytes, release_manifest, files, **evidence)['proposal']
+
+
+def review(machine, manifest_bytes, release_manifest, files, **evidence):
+    """One fresh capture under maintenance locks; persist before returning.
+
+    Never grants approval or installs code. A disconnected client can retrieve
+    the durable package instead of repeating the capture. Apply still performs
+    a fresh check at its own boundary; this is not a reusable bypass token.
+    """
+    with ExitStack() as guards:
+        release.guard(guards, machine.state/'control.lock')
+        release.guard(guards, machine.backup/'backup.lock')
+        machine.quiescent(sha(manifest_bytes)); machine.backup_ready()
+        _locks(guards, machine); machine.quiescent(sha(manifest_bytes))
+        print('Capturing frozen cohort and bounded research metadata once', file=sys.stderr, flush=True)
+        bundle = _proposal_bundle(machine, manifest_bytes, release_manifest, files, **evidence)
+        proposal, snapshot, code = bundle['proposal'], bundle['snapshot'], bundle['code_plan']
+        # Each completed review gets its own immutable package. Nothing is
+        # installed under the application, including execution approval.
+        folder = machine.state/'reviews'/('review-' + uuid.uuid4().hex)
+        if (machine.state/'reviews').is_symlink():
+            raise RuntimeError('Review directory cannot be a symlink')
+        folder.mkdir(mode=0o700, parents=True, exist_ok=False)
+        before = []
+        for row in code['changes']:
+            if row['before'] is not None:
+                raw = release.safe_target(machine.root, row['path']).read_bytes()
+                if sha(raw) != row['before']:
+                    raise RuntimeError('Code changed during review')
+                release.atomic(folder/'before'/row['path'], raw, mode=0o600)
+            before.append({'path': row['path'], 'sha256': row['before']})
+        for name, value in bundle.items():
+            release.atomic(folder/(name+'.json'), canonical(value), mode=0o600)
+        result = {'schema': 'frozen_program_review_package_v1', 'directory': str(folder),
+            'commit': release_manifest['commit'], 'proposal': ref(proposal),
+            'snapshot_sha256': digest(snapshot),
+            'authority_scope': snapshot.get('authority_scope'),
+            'cohort_count': len(snapshot['cohort']),
+            'authority_records': len(snapshot['authority']), 'before_images': before,
+            'checks_sha256': proposal['evidence']['tests_sha256'],
+            'equivalence_sha256': proposal['evidence']['equivalence_sha256'],
+            'approval_created': False, 'code_installed': False}
+        release.atomic(folder/'receipt.json', canonical(result), mode=0o600)
+        print('Review package saved: '+str(folder), file=sys.stderr, flush=True)
+        return result
 
 
 def make_plan(machine, manifest_bytes, release_manifest, files, approval, archive_sha256,
@@ -562,7 +635,7 @@ def recover(machine, manifest_bytes, release_id):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('snapshot', 'propose', 'plan', 'apply', 'recover'))
+    parser.add_argument('action', choices=('snapshot', 'propose', 'review', 'plan', 'apply', 'recover'))
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--state', type=Path, default=release.STATE)
@@ -581,8 +654,8 @@ def main():
     retirement_paths = {'plan': args.retirement_plan, 'status': args.retirement_status,
                         'receipt': args.retirement_receipt}
     if any(retirement_paths.values()):
-        if args.action not in ('propose', 'plan', 'apply') or not all(retirement_paths.values()):
-            parser.error('Retirement requires all three exact evidence files for propose, plan or apply')
+        if args.action not in ('propose', 'review', 'plan', 'apply') or not all(retirement_paths.values()):
+            parser.error('Retirement requires all three exact evidence files for propose, review, plan or apply')
         if not all((args.archive, args.sha256, args.source_archive, args.source_sha256)):
             parser.error('Retirement requires both exact protected archives')
         retirement = retired_definitions.load_context(retirement_paths,
@@ -592,7 +665,7 @@ def main():
         result = machine.snapshot(raw)
     elif args.action == 'recover':
         result = recover(machine, raw, args.release_id)
-    elif args.action == 'propose':
+    elif args.action in ('propose', 'review'):
         if not all((args.archive, args.sha256, args.source_archive, args.source_sha256,
                     args.operator, args.operator_sha256, args.checks, args.equivalence)):
             parser.error('Proposal requires both verified archives, exact original operator, and release evidence')
@@ -600,7 +673,7 @@ def main():
             parser.error('Frozen operator checksum differs')
         manifest, files = verify(args.archive, args.sha256)
         source, source_files = verify(args.source_archive, args.source_sha256)
-        result = propose(machine, raw, manifest, files, operator_sha256=args.operator_sha256,
+        result = (review if args.action == 'review' else propose)(machine, raw, manifest, files, operator_sha256=args.operator_sha256,
             source_manifest=source, source_files=source_files, source_archive_sha256=args.source_sha256,
             target_archive_sha256=args.sha256, checks_bytes=args.checks.read_bytes(),
             equivalence_bytes=args.equivalence.read_bytes(), retirement=retirement)

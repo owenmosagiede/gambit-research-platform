@@ -132,7 +132,7 @@ not the scientific adequacy of a newly written report.
 
 ## Proposal, approval and application
 
-The three optional flags must be supplied together to `propose`, `plan` and
+The three optional flags must be supplied together to `propose`, `review`, `plan` and
 `apply` when using this exception. Omitting them leaves ordinary blockers in
 place. `snapshot` is unchanged; `recover` uses the saved release evidence and
 does not accept replacement retirement files.
@@ -141,7 +141,7 @@ After the separately authorized safe drain and backup checks, prepare the inert
 proposal using the separately staged corrected control tool:
 
 ```sh
-/opt/gambit/venv/bin/python -B /protected/control/deploy/program_cutover.py propose \
+/opt/gambit/venv/bin/python -B /protected/control/deploy/program_cutover.py review \
   --root /srv/gambit/research_platform \
   --manifest /protected/program-manifest.json \
   --source-archive /protected/source.tar.gz \
@@ -157,8 +157,11 @@ proposal using the separately staged corrected control tool:
   --retirement-receipt /var/lib/gambit-releases/9654b7de0b90d7f9a85718638effc271f6d6c6e1-c5f149eefa65/receipt.json
 ```
 
-Replace uppercase placeholders with verified hashes. Save the output and the
-complete review package. Stop for the user's explicit approval of this concrete
+Replace uppercase placeholders with verified hashes. The `review` action takes
+one bounded research-metadata snapshot under maintenance locks and saves the
+proposal, snapshot, code plan, before-images and receipt outside the application.
+Retain that complete review package; retrieve it after a connection loss instead
+of repeating the scan. It does not scan numerical data or row-lineage catalogs. Stop for the user's explicit approval of this concrete
 proposal. The proposal is inert; do not synthesize an approval from a prior PR
 approval, a successful test run or this documentation.
 

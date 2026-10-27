@@ -214,8 +214,85 @@ class CutoverTests(unittest.TestCase):
                 cutover.check_original_release(self.m, approved, **dict(args, **changed))
     def test_authority_directory_symlink_cannot_hide_history(self):
         target = self.m.root/'storage/catalog/hidden'; target.mkdir()
-        (self.m.root/'storage/catalog/alias').symlink_to(target, target_is_directory=True)
+        (self.m.root/'storage/catalog/trial_ledger/alias').symlink_to(target, target_is_directory=True)
         with self.assertRaisesRegex(RuntimeError, 'symlink'): cutover.authority_inventory(self.m.root)
+
+    def test_review_captures_once_and_saves_inert_retrievable_package(self):
+        source = {'src/runtime/example.py': b'old executor\n'}
+        with patch.object(self.m, 'snapshot', wraps=self.m.snapshot) as capture:
+            result = cutover.review(self.m, self.manifest_bytes, self.release_manifest, self.files,
+                operator_sha256='b'*64, source_manifest=artifact(source), source_files=source,
+                source_archive_sha256='e'*64, target_archive_sha256='f'*64,
+                checks_bytes=self.tests_bytes, equivalence_bytes=self.equivalence_bytes)
+            self.assertEqual(capture.call_count, 1)
+        folder = Path(result['directory'])
+        self.assertEqual(json.loads((folder/'proposal.json').read_text()), self.proposal)
+        self.assertEqual(json.loads((folder/'snapshot.json').read_text()), self.m.snapshot(self.manifest_bytes))
+        self.assertEqual((folder/'before/src/runtime/example.py').read_bytes(), b'old executor\n')
+        self.assertEqual(json.loads((folder/'receipt.json').read_text()), result)
+        self.assertFalse(result['approval_created']); self.assertFalse(result['code_installed'])
+        self.assertFalse((self.m.root/'storage/catalog/operations/execution_compatibility').exists())
+        self.assertEqual(self.code.read_bytes(), b'old executor\n')
+        self.assertEqual(self.m.events, [])
+
+    def test_review_requires_drained_services_recent_backup_and_all_locks(self):
+        source = {'src/runtime/example.py': b'old executor\n'}
+        def review():
+            return cutover.review(self.m, self.manifest_bytes, self.release_manifest, self.files,
+                operator_sha256='b'*64, source_manifest=artifact(source), source_files=source,
+                source_archive_sha256='e'*64, target_archive_sha256='f'*64,
+                checks_bytes=self.tests_bytes, equivalence_bytes=self.equivalence_bytes)
+        self.m.states['gambit-worker.service'] = 'active'
+        with self.assertRaisesRegex(RuntimeError, 'Drain'): review()
+        self.m.states['gambit-worker.service'] = 'inactive'
+        for path in [self.m.state/'control.lock', self.m.backup/'backup.lock'] + [
+                self.m.root/'storage/catalog/operations'/(name+'.lock') for name in cutover.release.LOCKS] + [
+                self.m.root/'storage/temporary'/name for name in
+                ('feature-store-publication.lock', 'target-store-publication.lock', 'lineage-packs-index.lock')]:
+            with self.subTest(path=path), ExitStack() as guards:
+                cutover.release.guard(guards, path)
+                with self.assertRaisesRegex(RuntimeError, 'owns'): review()
+        backup = self.m.backup/'status.json'; data = json.loads(backup.read_text())
+        data['finished_at'] = (datetime.now(timezone.utc)-timedelta(days=2)).isoformat()
+        backup.write_text(json.dumps(data))
+        with self.assertRaisesRegex(RuntimeError, 'backup'): review()
+        self.assertFalse((self.m.state/'reviews').exists())
+
+    def test_bounded_inventory_never_walks_data_catalogs_or_payloads(self):
+        # Data volume must not change deployment work. Even a directory walker
+        # touching these namespaces is a failure, not just reading their bytes.
+        excluded = ('lineage', 'lineage_packs', 'feature_store', 'target_store', 'snapshots')
+        for name in excluded:
+            path = self.m.root/'storage/catalog'/name/'large-data'; path.mkdir(parents=True)
+            (path/'manifest.json').write_bytes(b'not research authority')
+        payload = self.m.root/'storage/payloads/sha256/opaque'; payload.mkdir(parents=True)
+        (payload/'data.json').write_bytes(b'not research authority')
+        walk = Path.rglob
+        def restricted(path, pattern):
+            relative = path.relative_to(self.m.root).as_posix()
+            self.assertIn(relative, cutover.AUTHORITY_ROOTS)
+            return walk(path, pattern)
+        with patch.object(Path, 'rglob', restricted):
+            before = cutover.authority_inventory(self.m.root)
+        for name in excluded:
+            (self.m.root/'storage/catalog'/name/'new.json').write_bytes(b'new data metadata')
+        self.assertEqual(before, cutover.authority_inventory(self.m.root))
+        self.assertIn(self.history.relative_to(self.m.root).as_posix(), before)
+
+    def test_scoped_inventory_detects_new_changed_deleted_research_authority(self):
+        before = cutover.authority_inventory(self.m.root)
+        for name in cutover.AUTHORITY_ROOTS:
+            with self.subTest(namespace=name):
+                # Artifact manifests retain payload hashes without opening payloads.
+                suffix = 'ARTIFACT_fixture/manifest.json' if name.endswith('trial_artifacts') else 'fixture.json'
+                path = self.m.root/name/suffix; path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'new research authority')
+                self.assertNotEqual(before, cutover.authority_inventory(self.m.root))
+                first = cutover.authority_inventory(self.m.root)
+                path.write_bytes(b'changed research authority')
+                self.assertNotEqual(first, cutover.authority_inventory(self.m.root))
+                path.unlink()
+                self.assertEqual(before, cutover.authority_inventory(self.m.root))
 
 
 class CatalogCaptureTests(unittest.TestCase):
