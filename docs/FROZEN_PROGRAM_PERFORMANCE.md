@@ -121,11 +121,13 @@ Recheck these identities at the actual cutover; these are not permission to act.
    service before snapshotting so no new submissions can enter. Confirm all
    workers/children are gone and service/executor/writer locks are free.
 4. Require a successful verified backup within 36 hours. Run the separate
-   `deploy/program_cutover.py propose` command with the exact manifest, original
+   `deploy/program_cutover.py review` command with the exact manifest, original
    operator, both verified source archives, checks and equivalence files.
    It verifies full frozen bindings, records queued/terminal/partial states,
-   inventories historical metadata, includes orphan committed trials, and emits
-   an **inert** proposal. It never starts/stops services or grants approval.
+   inventories bounded research metadata, includes orphan committed trials, and saves
+   an **inert** proposal, snapshot, code plan and before-images outside the app.
+   Capture runs once under the maintenance locks; retrieve the durable review
+   package after a connection loss instead of starting another capture. It never starts/stops services or grants approval.
 5. Review that concrete proposal and its complete cohort, fingerprints, archive
    hashes and committed references. Only an explicit authorized decision may
    produce the separate append-only approval. If the proposal or cohort changes,
@@ -202,3 +204,30 @@ discarded when the process exits. No infrastructure purchase or resize, new
 coordinator, changed dispatch order or parallel production worker is part of
 this release. Benchmark results and deployment limitations are reported in the
 implementation evidence accompanying the PR.
+
+
+## Bounded release preservation check
+
+The `frozen_program_research_metadata_v1` snapshot inventories definitions,
+configuration, immutable submissions/intake reservations, event chains, research
+plans, relationships, links, trials, admissions, validations, exposure,
+implementation records, artifact manifests, execution intents/provenance,
+integrity incidents and legacy batch evidence. It includes unrelated research
+metadata so new authority still prevents an unsafe rollback. Complete frozen
+Feature/Target/Scope validation and partial/orphan-trial reconciliation remain.
+
+It does **not** walk the catalog root, Feature/Target materialization inventories,
+source snapshots, row lineage, packed lineage, numerical payloads or UI caches.
+The work scales with research metadata rather than the market-data store. This
+is a code-only deployment: those excluded inputs are not written or deleted.
+Their exact frozen bindings and the execution readers retain input verification;
+the release inventory is no longer a whole-data-store integrity audit.
+
+Use `review` with the same arguments as `propose`. It checks stopped services,
+backup and all publication/maintenance locks, captures once, and saves its package
+under the release state's `reviews/` directory before returning its receipt.
+The receipt is not approval. Do not call `snapshot`, then `propose`, then rescan
+the catalog in a wrapper. Approval/plan/apply still recheck fresh state at their
+own boundaries; no snapshot is trusted across a service restart or data change.
+Old full-inventory receipts differ from this explicitly versioned snapshot and
+cannot silently be used for recovery with the narrower tool.
