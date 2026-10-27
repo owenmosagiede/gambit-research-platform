@@ -10,7 +10,7 @@ from time import perf_counter
 import unittest
 from unittest.mock import patch
 
-from data.verified_inputs import execution_inputs, phase_inputs, memo, fresh_inputs, compact_memo, probe
+from data.verified_inputs import execution_inputs, phase_inputs, memo, fresh_inputs, compact_memo, probe, retain_price_inputs
 from data.transformations.identity import reference, digest
 from data.fx_records import make_record
 from data import fx_feature_store as fx
@@ -24,6 +24,58 @@ from decimal import Decimal
 
 
 class ContextTests(unittest.TestCase):
+    def test_current_price_survives_pressure_without_extending_budget_or_skipping_witnesses(self):
+        from data.alfred_onboarding import stable_read
+        with TemporaryDirectory() as folder:
+            root=Path(folder); path=root/'source'; path.write_bytes(b'good')
+            plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
+            key={'snapshot':'exact','policy':'fixed'}; calls=[]
+            def load():
+                calls.append(1)
+                if stable_read(path)!=b'good':raise ValueError('tampered source')
+                return list(range(40))
+            with execution_inputs(root,'code',max_bytes=5000) as context, phase_inputs(root,plan,'P1'):
+                with retain_price_inputs(root,'exact','fixed'):
+                    memo(root,'prices',key,load)
+                    for index in range(12):
+                        memo(root,'bulk',index,lambda:list(range(60)))
+                        compact_memo(root,'compact',index,lambda:list(range(20)))
+                        self.assertLessEqual(context.bytes,5000)
+                        self.assertLessEqual(context.compact_bytes,2500)
+                    value=memo(root,'prices',key,load); value.append('private')
+                    self.assertEqual(memo(root,'prices',key,load),list(range(40)))
+                    self.assertEqual(len(calls),1)
+                    self.assertEqual(context.counts['prices.evictions'],0)
+                    self.assertGreater(context.counts['retention_bypasses'],0)
+                    path.write_bytes(b'evil')
+                    with self.assertRaisesRegex(ValueError,'tampered'):memo(root,'prices',key,load)
+                self.assertIsNone(context.retained_price)
+                path.write_bytes(b'good'); memo(root,'prices',key,load)
+                for index in range(12):memo(root,'bulk',index,lambda:list(range(60)))
+                memo(root,'prices',key,load)
+                self.assertEqual(len(calls),4) # invalidated failure and normal eviction still reload
+
+    def test_retention_is_exact_scoped_and_oversize_falls_back(self):
+        with TemporaryDirectory() as root:
+            plan={'plan_id':'test','periods':{p:{'end_exclusive':e} for p,e in
+                  [('P1','2020-01-01'),('P2','2021-01-01')]}}
+            with execution_inputs(root,'code',max_bytes=1000) as context, phase_inputs(root,plan,'P1'):
+                with self.assertRaisesRegex(RuntimeError,'cancelled'):
+                    with retain_price_inputs(root,'a','policy'):
+                        first=context.retained_price
+                        with retain_price_inputs(root,'b','policy'):
+                            self.assertNotEqual(context.retained_price,first)
+                        self.assertEqual(context.retained_price,first)
+                        for _ in range(2):memo(root,'prices',{'snapshot':'a','policy':'policy'},lambda:list(range(1000)))
+                        self.assertEqual(context.counts['prices.loads'],2)
+                        self.assertEqual(context.bytes,0)
+                        raise RuntimeError('cancelled')
+                self.assertIsNone(context.retained_price)
+                with retain_price_inputs(root,'a','policy'):
+                    with phase_inputs(root,plan,'P2'):
+                        self.assertIsNone(context.retained_price)
+                self.assertIsNone(context.retained_price)
+
     def test_compact_private_snapshot_survives_bulk_evictions_with_same_total_bound(self):
         with TemporaryDirectory() as folder:
             plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
@@ -200,6 +252,17 @@ class VerifiedPreparationTests(unittest.TestCase):
 
     def test_ts_multiyear_equivalence_and_reduced_work(self):self.compare('TS')
     def test_cs_multimember_equivalence_and_reduced_work(self):self.compare('CS')
+
+    def test_packed_multimember_warmup_follows_all_publications(self):
+        import os
+        plan=self.expanded_fixture('CS')
+        with patch.dict(os.environ,GAMBIT_FX_LINEAGE_STORAGE='packed_v1'),execution_inputs(self.root,'code') as context:
+            prepared=inputs.prepare_phase(self.root,plan,'P1')
+            self.assertTrue(all(len(m['materializations'])>1 for m in prepared['members']))
+            for h in (1,7,21,63,252):inputs.load_phase(self.root,plan,prepared,'P1',h)
+            self.assertEqual(context.counts['feature_lookup.loads'],len(plan['members']))
+            self.assertEqual(context.counts['feature_lookup.invalidations'],0)
+            self.assertIsNone(context.retained_price)
 
     def test_fresh_inspection_and_new_execution_reject_tampered_payload(self):
         plan=self.f.plan()

@@ -4,6 +4,8 @@ No process-global cached data, disk cache, or persistent verification claims.
 A context is discarded on restart, cancellation, failure or completion. Ordinary
 values are private copies; compact lookups are recursively immutable. Both tiers
 share the same total bound, with at most half reserved for compact lookups.
+During member preparation one exact price entry is preferred over transient
+ordinary entries; it receives no extra memory or relaxed witness checks.
 
 A cache entry is published only after its ordinary independent verifier succeeds.
 File identities (including ctime and resolved paths), negative definition lookup
@@ -132,6 +134,7 @@ class VerifiedInputs:
         self.compact_limit = max_bytes // 2
         self.high_water_bytes = 0
         self.active_phase = None
+        self.retained_price = None
         self.counts = Counter()
         self.seconds = Counter()
 
@@ -189,7 +192,15 @@ class VerifiedInputs:
                 while self.compact_entries and self.compact_bytes + size > self.compact_limit:
                     self._evict(self.compact_entries, True)
             while self.entries and self.bytes + size > self.max_bytes:
-                self._evict(self.entries, False)
+                if not self._evict(self.entries, False):
+                    break
+            if self.bytes + size > self.max_bytes:
+                # Transient payloads/series must not evict the current member's
+                # expensive verified history. Compute normally without retaining
+                # this value; the total cache budget is never extended.
+                self.counts['retention_bypasses'] += 1
+                counter('cache.retention_bypasses')
+                return stored if compact else value
             entries[identity] = (stored, size, dependencies)
             self.bytes += size
             if compact:
@@ -209,18 +220,22 @@ class VerifiedInputs:
             self.compact_bytes -= size
 
     def _evict(self, entries, compact):
-        identity = next(iter(entries))
+        identity = next((key for key in entries if compact or key != self.retained_price), None)
+        if identity is None:
+            return False
         self._remove(entries, identity, compact)
         self.counts['evictions'] += 1
         self.counts[identity[1] + '.evictions'] += 1
         counter('cache.evictions')
         counter('cache.' + identity[1] + '.evictions')
+        return True
 
     def clear(self):
         self.entries.clear()
         self.compact_entries.clear()
         self.bytes = 0
         self.compact_bytes = 0
+        self.retained_price = None
         gauge('cache.retained_bytes', 0)
         gauge('cache.compact_retained_bytes', 0)
 
@@ -283,6 +298,27 @@ def verified_prices(store, binding, policy, loader):
             return loader(store, binding, policy)
     return memo(store.root, 'prices', {'snapshot': binding, 'policy': policy},
                 verify)
+
+
+@contextmanager
+def retain_price_inputs(root, binding, policy):
+    """Prefer one member's price history within the existing shared byte limit.
+
+    This is an eviction preference, never a verification exemption: every hit
+    still checks and propagates all witnesses. Oversize inputs still use their
+    full verifier without retention. No value escapes an execution/phase change.
+    """
+    context, phase = current(root), _PHASE.get()
+    if context is None or phase is None:
+        yield
+        return
+    previous = context.retained_price
+    identity = (phase['key'], 'prices', digest({'snapshot': binding, 'policy': policy}))
+    context.retained_price = identity
+    try:
+        yield
+    finally:
+        context.retained_price = previous if context.active_phase == phase['key'] else None
 
 
 def retained_size(value):

@@ -144,7 +144,7 @@ def fixture_boundary(root, fixture):
         yield
 
 
-def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=None, production_shape=False, resume_checkpoint=None):
+def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=None, production_shape=False, resume_checkpoint=None, fresh_features=False):
     load_source(source)
     from data.feature_store import FeatureStore
     from data.fx_feature_recipes import build_fx_feature, get_fx_policy, _typed_parameters
@@ -333,6 +333,10 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
                     plan = inputs.resolve_plan(f.root, intent, profile)
                 except inputs.InputsBlocked as exc:
                     raise AssertionError(getattr(exc, 'reasons', str(exc))) from exc
+                if fresh_features:
+                    plans[label + '_positive'] = plan
+                    expected_p2[label + '_positive'] = None  # not pre-evaluated
+                    continue
                 with execution_inputs(f.root, implementation()):
                     prepared = inputs.prepare_phase(f.root, plan, 'P1'); admitted = []
                     for horizon in plan['horizons']:
