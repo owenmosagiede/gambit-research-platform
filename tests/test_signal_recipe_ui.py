@@ -147,6 +147,12 @@ def catalog_for(*entries):
     return {'schema_version': '1.0.0', 'entry_count': len(entries), 'entries': list(entries), 'issues': []}
 
 
+def deferred_group(index=1):
+    item=group(index,outputs=[])
+    item.update(outputs_deferred=True,outputs_href=f"/api/signal-library-summaries/{item['id']}/outputs")
+    return item
+
+
 def refresh_event(index=1):
     return {'request_id': '10000000-0000-4000-8000-000000000001', 'results': [ref('RESEARCHLINK_' + str(index))]}
 
@@ -224,6 +230,11 @@ function snapshot() {
       find(row,node=>node.tag==="button").click();
     } else if(step.action === "output") {
       find(ids["signal-detail-body"],node=>node.tag==="button" && node.dataset.signalId===step.id && node.dataset.materializationId===step.mid).click();
+    } else if(step.action === "outputs") {
+      const section=find(ids["signal-detail-body"],node=>node.className==="research-output-details");
+      section.open=step.open!==false; section.listeners.toggle?.();
+    } else if(step.action === "retry-outputs") {
+      find(ids["signal-detail-body"],node=>node.tag==="button" && node.textContent==="Retry stored outputs").click();
     } else if(step.action === "open") windowListeners["open-signal"]({detail:{signal_id:step.id,materialization_id:step.mid}});
     else if(step.action === "refresh") windowListeners["research-results-updated"]({detail:step.detail});
     else if(step.action === "retry") ids[step.element || "signal-detail-retry"].click();
@@ -313,6 +324,13 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertIn('Prepared observations alone do not count', flatten(view['table']))
         self.assertTrue(view['catalogRetryHidden'])
 
+    def test_unverifiable_catalog_does_not_claim_no_research_has_been_done(self):
+        data=catalog_for();data['issues']=[{'code':'INVALID_RESEARCH_RECORD'}]
+        view=ui([],catalog=data)[0]
+        self.assertIn('No researched Signals could be verified',flatten(view['table']))
+        self.assertNotIn('No researched Signals yet',flatten(view['table']))
+        self.assertFalse(view['catalogRetryHidden'])
+
     def test_legacy_pit_hash_uses_experiment_without_pit_or_filter_elements(self):
         for route in ('#pit', '#pit-page'):
             view = ui([], initial_hash=route)[0]
@@ -329,14 +347,125 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertIn('Verified entries are shown', view['issues'])
         self.assertFalse(view['catalogRetryHidden'])
 
-    def test_superseded_catalog_request_cannot_replace_newer_verified_results(self):
-        first = group(1); later = group(2, k=21)
-        states = ui([first], hold=['/api/signal-library-summaries'], steps=[
+    def test_revisits_and_duplicate_retries_share_the_in_flight_catalog_request(self):
+        item = group()
+        states = ui([item], hold=['/api/signal-library-summaries'], steps=[
             {'action': 'retry', 'element': 'signal-library-retry'},
-            {'action': 'settle', 'index': 1, 'value': catalog_for(later)},
-            {'action': 'settle', 'index': 0, 'value': catalog_for(first)}])
-        self.assertTrue(states[-1]['aborted'][0])
-        self.assertEqual(rows(states[-1]['table'])[0][0], later['name'])
+            {'action': 'navigate', 'hash': '#experiment'},
+            {'action': 'navigate', 'hash': '#signals'},
+            {'action': 'settle', 'index': 0},
+            {'action': 'select', 'id': item['id']}])
+        self.assertEqual(len(states[-1]['requests']),1)
+        self.assertFalse(states[-1]['aborted'][0])
+        self.assertEqual(rows(states[-1]['table'])[0][0], item['name'])
+
+    def test_failed_catalog_retries_on_tab_revisit_and_successful_revisit_does_not_reload(self):
+        item=group()
+        states=ui([item],catalogs=[None,catalog_for(item)],steps=[
+            {'action':'navigate','hash':'#ledger'}, {'action':'navigate','hash':'#signals'},
+            {'action':'navigate','hash':'#ledger'}, {'action':'navigate','hash':'#signals'}])
+        self.assertIn('could not be loaded',states[0]['catalogStatus'])
+        self.assertNotIn('No researched Signals yet',flatten(states[0]['table']))
+        self.assertEqual(len(states[-1]['requests']),2)
+        self.assertEqual(rows(states[-1]['table'])[0][0],item['name'])
+        self.assertTrue(states[-1]['catalogRetryHidden'])
+
+    def test_failed_refresh_label_survives_selection_and_revisit_recovers(self):
+        item=group()
+        states=ui([item],catalogs=[catalog_for(item),None,catalog_for(item)],steps=[
+            {'action':'refresh','detail':refresh_event()}, {'action':'select','id':item['id']},
+            {'action':'select','id':item['id']},
+            {'action':'navigate','hash':'#experiment'}, {'action':'navigate','hash':'#signals'}])
+        for state in states[1:4]:
+            self.assertIn('last verified library',state['catalogStatus'])
+            self.assertEqual(len(rows(state['table'])),1)
+            self.assertEqual(len(state['requests']),2)
+        self.assertEqual(states[-1]['catalogStatus'],'1 researched Signal')
+        self.assertEqual(len(states[-1]['requests']),3)
+
+    def test_failed_refresh_of_verified_empty_catalog_is_marked_stale(self):
+        final=ui([],catalogs=[catalog_for(),None],steps=[{'action':'refresh','detail':refresh_event()}])[-1]
+        self.assertIn('last verified library',final['catalogStatus'])
+        self.assertFalse(final['catalogRetryHidden'])
+
+    def test_deferred_outputs_load_only_when_expanded_and_keep_exact_output_links(self):
+        item=deferred_group(); stored=output()
+        data={'schema_version':'1.0.0','recipe':item['recipe'],'outputs':[stored],'issues':[]}
+        href=stored['materializations'][0]['href']
+        states=ui([item],responses={item['outputs_href']:data,href:detail(stored,linked=True)},steps=[
+            {'action':'select','id':item['id']}, {'action':'outputs'},
+            {'action':'outputs','open':False}, {'action':'outputs'},
+            {'action':'output','id':sid(),'mid':mid()}])
+        self.assertEqual(len(states[0]['requests']),1)
+        self.assertEqual(len(states[1]['requests']),1)
+        self.assertNotIn('No stored outputs are catalogued',flatten(states[1]['detail']))
+        self.assertEqual(len(states[4]['requests']),2)
+        self.assertEqual(states[2]['requests'][-1]['url'],item['outputs_href'])
+        self.assertIn('AUDUSD',flatten(states[2]['detail']))
+        self.assertEqual(states[-1]['requests'][-1]['url'],href)
+        self.assertIn('Stored output details',flatten(states[-1]['detail']))
+        self.assertTrue(all(request['method']=='GET' for request in states[-1]['requests']))
+
+    def test_deferred_output_failure_keeps_research_and_retry_is_scoped_to_outputs(self):
+        item=deferred_group(); data={'schema_version':'1.0.0','recipe':item['recipe'],'outputs':[output()],'issues':[]}
+        states=ui([item],hold=[item['outputs_href']],steps=[
+            {'action':'select','id':item['id']}, {'action':'outputs'}, {'action':'outputs'},
+            {'action':'settle','index':0,'error':True}, {'action':'retry-outputs'},
+            {'action':'settle','index':1,'value':data}])
+        self.assertEqual(len(states[3]['requests']),2)
+        self.assertIn('Stored outputs could not be verified',flatten(states[4]['detail']))
+        self.assertIn('RELATIONSHIP_abc',flatten(states[4]['detail']))
+        self.assertEqual(states[4]['catalogStatus'],'1 researched Signal')
+        self.assertTrue(states[4]['catalogRetryHidden'])
+        self.assertIn('AUDUSD',flatten(states[-1]['detail']))
+        self.assertEqual(len(states[-1]['requests']),3)
+
+    def test_deferred_outputs_require_the_exact_frozen_recipe_and_valid_output_shape(self):
+        for field,value in [('id',group(2)['id']),('version','2.0.0'),('content_sha256','a'*64)]:
+            with self.subTest(field=field):
+                item=deferred_group(); wrong=dict(item['recipe']);wrong[field]=value
+                data={'schema_version':'1.0.0','recipe':wrong,'outputs':[output()],'issues':[]}
+                final=ui([item],responses={item['outputs_href']:data},steps=[
+                    {'action':'select','id':item['id']},{'action':'outputs'}])[-1]
+                self.assertIn('Stored outputs could not be verified',flatten(final['detail']))
+                self.assertIn('RELATIONSHIP_abc',flatten(final['detail']))
+                self.assertEqual(len(rows(final['table'])),1)
+        item=deferred_group(); bad=output();bad['materializations'][0]['href']='https://other.test/output'
+        data={'schema_version':'1.0.0','recipe':item['recipe'],'outputs':[bad],'issues':[]}
+        final=ui([item],responses={item['outputs_href']:data},steps=[{'action':'select','id':item['id']},{'action':'outputs'}])[-1]
+        self.assertIn('Stored outputs could not be verified',flatten(final['detail']))
+        self.assertEqual(len(final['requests']),2)
+
+    def test_deferred_output_issues_are_not_reported_as_no_stored_outputs(self):
+        item=deferred_group();data={'schema_version':'1.0.0','recipe':item['recipe'],'outputs':[],'issues':[{'code':'INVALID_OUTPUT'}]}
+        final=ui([item],responses={item['outputs_href']:data},steps=[{'action':'select','id':item['id']},{'action':'outputs'}])[-1]
+        self.assertIn('No stored outputs could be verified',flatten(final['detail']))
+        self.assertNotIn('No stored outputs are catalogued',flatten(final['detail']))
+        self.assertIn('RELATIONSHIP_abc',flatten(final['detail']))
+        self.assertEqual(final['catalogStatus'],'1 researched Signal')
+
+    def test_late_output_response_cannot_replace_another_selected_recipe(self):
+        first=deferred_group();second=group(2,k=21)
+        data={'schema_version':'1.0.0','recipe':first['recipe'],'outputs':[output()],'issues':[]}
+        final=ui([first,second],hold=[first['outputs_href']],steps=[
+            {'action':'select','id':first['id']},{'action':'outputs'},
+            {'action':'select','id':second['id']},{'action':'settle','index':0,'value':data}])[-1]
+        self.assertEqual(final['title'],second['name'])
+        self.assertNotIn('Loading stored outputs',flatten(final['detail']))
+        self.assertEqual(len(final['requests']),2)
+
+    def test_completed_output_request_is_reused_after_research_details_rerender(self):
+        item=deferred_group();item['details_deferred']=True
+        research_href=f"/api/research-results/{item['id']}"
+        research_data={'recipe_id':item['id'],'relationships':recorded_group()['research']['relationships']}
+        output_data={'schema_version':'1.0.0','recipe':item['recipe'],'outputs':[output()],'issues':[]}
+        final=ui([item],hold=[research_href,item['outputs_href']],steps=[
+            {'action':'select','id':item['id']},{'action':'outputs'},
+            {'action':'settle','index':0,'value':research_data},
+            {'action':'settle','index':1,'value':output_data},{'action':'outputs'}])[-1]
+        self.assertIn('AUDUSD',flatten(final['detail']))
+        self.assertIn('TRIAL_P2_a',flatten(final['detail']))
+        self.assertEqual(len(final['requests']),3)
 
     def test_cold_catalog_can_complete_after_thirty_five_seconds(self):
         states=ui([self.group], hold=['/api/signal-library-summaries'], steps=[

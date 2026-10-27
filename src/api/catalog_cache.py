@@ -13,8 +13,9 @@ from time import monotonic
 
 
 class CatalogCache:
-    def __init__(self, ttl=5.0, limit=32, clock=monotonic):
+    def __init__(self, ttl=5.0, limit=32, clock=monotonic, wait_timeout=1.0):
         self.ttl, self.limit, self.clock = ttl, limit, clock
+        self.wait_timeout = wait_timeout
         self.lock = Lock()
         self.entries = OrderedDict()
         self.pending = {}
@@ -31,7 +32,9 @@ class CatalogCache:
             if owner:
                 future = self.pending[key] = Future()
         if not owner:
-            return deepcopy(future.result())
+            # One slow refresh must not occupy every request thread. The owner
+            # continues; this caller reports unavailable and can retry later.
+            return deepcopy(future.result(timeout=self.wait_timeout))
         try:
             # File IO and verification do not hold the cache's global lock.
             if cached and self.clock() - cached[0] < max_age and cached[2].unchanged():
@@ -80,7 +83,7 @@ class CatalogCache:
             if owner:
                 future = self.pending[key] = Future()
         if not owner:
-            return deepcopy(future.result())
+            return deepcopy(future.result(timeout=self.wait_timeout))
         try:
             result = read()
             with self.lock:

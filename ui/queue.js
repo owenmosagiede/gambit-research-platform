@@ -11,7 +11,7 @@
   ];
   const labels = {rejected:"Submission rejected", submitting:"Saving submission", unconfirmed:"Receipt unconfirmed", queued: "Queued", resolving: "Checking inputs", preparing: "Preparing observations",
     p1: "In P1", p2: "In P2", blocked: "Blocked", failed: "Execution failed", succeeded: "Completed", cancelled: "Cancelled"};
-  let timer = null, loading = false, active = true, last = null, rendered = null, ledgerRendered = null;
+  let timer = null, loading = false, active = true, last = null, stale = false, rendered = null, ledgerRendered = null;
   let focusedRequest = null;
   const publishedResults = new Map();
   const dismissalKey = "research-platform.queue-dismissals.v1";
@@ -88,7 +88,13 @@
     if (j.operational_failure) card.append(node("p", "Operational failure; this is not a statistical rejection. Saved evidence is preserved."));
     if (j.results.length) { const link=node("a", `${j.results.length} saved result links · View Signal Library`, "text-button"); link.href="#signals"; card.append(link); }
   }
-  function redraw() { if (last) { render(last); renderLedger(); updateStatus(); } else render({items:[]}); }
+  function renderUnavailable(failed = false) {
+    const message = failed ? "Saved submissions could not be loaded. Refresh to try again." : "Loading saved submissions…";
+    board.replaceChildren(node("p", message, "field-note"));
+    $("ledger-items")?.replaceChildren(node("p", message, "field-note"));
+    status.textContent = failed ? "Queue status is unavailable. No saved job status has been verified yet." : "Loading queue status…";
+    if ($("ledger-status")) $("ledger-status").textContent = failed ? "Trial history is unavailable. No saved history has been verified yet." : "Loading trial history…";
+  }
   function render(value) {
     board.replaceChildren();
     for (const [key, title, states] of groups) {
@@ -113,7 +119,7 @@
         references(card, item);
         column.append(card);
       }
-      if (!rows.length) column.append(node("p", "No submissions", "field-note"));
+      if (!rows.length) column.append(node("p", value.issues.length ? "No verified submissions. Some records are unavailable." : "No submissions", "field-note"));
       board.append(column);
     }
   }
@@ -133,9 +139,11 @@
   }
   function updateStatus() {
     const visible = last.items.filter(item => !["succeeded", "cancelled"].includes(item.job.status) && !isDismissed(item)).length;
-    status.textContent = `${visible} queue item${visible === 1 ? "" : "s"}. Completed submissions are in Trial Ledger. ` +
+    status.textContent = (stale ? "Queue status could not be refreshed. Showing the last verified status; it may be out of date. " : "") +
+      `${visible} queue item${visible === 1 ? "" : "s"}. Completed submissions are in Trial Ledger. ` +
+      (stale ? "Last verified worker status: " : "") +
       (last.worker.healthy ? "Worker available. " : "Worker unavailable; saved jobs are retained. ") +
-      (last.issues.length ? `${last.issues.length} record(s) could not be verified: ${last.issues.map(i => i.request_id).join(", ")}.` : "Updates automatically.");
+      (last.issues.length ? `${last.issues.length} record(s) could not be verified: ${last.issues.map(i => i.request_id).join(", ")}.` : stale ? "Refresh will retry automatically." : "Updates automatically.");
   }
   function renderLedger() {
     const list = $("ledger-items"), note = $("ledger-status");
@@ -149,13 +157,14 @@
       return (!state || item.job.status === state) && (!from || day >= from) && (!to || day <= to) &&
         (!search || JSON.stringify([names, item.intent, item.job.request_id]).toLowerCase().includes(search));
     }).sort((a,b) => b.job.updated_at.localeCompare(a.job.updated_at) || a.job.request_id.localeCompare(b.job.request_id));
-    const signature = JSON.stringify([rows.map(item => [item, item.intent ? selection(item) : null]), dismissed, search, state, from, to]);
+    const signature = JSON.stringify([rows.map(item => [item, item.intent ? selection(item) : null]), dismissed, search, state, from, to, stale]);
     if (signature === ledgerRendered) return;
     ledgerRendered = signature;
     const expanded = new Set(Array.from(list.children).filter(card => card.open).map(card => card.dataset.requestId));
     list.replaceChildren();
-    if (from && to && from > to) { note.textContent = "Finished from must be on or before Finished through."; return; }
-    note.textContent = `${rows.length} of ${all.length} saved submissions. ${last.issues.length ? "Some records could not be verified; see queue status." : "Each entry preserves its original selections and horizon outcomes."}`;
+    const freshness = stale ? "History could not be refreshed. Showing the last verified records; they may be out of date. " : "";
+    if (from && to && from > to) { note.textContent = freshness + "Finished from must be on or before Finished through."; return; }
+    note.textContent = freshness + `${rows.length} of ${all.length} saved submissions. ${last.issues.length ? "Some records could not be verified; see queue status." : "Each entry preserves its original selections and horizon outcomes."}`;
     for (const item of rows) {
       const j = item.job, names = item.intent ? selection(item) : null;
       const card = node("details", undefined, "ledger-card"); card.dataset.requestId = j.request_id; card.open = expanded.has(j.request_id) || focusedRequest === j.request_id;
@@ -189,16 +198,20 @@
       }
       list.append(card);
     }
-    if (!rows.length) list.append(node("p", "No saved submissions match these filters.", "field-note"));
+    if (!rows.length) list.append(node("p", last.issues.length ? "No verified saved submissions match these filters. Some records are unavailable." : "No saved submissions match these filters.", "field-note"));
   }
   function validate(value) {
-    if (!value || !Array.isArray(value.items) || !Array.isArray(value.issues) || !value.worker) throw Error("Invalid queue");
+    if (!value || !Array.isArray(value.items) || !Array.isArray(value.issues) ||
+        !value.issues.every(issue => issue && typeof issue.request_id === "string") ||
+        !value.worker || typeof value.worker.healthy !== "boolean") throw Error("Invalid queue");
     const seen = new Set();
     for (const item of value.items) {
       const j = item.job;
       if (!j || typeof j.request_id !== "string" || seen.has(j.request_id) || !Object.hasOwn(labels, j.status) ||
           !j.progress || !Number.isSafeInteger(j.progress.completed) || !Number.isSafeInteger(j.progress.total) ||
           !Array.isArray(j.horizons) || !Array.isArray(j.blockers) || !Array.isArray(j.results) ||
+          typeof j.updated_at !== "string" || !j.horizons.every(h => h && Number.isSafeInteger(h.horizon)) ||
+          !j.blockers.every(blocker => blocker && typeof blocker.message === "string") ||
           typeof j.message !== "string" || (item.intent && (!item.intent.feature || !item.intent.scope))) throw Error("Invalid queue entry");
       seen.add(j.request_id);
     }
@@ -208,11 +221,16 @@
     if (loading || !active) return;
     if (timer !== null) window.clearTimeout(timer);
     loading = true; refresh.disabled = true;
-    const controller = new AbortController(), deadline = window.setTimeout(() => controller.abort(), 20000);
+    if (!last) renderUnavailable();
+    board.setAttribute("aria-busy", "true"); $("ledger-items")?.setAttribute("aria-busy", "true");
+    // Give the first verified history read time to warm its cache. Later
+    // refreshes can time out sooner while the last verified records stay visible.
+    const controller = new AbortController(), deadline = window.setTimeout(() => controller.abort(), last ? 20000 : 60000);
     try {
       const response = await fetch("/api/experiments", {method: "GET", credentials: "same-origin", mode: "same-origin", cache: "no-store", signal: controller.signal});
       if (!response.ok) throw Error("Queue unavailable");
       last = validate(await response.json());
+      stale = false;
       window.dispatchEvent(new CustomEvent("research-queue-state",{detail:last}));
       for (const item of last.items) {
         const refs = item.job.results;
@@ -228,10 +246,12 @@
       renderLedger();
       updateStatus();
     } catch (_error) {
-      if ($("ledger-status")) $("ledger-status").textContent = "History could not be refreshed. Previously shown records may be out of date.";
-      status.textContent = "Queue status could not be refreshed. " + (last ? "Showing the last verified status; it may be out of date." : "No job status is available yet.");
+      stale = true;
+      if (last) { renderLedger(); updateStatus(); }
+      else renderUnavailable(true);
     } finally {
       window.clearTimeout(deadline); loading = false; refresh.disabled = false;
+      board.setAttribute("aria-busy", "false"); $("ledger-items")?.setAttribute("aria-busy", "false");
       if (active) timer = window.setTimeout(load, 5000);
     }
   }
@@ -258,5 +278,5 @@
   refresh.addEventListener("click", load);
   window.addEventListener("pagehide", () => { active = false; window.clearTimeout(timer); });
   window.addEventListener("pageshow", () => { active = true; load(); });
-  redraw(); load();
+  load();
 })();

@@ -24,6 +24,11 @@
   let catalogRequest = 0;
   let catalogLoading = null;
   let catalogController = null;
+  let catalogVerified = false;
+  let catalogPhase = "loading";
+  let catalogIssues = [];
+  let activePage = null;
+  const outputLoads = new WeakMap();
   let detailRequest = 0;
   let detailController = null;
   let researchRefreshRunning = false;
@@ -65,6 +70,8 @@
         Array.isArray(t.parameters) && t.parameters.every(p => text(p.name) && p.value && p.value.value !== undefined));
   }
   const reference = value => value && text(value.id) && text(value.version) && /^[0-9a-f]{64}$/.test(value.content_sha256);
+  const sameReference = (left, right) => reference(left) && reference(right) &&
+    ["id", "version", "content_sha256"].every(key => left[key] === right[key]);
   const researchLabels = {
     untested: "Untested",
     results_linked: "Research results available",
@@ -115,7 +122,8 @@
       Array.isArray(item.transformations) && item.transformations.length > 0 &&
       item.transformations.every(step => text(step.node) && reference(step.operator) && text(step.label) &&
         Array.isArray(step.parameters) && step.parameters.every(p => text(p.name) && p.value && p.value.value !== undefined)) &&
-      Array.isArray(item.outputs) && item.outputs.every(validOutput);
+      Array.isArray(item.outputs) && item.outputs.every(validOutput) &&
+      (item.outputs_deferred !== true || (item.outputs.length === 0 && item.outputs_href === `/api/signal-library-summaries/${item.recipe.id}/outputs`));
   }
   function readCatalog(data) {
     if (!data || data.schema_version !== "1.0.0" || !Array.isArray(data.entries) ||
@@ -159,6 +167,8 @@
   function showPage() {
     const hash = window.location.hash;
     const page = ["#ledger", "#ledger-page"].includes(hash) ? "ledger" : ["#signals", "#signal-page"].includes(hash) ? "signals" : "experiment";
+    const entering = activePage !== page;
+    activePage = page;
     $("experiment-inputs").hidden = page !== "experiment";
     $("signal-page").hidden = page !== "signals";
     if ($("ledger-page")) $("ledger-page").hidden = page !== "ledger";
@@ -171,9 +181,9 @@
       else link.removeAttribute("aria-current");
     }
     if (page === "signals") {
-      if (!catalogLoading) {
+      if (!catalogLoading && entering && (!catalogVerified || catalogPhase === "failed")) {
         researchRefreshPending = false;
-        catalogLoading = loadCatalog();
+        startCatalogLoad();
       } else if (researchRefreshPending) refreshResearchCatalog();
     }
   }
@@ -206,7 +216,11 @@
   function renderTable() {
     detailHome.append(detailPanel); detailPanel.hidden = true;
     const buttons = new Map();
-    catalogStatus.textContent = `${entries.length} researched ${entries.length === 1 ? "Signal" : "Signals"}`;
+    updateCatalogStatus();
+    if (!catalogVerified) {
+      tableContainer.replaceChildren(el("p", catalogPhase === "failed" ? "Research records are unavailable. Retry to load the library." : "Loading researched Signals…", "field-note"));
+      return buttons;
+    }
     const list = el("ul", undefined, "card-list");
     let selectedCard = null;
     for (const entry of entries) {
@@ -232,7 +246,9 @@
       if (entry.id === selectedEntryId) selectedCard = card;
     }
     tableContainer.replaceChildren(list);
-    if (!entries.length) tableContainer.append(el("p", "No researched Signals yet. A Signal appears here after verified research records have been saved. Prepared observations alone do not count as research.", "empty-table"));
+    if (!entries.length) tableContainer.append(el("p", catalogIssues.length
+      ? "No researched Signals could be verified. Some records are unavailable; retry to load them."
+      : "No researched Signals yet. A Signal appears here after verified research records have been saved. Prepared observations alone do not count as research.", "empty-table"));
     if (selectedCard) {
       if ($("signal-catalog-view")) { detailHome.append(detailPanel); detailHome.hidden = false; }
       else selectedCard.append(detailPanel);
@@ -243,6 +259,15 @@
       detailHome.hidden = !selectedCard;
     }
     return buttons;
+  }
+  function updateCatalogStatus() {
+    const countLabel = `${entries.length} researched ${entries.length === 1 ? "Signal" : "Signals"}`;
+    catalogStatus.textContent = catalogPhase === "failed" ? (catalogVerified
+      ? `${countLabel} shown from the last verified library. The latest research could not be verified; retry to update it.`
+      : "The Signal Library could not be loaded. Please try again.")
+      : catalogPhase === "loading" ? "Loading Signal Library…"
+      : catalogPhase === "updating" ? "Updating research results… Showing the last verified library while checks complete."
+      : countLabel;
   }
   function facts(fields) {
     const list = el("dl", undefined, "detail-grid signal-facts");
@@ -293,9 +318,57 @@
     }
     }
     const outputDetails = el("details", undefined, "research-output-details");
-    outputDetails.append(el("summary", `Stored outputs & recipe · ${entry.outputs.length} instrument${entry.outputs.length === 1 ? "" : "s"}`));
-    const outputContent = window.SignalResearch ? outputDetails : fragment;
-    if (window.SignalResearch) fragment.append(outputDetails);
+    const summary = el("summary", entry.outputs_deferred ? "Stored outputs & recipe" : `Stored outputs & recipe · ${entry.outputs.length} instrument${entry.outputs.length === 1 ? "" : "s"}`);
+    outputDetails.append(summary);
+    const outputContent = el("div");
+    if (window.SignalResearch || entry.outputs_deferred) {
+      outputDetails.append(outputContent); fragment.append(outputDetails);
+    } else fragment.append(outputContent);
+    if (entry.outputs_deferred) {
+      outputContent.append(el("p", "Open to verify stored outputs. Research results above are available independently.", "field-note"));
+      let loading = false;
+      const showOutputs = () => {
+        summary.textContent = `Stored outputs & recipe · ${entry.outputs.length} instrument${entry.outputs.length === 1 ? "" : "s"}`;
+        outputContent.replaceChildren(storedOutputContent(entry));
+      };
+      const load = async () => {
+        if (loading) return;
+        if (!entry.outputs_deferred) { showOutputs(); return; }
+        loading = true; outputContent.setAttribute("aria-busy", "true");
+        outputContent.replaceChildren(el("p", "Loading stored outputs…", "field-note"));
+        try {
+          await loadOutputs(entry);
+          if (!entries.includes(entry)) return;
+          showOutputs();
+        } catch (_error) {
+          const retry = el("button", "Retry stored outputs", "text-button"); retry.type = "button";
+          retry.addEventListener("click", load);
+          outputContent.replaceChildren(el("p", "Stored outputs could not be verified. The verified research summary remains available.", "field-note"), retry);
+        } finally { loading = false; outputContent.setAttribute("aria-busy", "false"); }
+      };
+      outputDetails.addEventListener("toggle", () => { if (outputDetails.open) load(); });
+    } else outputContent.append(storedOutputContent(entry));
+    return fragment;
+  }
+  function loadOutputs(entry) {
+    if (outputLoads.has(entry)) return outputLoads.get(entry);
+    const pending = request(entry.outputs_href, new AbortController()).then(data => {
+      if (!data || data.schema_version !== "1.0.0" || !sameReference(data.recipe, entry.recipe) ||
+          !Array.isArray(data.outputs) || !data.outputs.every(validOutput) || !Array.isArray(data.issues) ||
+          new Set(data.outputs.map(output => output.signal_id)).size !== data.outputs.length) throw new Error("Invalid stored outputs");
+      if (!entries.includes(entry)) return;
+      const otherIds = new Set(entries.filter(item => item !== entry).flatMap(item => item.kind === "stored_signal" ? [item.signal.signal_id] : item.outputs.map(output => output.signal_id)));
+      if (data.outputs.some(output => otherIds.has(output.signal_id))) throw new Error("Duplicate stored output");
+      entry.outputs = data.outputs; entry.outputs_deferred = false; entry.output_issues = data.issues;
+      signals = entries.flatMap(item => item.kind === "stored_signal" ? [item.signal] : item.outputs);
+    });
+    outputLoads.set(entry, pending);
+    const clear = () => { if (outputLoads.get(entry) === pending) outputLoads.delete(entry); };
+    pending.then(clear, clear);
+    return pending;
+  }
+  function storedOutputContent(entry) {
+    const outputContent = document.createDocumentFragment();
     outputContent.append(el("h3", "Stored instrument outputs"), el("p",
       "Observations, coverage and readiness belong to each stored output below. A stored sample does not establish coverage for another instrument or the full history.", "field-note"));
     const outputs = table(["Instrument / provider", "Stored period", "Observations", "Readiness", "Details"], "recipe-outputs-table");
@@ -323,14 +396,17 @@
         row.append(instrument, coverage, observations, readiness, details); outputs.body.append(row);
       }
     }
-    if (!entry.outputs.length) outputContent.append(el("p", "No stored outputs are catalogued for this Signal. Its verified research records remain available.", "field-note"));
+    if (entry.output_issues?.length) outputContent.append(el("p", "Some stored outputs could not be verified and are unavailable. Verified research records remain available.", "field-note"));
+    if (!entry.outputs.length) outputContent.append(el("p", entry.output_issues?.length
+      ? "No stored outputs could be verified. Its verified research records remain available."
+      : "No stored outputs are catalogued for this Signal. Its verified research records remain available.", "field-note"));
     outputContent.append(outputs.wrap);
     const definition = el("details", undefined, "definition-panel");
     definition.append(el("summary", "Recipe definition"));
     appendJson(definition, "Reusable recipe", entry.recipe);
     appendJson(definition, "Input contract", entry.source.input_contract);
     appendJson(definition, "Ordered transformations", entry.transformations); outputContent.append(definition);
-    return fragment;
+    return outputContent;
   }
   async function selectEntry(id) {
     const entry = entries.find(item => item.id === id);
@@ -353,7 +429,7 @@
     openLibrary(); renderTable();
     $("signal-detail").setAttribute("aria-busy", "false"); $("signal-detail-retry").hidden = true;
     detailTitle.textContent = entry.name;
-    detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : entry.outputs.length ? `${stateLabel(entry)} · Select a stored output to view its observations and lineage.` : `${stateLabel(entry)} · No stored outputs are catalogued.`;
+    detailStatus.textContent = window.SignalResearch ? "One recipe. Separate evidence for every tested relationship." : entry.outputs_deferred ? `${stateLabel(entry)} · Stored outputs load when opened.` : entry.outputs.length ? `${stateLabel(entry)} · Select a stored output to view its observations and lineage.` : `${stateLabel(entry)} · No stored outputs are catalogued.`;
     detailBody.replaceChildren(groupContent(entry)); detailTitle.focus({preventScroll: true});
     if (!window.SignalResearch && entry.details_deferred && entry.research.state === "results_linked") {
       const generation = detailRequest, controller = new AbortController(); detailController = controller;
@@ -505,6 +581,14 @@
       if (generation === detailRequest) $("signal-detail").setAttribute("aria-busy", "false");
     }
   }
+  function startCatalogLoad() {
+    if (catalogLoading) return catalogLoading;
+    const pending = loadCatalog({preserveSelection: catalogVerified});
+    catalogLoading = pending;
+    const clear = () => { if (catalogLoading === pending) catalogLoading = null; };
+    pending.then(clear, clear);
+    return pending;
+  }
   async function loadCatalog({preserveSelection = false} = {}) {
     const generation = ++catalogRequest;
     if (catalogController) catalogController.abort();
@@ -520,18 +604,26 @@
       $("signal-detail-retry").hidden = true;
       $("signal-detail").setAttribute("aria-busy", "false");
       detailHome.append(detailPanel); detailPanel.hidden = true;
-      tableContainer.replaceChildren();
-      catalogStatus.textContent = "Loading Signal Library…";
-    } else {
-      catalogStatus.textContent = "Updating research results… Showing the last verified library while checks complete.";
+      tableContainer.replaceChildren(el("p", "Loading researched Signals…", "field-note"));
     }
+    catalogPhase = preserveSelection ? "updating" : "loading";
+    updateCatalogStatus();
     tableContainer.setAttribute("aria-busy", "true");
     $("signal-library-issues").hidden = true;
     $("signal-library-retry").hidden = true;
     try {
       const data = readCatalog(await request("/api/signal-library-summaries", catalogController));
       if (generation !== catalogRequest) return;
+      // A lightweight summary defers outputs; it does not revoke previously
+      // verified immutable output references for the same exact recipe.
+      for (const entry of data.entries) {
+        if (!entry.outputs_deferred) continue;
+        const previous = entries.find(old => old.kind !== "stored_signal" && sameReference(old.recipe, entry.recipe));
+        if (previous) entry.outputs = previous.outputs;
+      }
       entries = data.entries;
+      catalogIssues = data.issues;
+      catalogVerified = true; catalogPhase = "ready";
       const storedSelection = entries.find(item => item.kind === "stored_signal" && item.signal.feature.id === selectedEntryId);
       if (storedSelection) selectedEntryId = storedSelection.id;
       signals = entries.flatMap(entry => entry.kind === "stored_signal" ? [entry.signal] : entry.outputs);
@@ -566,10 +658,9 @@
       }
     } catch (_error) {
       if (generation !== catalogRequest) return;
-      if (!preserveSelection && !entries.length) { signals = []; entries = []; }
-      catalogStatus.textContent = entries.length ? `${entries.length} researched Signals shown from the last verified library. The latest research could not be verified; retry to update it.` : preserveSelection
-        ? "The latest research could not be loaded. Showing the last verified library; retry to update it."
-        : "The Signal Library could not be loaded. Please try again.";
+      catalogPhase = "failed";
+      updateCatalogStatus();
+      if (!catalogVerified) tableContainer.replaceChildren(el("p", "Research records are unavailable. Retry to load the library.", "field-note"));
       $("signal-library-retry").hidden = false;
     } finally {
       if (generation === catalogRequest) {
@@ -586,8 +677,7 @@
       if (catalogLoading) await catalogLoading;
       while (researchRefreshPending && !$("signal-page").hidden) {
         researchRefreshPending = false;
-        catalogLoading = loadCatalog({preserveSelection: true});
-        await catalogLoading;
+        await startCatalogLoad();
       }
     } finally { researchRefreshRunning = false; }
   }
@@ -609,7 +699,7 @@
       selectSignal(event.detail.signal_id, event.detail.materialization_id || null);
     }
   });
-  $("signal-library-retry").addEventListener("click", () => { catalogLoading = loadCatalog({preserveSelection: entries.length > 0}); });
+  $("signal-library-retry").addEventListener("click", startCatalogLoad);
   $("signal-detail-retry").addEventListener("click", () => { if (selectedId) selectSignal(selectedId, selectedMaterialization); });
   $("signal-back")?.addEventListener("click", () => { const previous = selectedEntryId; clearSelection(); renderTable().get(previous)?.focus({preventScroll:true}); });
   window.addEventListener("hashchange", showPage);

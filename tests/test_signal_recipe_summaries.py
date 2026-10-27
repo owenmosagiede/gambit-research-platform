@@ -53,6 +53,10 @@ class SignalRecipeSummaryTests(unittest.TestCase):
 
     def list(self):return signal_summaries.list_signal_summaries(self.root)
 
+    def outputs(self,recipe=None):
+        recipe=recipe or self.arguments['feature']
+        return signal_summaries.list_signal_outputs(self.root,recipe['id'])
+
     def detail(self,materialization_id=None):
         return signal_summaries.get_signal_output_detail(self.root,self.signal_id,materialization_id)
 
@@ -142,7 +146,10 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             'instrument_id':item['feature']['body']['recipe']['selection']['entity_id'],
             'source_view':item['feature']['body']['recipe']['sources'][0]['source_view'],
             'price_snapshot':item['manifest']['input_key']['source_snapshots'][0]} for recipe,item in [*pairs,*unmaterialized]}
-        for identifier in outputs:(self.root/signal_library.ENTRIES/identifier).mkdir()
+        for identifier,item in outputs.items():
+            folder=self.root/signal_library.ENTRIES/identifier;folder.mkdir()
+            entry=item['library_entries'][0]
+            (folder/(digest(entry)+'.json')).write_text(json.dumps(entry))
         def load(root,identifier,**kwargs):
             return (store,[deepcopy(outputs[identifier])]) if identifier in outputs else original(root,identifier,**kwargs)
         def project(feature):return deepcopy(mapping[feature['id']]['recipe'])
@@ -159,11 +166,14 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         result=self.list();self.assertEqual(result['schema_version'],'1.0.0')
         self.assertEqual(result['entry_count'],1);self.assertEqual(result['issues'],[])
         entry=result['entries'][0]
-        self.assertEqual((entry['kind'],entry['id']),('stored_signal',self.signal_id))
-        self.assertEqual(entry['signal']['feature'],old['feature'])
-        self.assertEqual(entry['signal']['coverage'],old['coverage'])
-        self.assertEqual(entry['signal']['row_count'],old['row_count'])
-        self.assertEqual(entry['signal']['verification_state'],'catalog_metadata_only')
+        self.assertEqual((entry['kind'],entry['id']),('registered_feature',old['feature']['id']))
+        self.assertEqual(entry['recipe'],old['feature'])
+        self.assertEqual(entry['outputs'],[])
+        self.assertTrue(entry['outputs_deferred'])
+        output=self.outputs()['outputs'][0]
+        self.assertEqual(output['coverage'],old['coverage'])
+        self.assertEqual(output['row_count'],old['row_count'])
+        self.assertEqual(output['verification_state'],'catalog_metadata_only')
         detail=self.detail()
         self.assertEqual(detail['observations'],signal_library.get_signal_detail(self.root,self.signal_id)['observations'])
         self.assertEqual(detail['statistics']['row_count'],3)
@@ -171,13 +181,15 @@ class SignalRecipeSummaryTests(unittest.TestCase):
     def test_two_instruments_share_one_recipe_without_combined_observation_count(self):
         a=self.fx_item('AUDUSD');b=self.fx_item('EURUSD')
         self.assertEqual(a[0]['id'],b[0]['id'])
-        with self.fx_outputs([a,b]):result=self.list()
+        with self.fx_outputs([a,b]):
+            result=self.list();stored=self.outputs(a[0])
         groups=[entry for entry in result['entries'] if entry['kind']=='reusable_fx_recipe']
         self.assertEqual(len(groups),1)
         group=groups[0];self.assertEqual(group['id'],a[0]['id']);self.assertEqual(group['recipe'],reference(a[0]))
         self.assertIsNone(group['observation_count'])
-        self.assertEqual(len(group['outputs']),2)
-        self.assertEqual({o['source']['series_id'] for o in group['outputs']},{'AUDUSD','EURUSD'})
+        self.assertEqual(group['outputs'],[])
+        self.assertEqual(len(stored['outputs']),2)
+        self.assertEqual({o['source']['series_id'] for o in stored['outputs']},{'AUDUSD','EURUSD'})
         self.assertEqual(group['research']['state'],'results_linked')
         self.assertEqual(group['research']['relationship_count'],1)
         self.assertNotIn('metrics',group)
@@ -185,10 +197,15 @@ class SignalRecipeSummaryTests(unittest.TestCase):
     def test_distinct_parameters_remain_separate_even_with_identical_display_names(self):
         a=self.fx_item(params={'k':63,'s':5});b=self.fx_item(params={'k':252,'s':21})
         self.assertEqual(a[0]['display_name'],b[0]['display_name'])
-        with self.fx_outputs([a,b]):result=self.list()
+        with self.fx_outputs([a,b]):
+            result=self.list()
+            with patch.object(signal_summaries,'_load_output_metadata',wraps=signal_summaries._load_output_metadata) as loaded:
+                selected=self.outputs(a[0])
+            self.assertEqual([call.args[1] for call in loaded.call_args_list],[a[1]['signal_id']])
         groups=[entry for entry in result['entries'] if entry['kind']=='reusable_fx_recipe']
         self.assertEqual({g['id'] for g in groups},{a[0]['id'],b[0]['id']})
-        self.assertTrue(all(len(g['outputs'])==1 for g in groups))
+        self.assertTrue(all(g['outputs']==[] and g['outputs_deferred'] for g in groups))
+        self.assertEqual(len(selected['outputs']),1)
 
     def test_registry_and_preparation_only_recipes_are_excluded(self):
         stored=self.fx_item();unprepared=self.fx_item(operator='TR_BASE_distribution_skew')
@@ -276,6 +293,8 @@ class SignalRecipeSummaryTests(unittest.TestCase):
               patch.object(currency,'records',return_value={recipe['id']:recipe}),
               patch.object(currency,'projector',return_value=project) as approved,
               patch.object(signal_summaries,'reusable_recipe_mapping_context',side_effect=AssertionError('Currency output reached canonical TS mapping'))):
+            self.assertEqual(signal_summaries._output_candidates(self.root,recipe),
+                {feature['body']['signal_id']:reference(feature)})
             dispatch=signal_summaries._recipe_projector(self.root)
             self.assertEqual(reference(dispatch(feature)),reference(recipe))
             self.assertEqual(reference(dispatch(feature)),reference(recipe))
@@ -320,7 +339,8 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         self.assertEqual(jobs.get(request['request_id'])['status'],'succeeded')
         group = next(entry for entry in result['entries'] if entry['id']==recipe['id'])
         self.assertEqual(result['entry_count'],1)
-        self.assertEqual(len(group['outputs']),1)
+        self.assertEqual(group['outputs'],[])
+        self.assertTrue(group['outputs_deferred'])
         self.assertIsNone(group['observation_count'])
         self.assertEqual(group['research']['relationship_count'],5)
         self.assertEqual(group['research']['state'],'results_linked')
@@ -382,14 +402,16 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         group=next(entry for entry in result['entries'] if entry['kind']=='reusable_fx_recipe')
         self.assertNotIn(group['research']['state'],('untested','validated'))
         self.assertEqual(group['research']['relationship_count'],1)
-        self.assertEqual(len(group['outputs']),2)
+        self.assertEqual(group['outputs'],[])
+        self.assertTrue(group['outputs_deferred'])
         self.assertEqual(group['research']['trial_count'],1)
         self.assertNotIn(self.relationships()[0]['trial_results'][0]['id'],json.dumps(group['research']))
 
     def test_malformed_output_isolated_and_corrupt_payload_rejected(self):
         self.record_research()
         bad=self.root/signal_library.ENTRIES/('SIGNAL_'+'f'*64);bad.mkdir();(bad/'bad.json').write_text('{')
-        result=self.list();self.assertEqual(result['entry_count'],1);self.assertEqual(len(result['issues']),1)
+        result=self.list();self.assertEqual(result['entry_count'],1);self.assertEqual(result['issues'],[])
+        self.assertEqual(self.outputs()['issues'],[])  # Unrelated malformed outputs are never scanned.
         self.assertNotIn(str(self.root),json.dumps(result))
         manifest=FeatureStore(self.root).resolve(self.published['materialization']);part=manifest['partitions'][0]
         payload=self.root/f"storage/payloads/sha256/{part['blob_sha256'][:2]}/{part['blob_sha256']}.jsonl"
@@ -403,12 +425,57 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             result=self.list()
         self.assertEqual(result['entry_count'],1)
 
+    def test_summary_never_visits_output_folders_even_with_unrelated_corruption(self):
+        self.record_research()
+        foreign=self.root/signal_library.ENTRIES/('SIGNAL_'+'f'*64)
+        foreign.mkdir();(foreign/'bad.json').write_text('{')
+        original=signal_summaries.catalog_glob
+        def research_only(path,pattern):
+            if str(path).startswith(str(self.root/signal_library.ENTRIES)):
+                raise AssertionError('Summary scanned stored outputs')
+            return original(path,pattern)
+        with (patch.object(signal_summaries,'catalog_glob',side_effect=research_only),
+              patch.object(signal_summaries,'_load_output_metadata',side_effect=AssertionError('Summary loaded an output')),
+              patch.object(FeatureStore,'payload',side_effect=AssertionError('Summary opened payloads'))):
+            result=self.list()
+        self.assertEqual(result['entry_count'],1);self.assertEqual(result['issues'],[])
+        self.assertEqual(result['entries'][0]['outputs'],[])
+        self.assertEqual(result['entries'][0]['outputs_href'],
+            '/api/signal-library-summaries/'+self.arguments['feature']['id']+'/outputs')
+
+    def test_lazy_outputs_require_verified_research_and_isolate_selected_corruption(self):
+        with self.assertRaises(signal_library.SignalNotFound):self.outputs()
+        self.record_research()
+        self.assertEqual(len(self.outputs()['outputs']),1)
+        folder=self.root/signal_library.ENTRIES/self.signal_id
+        (folder/'bad.json').write_text('{')
+        result=self.outputs()
+        self.assertEqual(result['outputs'],[])
+        self.assertEqual(result['issues'][0]['signal_id'],self.signal_id)
+        self.assertEqual(self.list()['issues'],[])
+        with self.assertRaises(signal_library.SignalNotFound):
+            signal_summaries.list_signal_outputs(self.root,'../feature')
+
+    def test_summary_cache_ignores_output_publication_but_invalidates_for_new_research(self):
+        from api.catalog_cache import CatalogCache
+        self.record_research();cache=CatalogCache();calls=[]
+        def load():calls.append(1);return self.list()
+        read=lambda:cache.get_verified('signals',self.root,load)
+        before=read();self.publish_subset(['2020-03-15'])
+        self.assertEqual(read(),before);self.assertEqual(len(calls),1)
+        self.record_research(horizons=(7,))
+        after=read();self.assertEqual(len(calls),2)
+        self.assertEqual(after['entries'][0]['research']['relationship_count'],2)
+
     def test_repeated_real_reads_and_http_get_head_do_not_write(self):
+        self.record_research()
         before=inventory(self.root)
         first=self.list();self.detail();self.assertEqual(first,self.list())
         detail='/api/signal-library-outputs/'+self.signal_id
         with running(self.root) as address:
-            for endpoint in ('/api/signal-library-summaries',detail,detail+'?materialization_id='+self.published['materialization']['id']):
+            for endpoint in ('/api/signal-library-summaries',
+                    '/api/signal-library-summaries/'+self.arguments['feature']['id']+'/outputs',
+                    detail,detail+'?materialization_id='+self.published['materialization']['id']):
                 with self.subTest(endpoint=endpoint):
                     status,headers,body=request(address,endpoint)
                     self.assertEqual(status,200);self.assertIsInstance(json.loads(body),dict)
@@ -426,12 +493,12 @@ class SignalRecipeSummaryTests(unittest.TestCase):
         args['operand_links']=[args['operand_links'][-1]]
         arguments_path=Path(self.temp.name)/'publication.json'
         arguments_path.write_text(json.dumps(args))
-        endpoint='/api/signal-library-summaries'
+        endpoint='/api/signal-library-summaries/'+self.arguments['feature']['id']+'/outputs'
         with running(self.root) as first, running(self.root) as second:
             for address in (first,second):
                 status,_,body=request(address,endpoint)
                 self.assertEqual(status,200)
-                self.assertEqual(json.loads(body)['entries'][0]['signal']['materialization_count'],1)
+                self.assertEqual(json.loads(body)['outputs'][0]['materialization_count'],1)
             child=subprocess.run([sys.executable,'-c',
                 'import json,sys; from pathlib import Path; from data.feature_store import publish_feature; '
                 'publish_feature(Path(sys.argv[1]),**json.loads(Path(sys.argv[2]).read_text()))',
@@ -443,7 +510,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
                 self.assertEqual(status,200)
                 response=json.loads(body)
                 self.assertEqual(response['issues'],[])
-                self.assertEqual(response['entries'][0]['signal']['materialization_count'],2)
+                self.assertEqual(response['outputs'][0]['materialization_count'],2)
             self.assertEqual(inventory(self.root),after_publication)
 
     def test_warm_catalog_rechecks_corrupt_metadata_and_recovers_after_repair(self):
@@ -465,7 +532,10 @@ class SignalRecipeSummaryTests(unittest.TestCase):
 
     def test_http_rejects_invalid_queries_and_mutations_without_writes(self):
         before=inventory(self.root);detail='/api/signal-library-outputs/'+self.signal_id
+        output_list='/api/signal-library-summaries/'+self.arguments['feature']['id']+'/outputs'
         cases=[('/api/signal-library-summaries?scope=FX',400),(detail+'?other=x',400),
+            (output_list,404),(output_list+'?unexpected=x',400),
+            ('/api/signal-library-summaries/FEATURE_x/outputs',404),
             (detail+'?materialization_id=',400),(detail+'?materialization_id=../secret',400),
             (detail+'?materialization_id=x&materialization_id=y',400),
             (detail+'?materialization_id='+'MATERIALIZATION_'+'f'*64,404),
@@ -479,6 +549,7 @@ class SignalRecipeSummaryTests(unittest.TestCase):
             for method in ('POST','PUT','PATCH','DELETE'):
                 self.assertEqual(request(address,'/api/signal-library-summaries',method)[0],405)
                 self.assertEqual(request(address,detail,method)[0],405)
+                self.assertEqual(request(address,output_list,method)[0],405)
         self.assertEqual(inventory(self.root),before)
 
 

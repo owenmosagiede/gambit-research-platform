@@ -24,7 +24,7 @@ SUITES = [
     'test_research_runtime', 'test_research_recovery', 'test_scheduled_hac',
     'test_p2_evidence_policy', 'test_feature_applications',
     'test_research_policy_end_to_end', 'test_external_feature_end_to_end',
-    'test_research_http', 'test_experiment_labels', 'test_separate_services', 'test_production_access',
+    'test_research_http', 'test_experiment_views', 'test_experiment_labels', 'test_separate_services', 'test_production_access',
     'test_production_http', 'test_production_session_js', 'test_queue_ui',
     'test_signal_recipe_ui', 'test_library_pages_ui', 'test_research_ui',
     'test_catalog_cache', 'test_catalog_reads', 'test_signal_recipe_summaries',
