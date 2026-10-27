@@ -66,6 +66,12 @@ stops the idle worker. It holds all writer/executor locks during file replacemen
 No forced termination is used. Original changed code is saved with checksums,
 then services restart and health is checked. Runtime Python remains unchanged.
 
+A separately approved frozen-program cutover can preserve a fully accepted
+queue. If that cutover follows the exact reviewed momentum reset, see
+[Retired-definition cutover](RETIRED_DEFINITION_CUTOVER.md) for the narrowly pinned
+retirement evidence, inert proposal and recovery requirements. This does not
+change the ordinary deployer's idle-only rule.
+
 The default invocation previews only. The explicit `apply` command is the
 deployment gate, independent of GitHub plan-dependent branch protection features.
 Do not treat an unenforced GitHub branch rule as an enforced approval control.

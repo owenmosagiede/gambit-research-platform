@@ -10,7 +10,7 @@ from time import perf_counter
 import unittest
 from unittest.mock import patch
 
-from data.verified_inputs import execution_inputs, phase_inputs, memo, fresh_inputs
+from data.verified_inputs import execution_inputs, phase_inputs, memo, fresh_inputs, compact_memo, probe
 from data.transformations.identity import reference, digest
 from data.fx_records import make_record
 from data import fx_feature_store as fx
@@ -24,6 +24,48 @@ from decimal import Decimal
 
 
 class ContextTests(unittest.TestCase):
+    def test_compact_private_snapshot_survives_bulk_evictions_with_same_total_bound(self):
+        with TemporaryDirectory() as folder:
+            plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
+            original={'2020-01-01': ['value', {'id':'exact'}]}
+            with execution_inputs(folder,'code',max_bytes=5000) as context, phase_inputs(folder,plan,'P1'):
+                first=compact_memo(folder,'lookup',{},lambda:original)
+                original['2020-01-01'][1]['id']='caller changed'
+                with self.assertRaises(TypeError):first['2020-01-01'][1]['id']='mutation'
+                for index in range(20):memo(folder,'bulk',index,lambda:list(range(25)))
+                second=compact_memo(folder,'lookup',{},lambda:self.fail('Compact lookup evicted by bulk data'))
+                self.assertIs(first,second)
+                self.assertEqual(second['2020-01-01'][1]['id'],'exact')
+                self.assertLessEqual(context.bytes,context.max_bytes)
+                self.assertLessEqual(context.compact_bytes,context.compact_limit)
+                self.assertGreater(context.counts['evictions'],0)
+            self.assertEqual(context.bytes,0);self.assertFalse(context.compact_entries)
+
+    def test_nested_dependency_witness_detects_tamper_missing_and_new_conflict(self):
+        from data.alfred_onboarding import stable_read
+        import os
+        with TemporaryDirectory() as folder:
+            root=Path(folder);path=root/'input';other=root/'conflict'
+            path.write_bytes(b'good');before=path.stat()
+            plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
+            def source():
+                probe(other)
+                if other.exists():raise ValueError('conflicting record')
+                data=stable_read(path)
+                if data!=b'good':raise ValueError('tampered input')
+                return {'value':data}
+            def outer():return memo(root,'source',{},source)
+            with execution_inputs(root,'code') as context, phase_inputs(root,plan,'P1'):
+                self.assertEqual(compact_memo(root,'lookup',{},outer)['value'],b'good')
+                path.write_bytes(b'evil');os.utime(path,ns=(before.st_atime_ns,before.st_mtime_ns))
+                with self.assertRaisesRegex(ValueError,'tampered'):compact_memo(root,'lookup',{},outer)
+                path.write_bytes(b'good');compact_memo(root,'lookup',{},outer)
+                other.write_text('new')
+                with self.assertRaisesRegex(ValueError,'conflicting'):compact_memo(root,'lookup',{},outer)
+                other.unlink();compact_memo(root,'lookup',{},outer);path.unlink()
+                with self.assertRaises(FileNotFoundError):compact_memo(root,'lookup',{},outer)
+                self.assertGreaterEqual(context.counts['lookup.invalidations'],3)
+
     def test_exact_keys_phase_root_isolation_private_copies_and_restart(self):
         with TemporaryDirectory() as folder:
             root=Path(folder); plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'},'P2':{'end_exclusive':'2021-01-01'}}}
@@ -166,8 +208,8 @@ class VerifiedPreparationTests(unittest.TestCase):
             original=inputs._verified_feature(self.root,binding)
             part=original['manifest']['partitions'][0];h=part['blob_sha256']
             p=self.root/'storage/payloads/sha256'/h[:2]/(h+'.'+part['format']);p.write_bytes(b'corrupted')
-            # An in-flight context uses its verified private snapshot, not changed bytes.
-            self.assertEqual(inputs._verified_feature(self.root,binding),original)
+            # Warm entries must not hide a changed persisted dependency.
+            with self.assertRaises(Exception):inputs._verified_feature(self.root,binding)
             with self.assertRaises(Exception):fx.read_fx_materialization(self.root,binding['id'])
         with execution_inputs(self.root,'code'), phase_inputs(self.root,plan,'P1'):
             with self.assertRaises(Exception):inputs._verified_feature(self.root,binding)
@@ -178,6 +220,91 @@ class VerifiedPreparationTests(unittest.TestCase):
             inputs.prepare_phase(self.root,plan,'P1')
             with self.assertRaises(inputs.InputsBlocked):inputs.prepare_phase(self.root,plan,'P2')
             with self.assertRaises(inputs.InputsCancelled):inputs.prepare_phase(self.root,plan,'P1',cancelled=lambda:True)
+
+    def test_feature_lookup_is_reused_for_five_horizons_with_fresh_output_lineage(self):
+        plan=self.f.plan()
+        with execution_inputs(self.root,'code') as context:
+            prepared=inputs.prepare_phase(self.root,plan,'P1')
+            # Ordinary scientific publication does not change any input identity.
+            (self.root/'storage/catalog/new_unrelated_trials').mkdir()
+            loaded=[inputs.load_phase(self.root,plan,prepared,'P1',h) for h in (1,7,21,63,252)]
+            self.assertEqual(context.counts['feature_lookup.loads'],1)
+            self.assertEqual(context.counts['feature_lookup.hits'],5)
+            self.assertEqual(context.counts['feature_lookup.invalidations'],0)
+            self.assertEqual(context.counts['target_endpoints.loads'],1)
+            self.assertEqual(context.counts['target_endpoints.hits'],5)
+            self.assertLessEqual(context.bytes,context.max_bytes)
+            saved=deepcopy(loaded[0])
+            loaded[0]['rows'][0]['lineage']['feature_lineage']['id']='caller mutation'
+            self.assertEqual(inputs.load_phase(self.root,plan,prepared,'P1',1),saved)
+            binding=prepared['members'][0]['materializations'][0]
+            path=inputs.FeatureStore(self.root).path('storage/catalog/feature_store/'+binding['id']+'/manifest.json')
+            path.write_bytes(b'{}')
+            with self.assertRaises(Exception):inputs.load_phase(self.root,plan,prepared,'P1',1)
+
+    def test_compact_target_endpoints_keep_exact_phase_and_source_witness(self):
+        from data.feature_store import record_path
+        plan=self.f.plan();period=plan['periods']['P1'];member=plan['members'][0]
+        with execution_inputs(self.root,'code'),phase_inputs(self.root,plan,'P1'):
+            selected=inputs._target_prices(self.root,member,plan,period)
+            self.assertTrue(selected['prices'])
+            self.assertTrue(all(period['start_inclusive']<=r['reference_time']<period['end_exclusive']
+                                for r in selected['prices']))
+            self.assertEqual(dict(selected['prices'][0]),{k:self.f.fx.prices[0][k]
+                for k in ('id','reference_time','value','status','original_ingested_at')})
+            with self.assertRaises(TypeError):selected['prices'][0]['value']='changed'
+            snapshot=self.f.store.resolve(member['price_snapshot'])
+            self.f.store.path(record_path(snapshot)).write_bytes(b'{}')
+            with self.assertRaises(Exception):inputs._target_prices(self.root,member,plan,period)
+
+    def test_warm_feature_lookup_rejects_new_ambiguous_definition(self):
+        plan=self.f.plan()
+        with execution_inputs(self.root,'code'):
+            prepared=inputs.prepare_phase(self.root,plan,'P1')
+            inputs.load_phase(self.root,plan,prepared,'P1',1)
+            feature=plan['members'][0]['feature']
+            original=self.root/'definitions/features'/feature['id']/(feature['version']+'.json')
+            conflict=self.root/'definitions/datasets'/feature['id']/(feature['version']+'.json')
+            conflict.parent.mkdir(parents=True);conflict.write_bytes(original.read_bytes())
+            with self.assertRaisesRegex(Exception,'Ambiguous definition'):
+                inputs.load_phase(self.root,plan,prepared,'P1',7)
+
+    def test_local_lineage_reuse_is_confined_to_one_checked_capture(self):
+        from data.feature_store import FeatureStore, record_path
+        from data.verified_inputs import ChangedInput
+        plan=self.f.plan();prepared=inputs.prepare_phase(self.root,plan,'P1')
+        item=inputs._verified_feature(self.root,prepared['members'][0]['materializations'][0])
+        binding=item['manifest']['lineage'][0];store=FeatureStore(self.root)
+        original=store.resolve(binding);path=store.path(record_path(original));data=path.read_bytes()
+        def altered_during_verification():
+            store.resolve(binding)
+            path.write_bytes(b'{}')
+            # The same verifier can use its earlier snapshot, but its result
+            # cannot be accepted because the final witness check detects this.
+            self.assertEqual(store.resolve(binding),original)
+            return original
+        with execution_inputs(self.root,'code'),phase_inputs(self.root,plan,'P1'):
+            with self.assertRaises(ChangedInput):
+                memo(self.root,'capture',{},altered_during_verification)
+            path.write_bytes(data)
+            self.assertEqual(memo(self.root,'capture',{},lambda:store.resolve(binding)),original)
+            path.write_bytes(b'{}')
+            with self.assertRaises(Exception):
+                memo(self.root,'different_capture',{},lambda:store.resolve(binding))
+
+    def test_warm_packed_lookup_detects_appended_conflicting_lineage_catalog(self):
+        import os
+        from data.transformations.identity import canonical_bytes
+        plan=self.f.plan()
+        with patch.dict(os.environ,GAMBIT_FX_LINEAGE_STORAGE='packed_v1'),execution_inputs(self.root,'code'):
+            prepared=inputs.prepare_phase(self.root,plan,'P1')
+            inputs.load_phase(self.root,plan,prepared,'P1',1)
+            folder=self.root/'storage/catalog/lineage_packs'
+            pack=json.loads(next(folder.glob('*.json')).read_text())
+            pack['references'][0]['content_sha256']='0'*64
+            (folder/(digest(pack)+'.json')).write_bytes(canonical_bytes(pack)+b'\n')
+            with self.assertRaisesRegex(Exception,'conflicting|conflicts'):
+                inputs.load_phase(self.root,plan,prepared,'P1',7)
 
     def test_different_cutoff_and_snapshot_cannot_hit_prices(self):
         from data.verified_inputs import verified_prices

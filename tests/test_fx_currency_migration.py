@@ -209,6 +209,23 @@ class CurrencyDeletionTests(unittest.TestCase):
         self.put('storage/catalog/signal_library/entries/shared.json',{'record_type':'signal_library_entry','research_result':ref(self.trial)})
         self.assertTrue(any('Retained consumer' in b for b in self.preview()['blockers']))
 
+    def test_current_worker_diagnostic_still_blocks_unreviewed_retirement(self):
+        from data.legacy_batch_evidence import checked
+        batches,bid=self.completed_batch()
+        row=next(row for row in batches._rows(batches.directory(bid)) if row['intent']['scope']['id']=='FX_G10')
+        dispatch=checked(batches.directory(bid)/'dispatch'/f"{row['index']}.json")
+        jobs=batches.jobs
+        jobs._diagnostic('RESEARCH_ATTEMPT_PERFORMANCE',request_id=dispatch['request_id'],
+                         performance={'schema':'isolated operational timing fixture','wall_seconds':'1'})
+        path=f'storage/catalog/operations/worker_events/{jobs.session_id}/{jobs.diagnostic_sequence}.json'
+        original=(self.root/path).read_bytes();manifest=self.preview()
+        self.assertIn('Retained consumer references deletion: '+path,manifest['blockers'])
+        self.assertNotIn(path,manifest['delete'])
+        with self.assertRaisesRegex(ValueError,'unblocked deletion manifest'):
+            apply(self.root,manifest,manifest['sha256'])
+        self.assertEqual((self.root/path).read_bytes(),original)
+        self.assertTrue(jobs._submission_path(dispatch['request_id']).is_file())
+
 
     def test_batch_mixing_retired_and_new_currency_scope_is_not_deleted(self):
         path='storage/catalog/operations/research_batches/mixed/manifest.json'

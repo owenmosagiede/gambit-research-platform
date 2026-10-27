@@ -10,6 +10,7 @@ import hashlib, json, threading, uuid, logging
 from research.contracts import (normalize_submission,request_id,canonical,digest,ref,
     profile_blockers,load_profile,ResearchError,ResearchConflict,ResearchBlocked,HORIZONS)
 from research.store import ResearchStore,inside,install_bytes,read_json,lock
+from research.performance import measure, counter, profiling
 
 ACTIVE={'queued','resolving','preparing','p1','p2'}
 TERMINAL={'blocked','failed','cancelled','succeeded'}
@@ -189,6 +190,9 @@ class ResearchJobs:
             groups.setdefault(rid,[]).append((p.stem,event))
         return groups
     def _events(self,rid,snapshot=None):
+        with measure('events.replay'):
+            return self._events_read(rid,snapshot)
+    def _events_read(self,rid,snapshot=None):
         snapshot=self._event_snapshot() if snapshot is None else snapshot
         if snapshot.get(None):raise ResearchError('Unreadable execution event: ' + snapshot[None][0])
         entries=snapshot.get(rid,[])
@@ -275,7 +279,10 @@ class ResearchJobs:
             if reason:value['resume_blocker']=reason
         return value
     def _resume_blocker(self,rid):
-        if self._submission(rid)['implementation'] != implementation():
+        from runtime.execution_compatibility import authorize_execution
+        try:
+            authorize_execution(self.root,self._submission(rid),implementation())
+        except (ResearchError, OSError, KeyError, TypeError):
             return {'code':'IMPLEMENTATION_CHANGED','message':
                 'This submission uses an older code version and cannot resume. Recovery needs a compatible execution release. Reconcile the release before retrying; the original record is preserved.'}
         return None
@@ -357,10 +364,24 @@ class ResearchJobs:
             except ResearchBlocked:raise
             except (ValueError,KeyError,TypeError,OSError) as exc:
                 raise ResearchBlocked(getattr(exc,'blockers',[{'code':'INPUT_METADATA_BLOCKED','message':str(exc)}])) from exc
+            from runtime.execution_compatibility import authorize_intake
+            execution_approval=authorize_intake(self.root,rid,packet)
+            if execution_approval:packet['execution_compatibility']=ref(execution_approval)
             state=index.load()
-            matches,ambiguous=index.matches(packet,state)
+            matches,ambiguous=index.matches(packet,state,request_id=rid)
             if ambiguous:raise ResearchConflict('History or release compatibility requires reconciliation: '+', '.join(ambiguous))
             canonical_id=matches[0][0] if matches else rid
+            if execution_approval:
+                from runtime.execution_compatibility import row_for, validate_cohort_envelope
+                approved_row=row_for(execution_approval,rid)
+                if canonical_id!=approved_row['canonical_request_id']:
+                    raise ResearchConflict('Approved canonical program request differs')
+                if matches:
+                    accepted=(self._submission(canonical_id) if self._submission_path(canonical_id).exists()
+                              else index.journal(canonical_id)['submission'])
+                    validate_cohort_envelope(execution_approval,rid,accepted)
+                elif approved_row['submission_sha256'] is not None:
+                    raise ResearchConflict('Approved historical program envelope is missing')
             original=None
             if not matches:
                 original=dict(packet,schema_version='0.8.0',request_id=rid,
@@ -369,6 +390,7 @@ class ResearchJobs:
             journal={'schema':'experiment_intake_v1','request_id':rid,'canonical_request_id':canonical_id,
                 'intent':intent,'scientific_identity':scientific_key(packet),'submission':original,
                 'requested_implementation':packet['implementation'],'release_reviews':release_reviews(),'created_at':now()}
+            if execution_approval:journal['execution_compatibility']=ref(execution_approval)
             # Durable reservation first. A crash at any following boundary can be
             # completed using this journal, with no re-resolution or replacement.
             index.invalidate()
@@ -482,6 +504,9 @@ class ResearchJobs:
             if not claimed:return
             for rid in self._pending():self._run(rid)
     def _kernel(self,stage,rows,**kw):
+        with measure(stage.lower()+'.calculation'):
+            return self._calculate(stage,rows,**kw)
+    def _calculate(self,stage,rows,**kw):
         if self.kernels:return getattr(self.kernels,'run_'+stage.lower())(rows,**kw)
         if stage=='P1':
             from research.p1_discovery import run_p1
@@ -495,32 +520,42 @@ class ResearchJobs:
                 if row['horizon']==h:row.update(changes)
             job['progress']={'completed':sum(r['p1_status'] not in ('pending','running') and r['p2_status'] not in ('pending','running') for r in job['horizons']),'total':5}
             self._save(job)
-    def _trial(self,plan,prepared,phase,horizon,relationship,inputs,profile,impl,*,discovery_effect=None,discovery_trial=None):
+    def _trial(self,plan,prepared,phase,horizon,relationship,inputs,profile,impl,*,discovery_effect=None,discovery_trial=None,execution_context=None):
+        with measure('inputs.hashing'):
+            input_digest=digest({'rows':inputs['rows'],'lineage':inputs.get('lineage',[])})
         key={'relationship':ref(relationship),'stage':phase,'horizon':horizon,'research_spec':{'id':profile['id'],'version':profile['version'],'content_sha256':digest(profile)},
             'period':plan['periods'][phase],'prepared':{k:prepared[k] for k in ('phase','period','members')},
             'targets':[{ 'instrument':m['instrument_id'],'binding':m['targets'][str(horizon)]} for m in plan['members']],
-            'implementation':ref(impl),'input_digest':digest({'rows':inputs['rows'],'lineage':inputs.get('lineage',[])}),
+            'implementation':ref(impl),'input_digest':input_digest,
             'discovery_trial':discovery_trial,'discovery_effect':discovery_effect}
+        if execution_context:
+            from runtime.execution_compatibility import record_trial_intent
+            record_trial_intent(self.store,*execution_context,key)
         existing=self.store.find('trial',key)
         if existing:
             for artifact in existing['body']['artifact_manifests']:self.store.verify_artifact(artifact)
             return existing
-        exp=self.store.put('exposure',{'trial_key':digest(key)}, {'stage':phase,'period':plan['periods'][phase],
-            'classification':profile['exposure_classification'],'sample_digest':digest(inputs),'relationship':ref(relationship)})
+        with measure('inputs.hashing'):
+            sample_digest=digest(inputs)
+        with measure('research.publication'):
+            exp=self.store.put('exposure',{'trial_key':digest(key)}, {'stage':phase,'period':plan['periods'][phase],
+                'classification':profile['exposure_classification'],'sample_digest':sample_digest,'relationship':ref(relationship)})
         kp=dict(profile['kernel'],structural_common_start=plan.get('structural_common_start'),
             window_start=plan['periods'][phase]['start_inclusive'],window_end_exclusive=plan['periods'][phase]['end_exclusive'])
         kwargs={'mode':plan['mode'],'horizon':horizon,'members':[m['instrument_id'] for m in plan['members']],
             'expected_direction':plan['intent']['expected_direction'],'profile':kp}
         if phase=='P2':kwargs['discovery_effect']=discovery_effect
         calculation=self._kernel(phase,inputs['rows'],**kwargs)
-        artifacts=self.store.artifact(key,dict(calculation.get('artifacts',{}),coverage=inputs.get('coverage',{}),lineage=inputs.get('lineage',[])))
+        with measure('research.publication'):
+            artifacts=self.store.artifact(key,dict(calculation.get('artifacts',{}),coverage=inputs.get('coverage',{}),lineage=inputs.get('lineage',[])))
         if plan.get('application_class')=='external_stored_feature_to_individual_ts':
             coverage=inputs['coverage'][0]
             calculation['sample']=dict(calculation.get('sample',{}),external_alignment={
                 k:coverage[k] for k in ('aligned_weekday_rows','distinct_source_update_count','valid_distinct_source_update_count')})
         body={k:v for k,v in calculation.items() if k!='artifacts'}
         body.update(stage=phase,artifact_manifests=[ref(artifacts)],exposure=ref(exp),metrics=calculation.get('metrics',{}),sample=calculation.get('sample',{}))
-        return self.store.put('trial',key,body)
+        with measure('research.publication'):
+            return self.store.put('trial',key,body)
     def _link(self,relationship,p1,admission,p2=None,validation=None):
         body={'relationship':ref(relationship),'trial_results':[ref(p1)]+([ref(p2)] if p2 else []),
             'admission_results':[ref(admission)],'validation_results':[ref(validation)] if validation else []}
@@ -534,16 +569,32 @@ class ResearchJobs:
     def _run(self,rid):
         from data.verified_inputs import execution_inputs
         # Lifetime is one frozen submission attempt, never the web session.
-        with execution_inputs(self.root, implementation()):
-            return self._execute(rid)
+        with profiling(join_existing=True) as performance:
+            try:
+                with execution_inputs(self.root, implementation()):
+                    return self._execute(rid)
+            finally:
+                # Logging must not change a scientific outcome or recovery path.
+                try:self._diagnostic('RESEARCH_ATTEMPT_PERFORMANCE',request_id=rid,performance=performance.report())
+                except Exception:logging.getLogger(__name__).exception('Could not record attempt performance')
 
     def _execute(self,rid):
         try:
+            # Internal/direct invocation must also preserve terminal requests.
+            with lock(self.root,'research-writer'):
+                initial=self._read_job(rid)
+            if initial['status'] in TERMINAL:return
             self._check(rid);submission=self._submission(rid);profile=submission['research_spec']
             self._update(rid,status='resolving',stage='preflight',message='Verifying the frozen Research Spec and exact input bindings.')
             blockers=profile_blockers(profile)
             if blockers:raise ResearchBlocked(blockers)
-            if submission['implementation']!=implementation():raise ResearchBlocked([{'code':'IMPLEMENTATION_CHANGED','message':'The installed implementation changed. Reconcile execution compatibility; the original request retains its code fingerprint.'}])
+            from runtime.execution_compatibility import (authorize_execution,
+                record_execution, committed_trial, verify_committed_closure)
+            actual=implementation()
+            try:
+                execution_approval=authorize_execution(self.root,submission,actual)
+            except (ResearchError,OSError,KeyError,TypeError) as exc:
+                raise ResearchBlocked([{'code':'IMPLEMENTATION_CHANGED','message':str(exc)}]) from exc
             adapter=self.adapter
             if adapter is None:
                 from research import inputs as adapter
@@ -555,10 +606,15 @@ class ResearchJobs:
                 planrecord=self.store.put('plan',plan,plan)
             if 'feature_application' in submission and plan.get('feature_application')!=submission['feature_application']:
                 raise ResearchBlocked([{'code':'APPLICATION_CHANGED','message':'Resolved application differs from the frozen submission contract.'}])
-            impl=self.store.put('implementation',submission['implementation'],submission['implementation'])
+            impl=self.store.put('implementation',actual,actual)
+            if execution_approval:
+                verify_committed_closure(self.store,execution_approval,submission,plan)
+                record_execution(self.root,execution_approval,submission,actual,previous['attempt_id'])
             self._update(rid,mode=plan['mode'],plan=ref(planrecord),status='preparing',stage='P1 preparation',message='Preparing only required discovery Feature coverage.')
             def progress(*args,**kwargs):self._check(rid)
-            prepared=adapter.prepare_phase(self.root,plan,'P1',progress=progress,cancelled=lambda:self._cancelled(rid))
+            prepared=None
+            if execution_approval is None:
+                prepared=adapter.prepare_phase(self.root,plan,'P1',progress=progress,cancelled=lambda:self._cancelled(rid))
             self._check(rid);pending=[];links=[]
             for horizon in HORIZONS:
                 self._check(rid);self._update(rid,status='p1',stage='P1',message=f'P1 {plan["mode"]}: {horizon} scheduled weekdays.')
@@ -570,10 +626,16 @@ class ResearchJobs:
                 if 'feature_application' in plan:
                     relation['feature_application']=plan['feature_application']
                 relationship=self.store.put('relationship',relation,relation)
-                self._record_access(rid,plan,'P1',horizon)
-                data=adapter.load_phase(self.root,plan,prepared,'P1',horizon)
-                self._check(rid)
-                p1=self._trial(plan,prepared,'P1',horizon,relationship,data,profile,impl)
+                p1=committed_trial(self.store,execution_approval,submission,plan,'P1',horizon,relationship)
+                if p1 is None:
+                    if prepared is None:
+                        prepared=adapter.prepare_phase(self.root,plan,'P1',progress=progress,cancelled=lambda:self._cancelled(rid))
+                    self._record_access(rid,plan,'P1',horizon)
+                    data=adapter.load_phase(self.root,plan,prepared,'P1',horizon)
+                    self._check(rid)
+                    p1=self._trial(plan,prepared,'P1',horizon,relationship,data,profile,impl,
+                        execution_context=(execution_approval,submission) if execution_approval else None)
+                else:counter('compatibility.committed_trials_reused')
                 decision=p1['body']['admission']
                 admission=self.store.put('admission',{'trial':ref(p1)}, {'trial':ref(p1),'relationship':ref(relationship),'decision':decision,
                     'evidence':p1['body'].get('evidence',{}),'reason_codes':p1['body'].get('reason_codes',[])})
@@ -599,14 +661,23 @@ class ResearchJobs:
                 self._check(rid)
                 token={'plan_id':plan['plan_id'],'direction':plan['intent']['expected_direction'],'admitted_horizons':[p[0] for p in pending]}
                 self._update(rid,status='preparing',stage='P2 preparation',message='Preparing the frozen validation interval for admitted candidates only.')
-                prepared2=adapter.prepare_phase(self.root,plan,'P2',progress=progress,cancelled=lambda:self._cancelled(rid),admission=token)
+                prepared2=None
+                if execution_approval is None:
+                    prepared2=adapter.prepare_phase(self.root,plan,'P2',progress=progress,cancelled=lambda:self._cancelled(rid),admission=token)
                 for horizon,relationship,p1,admission,effect in pending:
                     self._check(rid);self._update(rid,status='p2',stage='P2',message=f'P2 {plan["mode"]}: {horizon} scheduled weekdays.')
                     self._horizon(rid,horizon,p2_status='running')
-                    self._record_access(rid,plan,'P2',horizon)
-                    data=adapter.load_phase(self.root,plan,prepared2,'P2',horizon,admission=token)
-                    self._check(rid)
-                    p2=self._trial(plan,prepared2,'P2',horizon,relationship,data,profile,impl,discovery_effect=effect,discovery_trial=ref(p1))
+                    p2=committed_trial(self.store,execution_approval,submission,plan,'P2',horizon,relationship,
+                        discovery_effect=effect,discovery_trial=ref(p1))
+                    if p2 is None:
+                        if prepared2 is None:
+                            prepared2=adapter.prepare_phase(self.root,plan,'P2',progress=progress,cancelled=lambda:self._cancelled(rid),admission=token)
+                        self._record_access(rid,plan,'P2',horizon)
+                        data=adapter.load_phase(self.root,plan,prepared2,'P2',horizon,admission=token)
+                        self._check(rid)
+                        p2=self._trial(plan,prepared2,'P2',horizon,relationship,data,profile,impl,discovery_effect=effect,discovery_trial=ref(p1),
+                            execution_context=(execution_approval,submission) if execution_approval else None)
+                    else:counter('compatibility.committed_trials_reused')
                     validation=self.store.put('validation',{'discovery':ref(p1),'evaluation':ref(p2)},
                         {'relationship':ref(relationship),'decision':p2['body']['decision'],'discovery_trial':ref(p1),'evaluation_trial':ref(p2),
                          'reason_codes':p2['body'].get('reason_codes',[]),'evidence':p2['body'].get('evidence',{})})

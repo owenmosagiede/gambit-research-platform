@@ -17,14 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def reviewed_pair():
     evidence = json.loads((ROOT / 'tests/fixtures/batch_retirement_review.json').read_text())
-    current = implementation()
-    current['numeric_environment'] = {'python': evidence['python']}
-    previous = deepcopy(current)
-    for name in evidence['added_files']:
-        previous['files'].pop(name)
-    previous['files'].update(evidence['before_changed_files'])
-    previous['fingerprint'] = digest(previous['files'])
-    return evidence, previous, current
+    # Historical approval binds historical source bytes. Reconstructing it from
+    # today's tree silently incorporates every later scientific source change.
+    frozen = json.loads((ROOT / 'tests/fixtures/batch_retirement_implementations.json').read_text())
+    if (frozen.get('schema') != 'batch_retirement_historical_implementations_v1' or
+            frozen.get('sha256') != digest({k:v for k,v in frozen.items() if k != 'sha256'}) or
+            frozen['source_commits'] != {'before': evidence['base_commit'],
+                'after':'9654b7de0b90d7f9a85718638effc271f6d6c6e1'}):
+        raise AssertionError('Historical implementation fixture identity differs')
+    for stage, value in frozen['implementations'].items():
+        if (value['fingerprint'] != digest(value['files']) or
+                value['fingerprint'] != evidence[stage+'_fingerprint'] or
+                digest(value) != evidence[stage+'_implementation_key']):
+            raise AssertionError('Historical implementation fixture differs from recorded review')
+    return evidence, frozen['implementations']['before'], frozen['implementations']['after']
 
 
 class BatchRetirementReleaseTests(unittest.TestCase):
@@ -99,3 +105,10 @@ class BatchRetirementReleaseTests(unittest.TestCase):
                 changed['numeric_environment']['python'] += ' different build'
             self.assertEqual(release_relation(self.old, changed), 'unreviewed')
         self.assertEqual(release_relation(self.new, self.old), 'unreviewed')
+
+    def test_historical_review_does_not_approve_current_scientific_source(self):
+        current = implementation()
+        current['numeric_environment'] = {'python': self.evidence['python']}
+        self.assertNotEqual(current['fingerprint'], self.evidence['after_fingerprint'])
+        self.assertEqual(release_relation(self.old, current), 'unreviewed')
+        self.assertEqual(release_relation(self.new, current), 'unreviewed')
