@@ -294,6 +294,19 @@ class CutoverTests(unittest.TestCase):
                 path.unlink()
                 self.assertEqual(before, cutover.authority_inventory(self.m.root))
 
+    def test_inventory_cannot_silently_skip_malformed_authority_namespace(self):
+        path = self.m.root/'storage/catalog/research_exposure'
+        path.write_bytes(b'not a directory')
+        with self.assertRaisesRegex(RuntimeError, 'must be a directory'):
+            cutover.authority_inventory(self.m.root)
+
+    def test_inventory_covers_every_research_store_record_kind(self):
+        from research.store import FOLDERS
+        for folder in FOLDERS.values():
+            path = 'storage/catalog/'+folder
+            self.assertTrue(any(path == prefix or path.startswith(prefix+'/')
+                                for prefix in cutover.AUTHORITY_ROOTS), path)
+
 
 class CatalogCaptureTests(unittest.TestCase):
     def setUp(self):
@@ -408,6 +421,30 @@ class CatalogCaptureTests(unittest.TestCase):
                 manifest['global_pins']['knowledge_cutoff'] = '2026-09-01'
                 with self.assertRaisesRegex(ValueError, 'Frozen program binding'):
                     cutover.capture(root, canonical(manifest))
+
+    def test_shared_target_metadata_is_resolved_once_from_exact_global_profile(self):
+        from test_program_intake_compatibility import binding_fixture
+        from data.transformations.identity import reference
+        manifest, entry, packet, catalog, targets = binding_fixture()
+        # The metadata pass must not reread every immutable envelope or hash
+        # each Target again for all recipes. Capture still checks every row.
+        manifest['entries'] = [entry] * 371
+        records = {reference(record)['id']: record for rows in targets.values() for record in rows.values()}
+        with patch('data.feature_store.FeatureStore') as features, patch('data.targets.store.TargetStore') as store, patch(
+                'runtime.research_jobs.ResearchJobs') as jobs, patch('runtime.experiment_identity.IdentityIndex') as index:
+            features.return_value.resolve.return_value = catalog
+            index.return_value.journal.return_value = {'canonical_request_id': entry['request_id']}
+            jobs.return_value._submission.return_value = packet
+            store.return_value.resolve.side_effect = lambda binding: records[binding['id']]
+            actual = cutover.frozen_metadata(self.root, manifest)
+            self.assertEqual(actual, (catalog, targets))
+            self.assertEqual(index.return_value.journal.call_count, 1)
+            self.assertEqual(jobs.return_value._submission.call_count, 1)
+            self.assertEqual(store.return_value.resolve.call_count, len(records))
+            changed = deepcopy(packet); changed['research_spec']['target_selection']['materializations'] = {}
+            jobs.return_value._submission.return_value = changed
+            with self.assertRaisesRegex(RuntimeError, 'Target profile differs'):
+                cutover.frozen_metadata(self.root, manifest)
 
 
 if __name__ == '__main__': unittest.main()

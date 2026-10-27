@@ -76,6 +76,8 @@ def authority_inventory(root):
                 break
         if not base.exists():
             continue
+        if not base.is_dir():
+            raise RuntimeError('Authority namespace must be a directory')
         for p in sorted(base.rglob('*')):
             if p.is_symlink():
                 raise RuntimeError('Authority path cannot be a symlink')
@@ -257,28 +259,27 @@ def frozen_metadata(root, manifest):
     """Resolve immutable catalogs once; no numerical artifact/observation reads."""
     from data.feature_store import FeatureStore
     from data.targets.store import TargetStore
-    from data.transformations.identity import reference
     from runtime.research_jobs import ResearchJobs
     from runtime.experiment_identity import IdentityIndex
     pins = manifest['global_pins']
     catalog = FeatureStore(root).resolve(pins['feature_catalog'])
     targets = TargetStore(root)
-    # Every entry's exact target bindings are subsequently checked against its
-    # frozen profile. Deduplicate the shared metadata across all 53 recipes.
-    found = {}
+    # All envelopes must have the same exact profile reference (validated for
+    # every entry below). Resolve that profile's Target metadata once, rather
+    # than rereading 371 journals and rehashing the same Target records for
+    # every recipe. A later differing profile is still rejected by capture.
     jobs = ResearchJobs(root); index = IdentityIndex(jobs)
-    for entry in manifest['entries']:
-        journal = index.journal(entry['request_id'])
-        if journal is None:
-            raise RuntimeError('Wait for complete intake before this cutover')
-        packet = jobs._submission(journal['canonical_request_id'])
-        for member, horizons in packet['research_spec']['target_selection']['materializations'].items():
-            for horizon, binding in horizons.items():
-                prior = found.setdefault(member, {}).get(horizon)
-                if prior is None:
-                    found[member][horizon] = targets.resolve(binding)
-                elif reference(prior) != binding:
-                    raise RuntimeError('Conflicting frozen Target binding')
+    journal = index.journal(manifest['entries'][0]['request_id'])
+    if journal is None:
+        raise RuntimeError('Wait for complete intake before this cutover')
+    packet = jobs._submission(journal['canonical_request_id'])
+    profile = packet['research_spec']
+    if (ref(profile) != pins['research_spec'] or
+            digest(profile['target_selection']) != pins['source_and_target_pins_sha256']):
+        raise RuntimeError('Frozen Target profile differs from manifest')
+    found = {}
+    for member, horizons in profile['target_selection']['materializations'].items():
+        found[member] = {horizon: targets.resolve(binding) for horizon, binding in horizons.items()}
     return catalog, found
 
 
