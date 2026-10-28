@@ -714,18 +714,21 @@ def main():
     parser.add_argument('--retirement-plan', type=Path)
     parser.add_argument('--retirement-status', type=Path)
     parser.add_argument('--retirement-receipt', type=Path)
+    parser.add_argument('--retirement-source-archive', type=Path,
+                        help='Exact original retirement archive when installed source is a later release')
     parser.add_argument('--plan-sha256'); parser.add_argument('--release-id')
     args = parser.parse_args(); machine = Machine(args.root, args.state, args.backup)
     retirement = None
     retirement_paths = {'plan': args.retirement_plan, 'status': args.retirement_status,
                         'receipt': args.retirement_receipt}
-    if any(retirement_paths.values()):
+    if any(retirement_paths.values()) or args.retirement_source_archive:
         if args.action not in ('propose', 'review', 'plan', 'apply') or not all(retirement_paths.values()):
             parser.error('Retirement requires all three exact evidence files for propose, review, plan or apply')
         if not all((args.archive, args.sha256, args.source_archive, args.source_sha256)):
             parser.error('Retirement requires both exact protected archives')
         retirement = retired_definitions.load_context(retirement_paths,
-            args.source_archive, args.source_sha256, args.archive, args.sha256)
+            args.source_archive, args.source_sha256, args.archive, args.sha256,
+            retirement_archive=args.retirement_source_archive)
     raw = args.manifest.read_bytes()
     predecessor = None
     if args.predecessor_approval:

@@ -204,6 +204,7 @@ class RetirementContext:
     target_manifest: dict
     target_files: dict
     _binding: dict
+    retirement_archive: Path | None = None
 
     @property
     def binding(self):
@@ -211,7 +212,7 @@ class RetirementContext:
 
     def _fresh(self):
         fresh, raw = _load(self.evidence_paths, self.source_archive, self.source_sha256,
-                           self.target_archive, self.target_sha256)
+                           self.target_archive, self.target_sha256, self.retirement_archive)
         if fresh.binding != self.binding:
             raise RuntimeError('Retirement context changed')
         return fresh, raw
@@ -252,6 +253,8 @@ class RetirementContext:
         payloads = {SAVED_NAMES[key]: raw[key] for key in SAVED_NAMES}
         payloads.update({'source.tar.gz': raw['source'], 'target.tar.gz': raw['target'],
                          'context.json': canonical(fresh.binding)})
+        if fresh.retirement_archive is not None:
+            payloads['retirement-source.tar.gz'] = raw['retirement_source']
         for name, data in payloads.items():
             fd = os.open(folder / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, 'wb') as out:
@@ -265,8 +268,10 @@ class RetirementContext:
         return saved
 
 
-def _load(evidence_paths, source_archive, source_sha256, target_archive, target_sha256):
-    if set(evidence_paths) != set(SAVED_NAMES) or source_sha256 != SOURCE_SHA256:
+def _load(evidence_paths, source_archive, source_sha256, target_archive, target_sha256,
+          retirement_archive=None):
+    successor = source_sha256 != SOURCE_SHA256
+    if set(evidence_paths) != set(SAVED_NAMES) or successor != (retirement_archive is not None):
         raise RuntimeError('Exact retirement inputs are required')
     if target_sha256 == source_sha256:
         raise RuntimeError('Retirement cutover requires distinct source and target archives')
@@ -276,7 +281,14 @@ def _load(evidence_paths, source_archive, source_sha256, target_archive, target_
     source_manifest, source_files = _archive(raw['source'], source_sha256)
     target_manifest, target_files = _archive(raw['target'], target_sha256)
     evidence = {key: _json(raw[key]) for key in SAVED_NAMES}
-    omissions = _derive(evidence, source_manifest, source_files, target_manifest, target_files)
+    anchor_manifest, anchor_files = source_manifest, source_files
+    if successor:
+        raw['retirement_source'] = _protected_bytes(retirement_archive, SOURCE_SHA256)
+        anchor_manifest, anchor_files = _archive(raw['retirement_source'], SOURCE_SHA256)
+        # Both installed and proposed packages must retain the exact historically
+        # retired definitions; this never broadens the acknowledged missing set.
+        _derive(evidence, anchor_manifest, anchor_files, source_manifest, source_files)
+    omissions = _derive(evidence, anchor_manifest, anchor_files, target_manifest, target_files)
     binding = {'schema': 'gambit_retired_definitions_v1', 'source_commit': SOURCE_COMMIT,
         'prior_release_id': PRIOR_RELEASE_ID, 'reset_plan_sha256': RESET_SHA256,
         'evidence_sha256': dict(EVIDENCE_SHA256), 'source_archive_sha256': source_sha256,
@@ -284,13 +296,19 @@ def _load(evidence_paths, source_archive, source_sha256, target_archive, target_
         'target_manifest_sha256': _digest(target_manifest), 'omissions_sha256': OMISSIONS_SHA256,
         'omissions_count': OMISSIONS_COUNT, 'acknowledged_omissions': omissions,
         'action': 'preserve_absence_no_registry_writes'}
+    if successor:
+        binding.update(schema='gambit_retired_definitions_v2', source_commit=source_manifest['commit'],
+            retirement_source_commit=SOURCE_COMMIT, retirement_source_archive_sha256=SOURCE_SHA256,
+            retirement_source_manifest_sha256=_digest(anchor_manifest))
     return RetirementContext(dict(evidence_paths), Path(source_archive), source_sha256,
         Path(target_archive), target_sha256, source_manifest, source_files, target_manifest,
-        target_files, binding), raw
+        target_files, binding, Path(retirement_archive) if successor else None), raw
 
 
-def load_context(evidence_paths, source_archive, source_sha256, target_archive, target_sha256):
-    return _load(evidence_paths, source_archive, source_sha256, target_archive, target_sha256)[0]
+def load_context(evidence_paths, source_archive, source_sha256, target_archive, target_sha256,
+                 *, retirement_archive=None):
+    return _load(evidence_paths, source_archive, source_sha256, target_archive, target_sha256,
+                 retirement_archive)[0]
 
 
 def load_saved(folder):
@@ -298,7 +316,9 @@ def load_saved(folder):
     binding = _json(_protected_bytes(folder / 'context.json'))
     context = load_context({key: folder / name for key, name in SAVED_NAMES.items()},
         folder / 'source.tar.gz', binding['source_archive_sha256'],
-        folder / 'target.tar.gz', binding['target_archive_sha256'])
+        folder / 'target.tar.gz', binding['target_archive_sha256'],
+        retirement_archive=(folder / 'retirement-source.tar.gz'
+                            if binding.get('schema') == 'gambit_retired_definitions_v2' else None))
     if context.binding != binding:
         raise RuntimeError('Saved retirement context differs')
     return context

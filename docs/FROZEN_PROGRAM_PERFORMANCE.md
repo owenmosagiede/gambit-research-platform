@@ -117,6 +117,16 @@ both namespaces, rejects duplicate/wrong-namespace publications, and requires
 the predecessor record to remain installed. Recovery refuses once new research
 or execution provenance has been written. It never restores research snapshots.
 
+For a later installed release, pass `--retirement-source-archive` with the exact
+original reset-era archive in addition to the installed source and candidate
+archives. Retirement context v2 still requires the same hard-pinned reset plan,
+completion status, original deployment receipt and 5,717-definition inventory.
+Both later archives must contain those identical retired definition bytes. Only
+those exact absent paths are acknowledged; changed definitions and all unrelated
+registry/runtime blockers remain blocked. The durable review/recovery package
+retains all three archives and the original evidence. No storage scan or registry
+write is added.
+
 Stage the matching status reader before cutover. It recursively rechecks previous
 trial intents and observed execution attempts even when those trials are now
 pinned historical results. Activate the new exact approval/executor/reader pins

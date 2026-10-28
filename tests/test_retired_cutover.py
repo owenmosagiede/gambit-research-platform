@@ -258,3 +258,49 @@ class RetiredCutoverTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SuccessorRetiredCutoverTests(unittest.TestCase):
+    setUp = RetiredCutoverTests.setUp
+    plan = RetiredCutoverTests.plan
+    apply = RetiredCutoverTests.apply
+
+    def test_successor_installs_and_recovers_with_original_retirement_anchor(self):
+        from test_retired_definitions import archive_bytes
+        from research.contracts import ref
+        previous = self.approval
+        self.apply()
+        source_path, source_sha = self.f.target_path, self.f.target_sha
+        self.f.source_manifest, self.f.source_files = self.f.target_manifest, dict(self.f.target_files)
+        self.f.target_files['src/runtime/example.py'] = b'third executor\n'
+        raw, self.f.target_manifest = archive_bytes(self.f.target_files, 'c'*40)
+        next_path = self.f.base/'third.tar.gz'; next_path.write_bytes(raw)
+        self.f.target_sha = retired.sha(raw)
+        self.f.context = retired.load_context(self.f.evidence, source_path, source_sha,
+            next_path, self.f.target_sha, retirement_archive=self.f.source_path)
+        self.checks_bytes = canonical({'schema':'gambit_release_checks_v1','success':True,
+            'commit':self.f.target_manifest['commit'],'dirty_checkout':False,'production_data_used':False})
+        self.equivalence_bytes = canonical(dict(self.index, retirement_context=self.f.context.binding))
+        self.code.write_bytes(b'third executor\n'); target = cutover.implementation_at(self.m.root)
+        self.code.write_bytes(b'new executor\n')
+        self.approval = synthetic_approval(make_proposal(manifest_sha256=cutover.sha(self.manifest_bytes),
+            operator_sha256='b'*64, from_implementation=self.old, to_implementation=target,
+            cohort=self.m.cohort, evidence={'tests_sha256':cutover.sha(self.checks_bytes),
+                'equivalence_sha256':cutover.sha(self.equivalence_bytes)},
+            source_archive_sha256=source_sha, target_archive_sha256=self.f.target_sha,
+            predecessor_approval=previous, historical_trial_implementations={}))
+        snapshot = self.m.snapshot
+        def capture(raw):
+            result = snapshot(raw)
+            if getattr(self.m, 'predecessor_approval', None):
+                result.update(predecessor_approval=ref(previous), historical_trial_implementations={})
+            return result
+        self.m.snapshot = capture
+        result = self.apply()
+        self.assertEqual(result['status'], 'installed_stopped')
+        self.assertEqual(self.code.read_bytes(), b'third executor\n')
+        recovered = cutover.recover(self.m, self.manifest_bytes, result['release_id'])
+        self.assertEqual(recovered['status'], 'rolled_back_stopped')
+        self.assertEqual(self.code.read_bytes(), b'new executor\n')
+        self.assertEqual(self.history.read_bytes(), b'unchanged synthetic historical authority')
+        self.assertTrue(all(not (self.m.root/name).exists() for name in self.f.names))
