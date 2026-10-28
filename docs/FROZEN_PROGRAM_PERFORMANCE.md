@@ -89,6 +89,50 @@ program identities. Verification is the default; `--submit` is explicit.
 The recommended initial cutover waits for original intake to finish, so it does
 not need to replace or restart that running helper.
 
+## Subsequent equivalent-execution releases
+
+A second performance release uses proposal schema
+`frozen_program_execution_proposal_v2`. Supply `--predecessor-approval` to
+`program_cutover.py review` with a file containing the exact installed approval
+reference. The source archive is the currently installed release; the immutable
+manifest's original implementation pins are retained. The command verifies the
+predecessor authorizes that installed executor and the same manifest/operator.
+It reads the exact accepted receipts and original journals, validates historical
+and intermediate trials through the predecessor metadata reader, and pins every
+committed trial to its actual implementation reference. Missing intents, attempts,
+events, omitted historical references or unknown intermediate trials block review.
+
+The successor embeds the exact predecessor approval, preserves the same cohort,
+original scientific identities and accepted envelope hashes, and may only add
+committed trial references. A further successor must retain all prior trial-to-
+implementation bindings. Chains are bounded to 16 proposals; reverse execution
+migration is not inferred. `plan` and `apply` derive this predecessor from the
+explicit approval and check it again against the live immutable store. Numerical
+execution, result decisions and original request identities are unchanged.
+
+Successor approvals are append-only under `successor_approvals`, separate from
+the original `approvals` namespace. This lets code-only recovery restore an older
+reader without deleting new approval records. New code resolves and validates
+both namespaces, rejects duplicate/wrong-namespace publications, and requires
+the predecessor record to remain installed. Recovery refuses once new research
+or execution provenance has been written. It never restores research snapshots.
+
+For a later installed release, pass `--retirement-source-archive` with the exact
+original reset-era archive in addition to the installed source and candidate
+archives. Retirement context v2 still requires the same hard-pinned reset plan,
+completion status, original deployment receipt and 5,717-definition inventory.
+Both later archives must contain those identical retired definition bytes. Only
+those exact absent paths are acknowledged; changed definitions and all unrelated
+registry/runtime blockers remain blocked. The durable review/recovery package
+retains all three archives and the original evidence. No storage scan or registry
+write is added.
+
+Stage the matching status reader before cutover. It recursively rechecks previous
+trial intents and observed execution attempts even when those trials are now
+pinned historical results. Activate the new exact approval/executor/reader pins
+only after preservation and website checks pass; carry forward the last successful
+checkpoint and known pass identities. An old-reader mismatch is not zero passes.
+
 ## Reviewed cutover procedure — not authorized by this document
 
 The target program is manifest
@@ -144,8 +188,8 @@ Recheck these identities at the actual cutover; these are not permission to act.
 7. `apply` leaves services **stopped**. Verify the installed fingerprint and the
    exact queued/terminal IDs, envelope hashes, frozen bindings, historical
    references, and trial-intent/provenance history against the saved snapshot.
-   Then, as part of the approved window, start the existing worker and web
-   services. Check external worker health, `/healthz`, existing health service,
+   Then start the web service and verify authenticated research pages and actual
+   stored records before resuming the existing single worker. Check external worker health, `/healthz`, existing health service,
    immutable attempt provenance and normal progress on the **existing queue**.
    Do not submit a new pilot. The existing hourly reader requires the original
    executor and must not silently accept a changed fingerprint. Stage and test

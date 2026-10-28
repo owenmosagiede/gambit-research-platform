@@ -30,6 +30,18 @@ def synthetic_approval(proposal):
                      'decision_reference': 'isolated test fixture only'}})
 
 
+def successor_proposal(store, previous, original, actual):
+    trials = [store.get('trial', p.stem) for p in
+              sorted((store.root/'storage/catalog/trial_ledger/records').glob('TRIAL_*.json'))]
+    prior = previous['proposal']
+    return compatibility.make_proposal(manifest_sha256=prior['manifest_sha256'],
+        operator_sha256=prior['operator_sha256'], from_implementation=prior['from_implementation'],
+        to_implementation=actual, cohort=[dict(prior['cohort'][0], committed_trials=[ref(t) for t in trials])],
+        evidence=prior['evidence'], source_archive_sha256='7'*64, target_archive_sha256='8'*64,
+        predecessor_approval=previous,
+        historical_trial_implementations={t['id']: t['scientific_key']['implementation'] for t in trials})
+
+
 class CompatibilityTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory(); self.root = Path(self.temp.name)
@@ -87,6 +99,70 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(job['status'], 'blocked')
         self.assertEqual(job['blockers'][0]['code'], 'IMPLEMENTATION_CHANGED')
         self.assertEqual(self.kernel.calls, [])
+
+    def test_successor_preserves_two_generations_and_unlinked_partial_trials(self):
+        for interrupted_phase in ('P1', 'P2'):
+            with self.subTest(phase=interrupted_phase):
+                # Separate request science so independent fixtures cannot reuse a result.
+                if interrupted_phase == 'P2':
+                    self.tearDown(); self.setUp()
+                original = self.submit_old(); rid = original['request_id']
+                self.adapter.fail_horizon = 7; self.run_old()
+                first = self.approve(self.proposal(original))
+                link = self.jobs._link
+                def interrupted(relationship, p1, admission, p2=None, validation=None):
+                    selected = p2 if interrupted_phase == 'P2' else p1
+                    if selected and selected['scientific_key']['horizon'] == (1 if interrupted_phase == 'P2' else 7):
+                        raise RuntimeError('synthetic predecessor publication-before-link interruption')
+                    return link(relationship, p1, admission, p2, validation)
+                with patch.object(self.jobs, '_link', side_effect=interrupted): self.resume_new(rid)
+                self.assertEqual(self.jobs.get(rid)['status'], 'failed')
+                saved = {t['id']: canonical(t) for t in self.trials()}
+                third = synthetic_implementation('successor')
+                proposal = successor_proposal(self.jobs.store, first, original, third)
+                second = self.approve(proposal)
+                self.assertEqual(compatibility.source_implementation(proposal), self.new)
+                self.assertEqual(proposal['from_implementation'], self.old)
+                self.adapter.loads.clear()
+                with patch('runtime.research_jobs.implementation', return_value=third):
+                    self.jobs.resume(rid); self.jobs.run_pending_once()
+                self.assertEqual(self.jobs.get(rid)['status'], 'succeeded', self.jobs.get(rid))
+                self.assertEqual(len(self.trials()), 10)
+                self.assertEqual(len(self.kernel.calls), 10)
+                self.assertNotIn(('P1', 1), self.adapter.loads)
+                self.assertNotIn(('P1', 7), self.adapter.loads)
+                if interrupted_phase == 'P2': self.assertNotIn(('P2', 1), self.adapter.loads)
+                for identity, raw in saved.items(): self.assertEqual(canonical(self.jobs.store.get('trial', identity)), raw)
+                self.assertEqual(self.jobs._submission(rid), original)
+                self.assertEqual(compatibility.resolve(self.root, ref(first)), first)
+                self.assertEqual(compatibility.resolve(self.root, ref(second)), second)
+
+    def test_successor_chain_requires_installed_predecessor_and_monotone_exact_pins(self):
+        original = self.submit_old(); self.adapter.fail_horizon = 7; self.run_old()
+        first = self.approve(self.proposal(original))
+        third = synthetic_implementation('third')
+        proposal = successor_proposal(self.jobs.store, first, original, third)
+        for field in ('manifest_sha256', 'operator_sha256'):
+            changed = deepcopy(proposal); changed[field] = '9'*64
+            changed = compatibility._seal('EXECPROPOSAL', {k:v for k,v in changed.items() if k != 'id'})
+            with self.assertRaises(ResearchConflict): compatibility.validate_proposal(changed)
+        for mutation in ('omit_trial', 'omit_executor', 'change_envelope'):
+            changed = deepcopy(proposal)
+            if mutation == 'omit_trial':
+                changed['cohort'][0]['committed_trials'] = []; changed['historical_trial_implementations'] = {}
+            elif mutation == 'omit_executor': changed['historical_trial_implementations'] = {}
+            else: changed['cohort'][0]['submission_sha256'] = '0'*64
+            changed = compatibility._seal('EXECPROPOSAL', {k:v for k,v in changed.items() if k != 'id'})
+            with self.subTest(mutation=mutation), self.assertRaises(ResearchConflict): compatibility.validate_proposal(changed)
+        path = self.root/compatibility.BASE/'approvals'/(first['id']+'.json')
+        raw = path.read_bytes(); path.unlink()
+        with self.assertRaises(FileNotFoundError): self.approve(proposal)
+        path.write_bytes(raw); second = self.approve(proposal)
+        fourth = successor_proposal(self.jobs.store, second, original, synthetic_implementation('fourth'))
+        key = next(iter(fourth['historical_trial_implementations']))
+        fourth['historical_trial_implementations'][key]['content_sha256'] = '9'*64
+        fourth = compatibility._seal('EXECPROPOSAL', {k:v for k,v in fourth.items() if k != 'id'})
+        with self.assertRaisesRegex(ResearchConflict, 'relabels'): compatibility.validate_proposal(fourth)
 
     def test_exact_program_and_implementation_pins_and_append_only_approval(self):
         original = self.submit_old(); approval = self.approve(self.proposal(original))

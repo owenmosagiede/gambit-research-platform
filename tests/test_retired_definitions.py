@@ -303,3 +303,51 @@ class ProtectedReaderTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class SuccessorRetirementTests(unittest.TestCase):
+    def setUp(self):
+        self.f = SyntheticRetirement(self)
+        self.current = self.f.target_path
+        self.current_files = self.f.target_files
+        self.next_files = dict(self.current_files, **{'src/runtime/example.py': b'third executor\n'})
+        raw, self.next_manifest = archive_bytes(self.next_files, 'c'*40)
+        self.next = self.f.base/'next.tar.gz'; self.next.write_bytes(raw); self.next_sha = sha(raw)
+        (self.f.root/'src/runtime/example.py').write_bytes(b'new executor\n')
+
+    def load(self, **changes):
+        args = dict(retirement_archive=self.f.source_path)
+        args.update(changes)
+        return retired.load_context(self.f.evidence, self.current, self.f.target_sha,
+                                    self.next, self.next_sha, **args)
+
+    def test_later_release_uses_same_exact_retirement_evidence_and_preserves_absence(self):
+        context = self.load()
+        self.assertEqual(context.binding['schema'], 'gambit_retired_definitions_v2')
+        self.assertEqual(context.binding['acknowledged_omissions'], self.f.omissions)
+        self.assertEqual(context.binding['retirement_source_archive_sha256'], self.f.source_sha)
+        self.assertEqual(context.code_plan(self.f.root, context.source_manifest, context.source_files,
+                                          context.source_sha256)['changes'], [])
+        plan = context.code_plan(self.f.root, context.target_manifest, context.target_files, context.target_sha256)
+        self.assertEqual(plan['blockers'], [])
+        self.assertEqual([r['path'] for r in plan['changes']], ['src/runtime/example.py'])
+        saved = context.persist(self.f.base/'saved-successor')
+        for path in [*self.f.evidence.values(), self.f.source_path, self.current, self.next]: path.unlink()
+        self.assertEqual(retired.load_saved(self.f.base/'saved-successor').revalidate(self.f.root), saved.binding)
+        self.assertTrue(all(not (self.f.root/name).exists() for name in self.f.names))
+
+    def test_successor_cannot_omit_or_replace_anchor_or_change_either_definition_inventory(self):
+        with self.assertRaises(RuntimeError): self.load(retirement_archive=None)
+        with self.assertRaises(RuntimeError): self.load(retirement_archive=self.current)
+        for target in ('current', 'next'):
+            files = dict(self.current_files if target == 'current' else self.next_files)
+            files[self.f.names[0]] = b'changed retired definition'
+            raw, _ = archive_bytes(files, 'd'*40)
+            path = self.current if target == 'current' else self.next
+            original = path.read_bytes(); path.write_bytes(raw)
+            source_sha = sha(raw) if target == 'current' else self.f.target_sha
+            target_sha = sha(raw) if target == 'next' else self.next_sha
+            with self.assertRaisesRegex(RuntimeError, 'Retired definition differs'):
+                retired.load_context(self.f.evidence, self.current, source_sha, self.next, target_sha,
+                                     retirement_archive=self.f.source_path)
+            path.write_bytes(original)

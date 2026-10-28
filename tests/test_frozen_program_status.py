@@ -14,7 +14,7 @@ from research.store import ResearchStore
 from runtime import execution_compatibility as compat
 from runtime.experiment_identity import scientific_key
 from test_program_intake_compatibility import binding_fixture, RID
-from test_execution_compatibility import synthetic_implementation, synthetic_approval
+from test_execution_compatibility import synthetic_implementation, synthetic_approval, successor_proposal
 
 ATTEMPT = '00000000-0000-0000-0000-000000000003'
 HISTORICAL = '00000000-0000-0000-0000-000000000002'
@@ -130,6 +130,33 @@ class MetadataStatusTests(unittest.TestCase):
                     ['approved_new_executor'] * 2 if mode == 'new' else ['approved_historical_reference'] * 2)
                 self.assertEqual(rows[0]['trial_execution_provenance'], expected)
 
+    def test_successor_reads_mixed_generations_without_relabeling_or_losing_passes(self):
+        for mode in ('old', 'new', 'mixed', 'historical'):
+            setup, entry = fixture(self.root/mode, mode=mode)
+            before = self.verify(setup, entry)
+            previous = compat.resolve(setup['store'].root, setup['approval_reference'])
+            actual = synthetic_implementation('successor')
+            proposal = successor_proposal(setup['store'], previous, entry['original'], actual)
+            approved = synthetic_approval(proposal); compat.install_approval(setup['store'].root, approved)
+            rows = self.verify(dict(setup, approval_reference=ref(approved), actual_implementation=actual), entry)
+            self.assertEqual([{k:v for k,v in r.items() if k != 'trial_execution_provenance'} for r in rows],
+                             [{k:v for k,v in r.items() if k != 'trial_execution_provenance'} for r in before])
+            self.assertTrue(all(r['trial_execution_provenance'] == ['approved_historical_reference']*2 for r in rows))
+
+    def test_successor_still_checks_predecessor_intents_attempts_and_events(self):
+        for missing in ('intent', 'attempt', 'event'):
+            setup, entry = fixture(self.root/missing, mode='mixed')
+            store = setup['store'];previous = compat.resolve(store.root, setup['approval_reference'])
+            actual = synthetic_implementation('successor')
+            approved = synthetic_approval(successor_proposal(store, previous, entry['original'], actual))
+            compat.install_approval(store.root, approved)
+            if missing == 'event': entry['events'] = []
+            else:
+                folder = 'trial_intents/'+RID if missing == 'intent' else 'attempts'
+                next((store.root/compat.BASE/folder).glob('*.json')).unlink()
+            with self.subTest(missing=missing), self.assertRaises(ResearchConflict):
+                self.verify(dict(setup, approval_reference=ref(approved), actual_implementation=actual), entry)
+
     def test_no_approval_wrong_manifest_operator_executor_or_cohort_is_rejected(self):
         setup, entry = fixture(self.root)
         for field, value in (('manifest_bytes', setup['manifest_bytes'] + b' '), ('operator_sha256', 'f' * 64),
@@ -204,6 +231,36 @@ class MetadataStatusTests(unittest.TestCase):
         baseline = merge_checkpoint(current)
         self.assertIsNone(baseline['new_passes_since_previous'])
         self.assertEqual(len(baseline['verified_pass_identity_history']), 2)
+
+    def test_successor_checkpoint_keeps_known_passes_across_verified_approval_chain(self):
+        setup, entry = fixture(self.root)
+        outcomes = self.verify(setup, entry)
+        previous_approval = compat.resolve(self.root, setup['approval_reference'])
+        successor = synthetic_approval(successor_proposal(setup['store'], previous_approval,
+            entry['original'], synthetic_implementation('successor')))
+        old = {'schema':'momentum_program_heartbeat_approved_execution_v1',
+            'manifest_sha256':sha256(setup['manifest_bytes']).hexdigest(),
+            'execution_compatibility':ref(previous_approval), 'observed_at':'before',
+            'issues':[], 'verified_passes':outcomes[:1], 'checkpoint_advanced':True}
+        current = {'schema':old['schema'], 'manifest_sha256':old['manifest_sha256'],
+            'execution_compatibility':ref(successor), 'observed_at':'after',
+            'verified_predecessor_approvals':[ref(previous_approval)],
+            'issues':[], 'planned':1, 'verified_receipts':1, 'intake_complete':True,
+            'verified_passes':outcomes, 'rows':[{'receipt_verified':True,
+                'status':'succeeded', 'outcomes':outcomes}]}
+        before = deepcopy(old)
+        merged = merge_checkpoint(current, old)
+        self.assertEqual(old, before)
+        self.assertEqual(merged['new_passes_since_previous'], outcomes[1:])
+        self.assertEqual(len(merged['verified_pass_identity_history']), 5)
+        failed = merge_checkpoint(dict(current, issues=[{'incomplete':'snapshot'}]), old)
+        self.assertFalse(failed['checkpoint_advanced'])
+        self.assertEqual(failed['verified_pass_identity_history'], [outcomes[0]['relationship']['id']])
+        self.assertEqual(failed['last_successful_observed_at'], 'before')
+        for refs in ([], [ref(successor)], [ref(previous_approval)]*2,
+                     [dict(ref(previous_approval), content_sha256='0'*64)]):
+            with self.subTest(refs=refs), self.assertRaises(ResearchConflict):
+                merge_checkpoint(dict(current, verified_predecessor_approvals=refs), old)
 
     def test_checkpoint_refuses_other_program_approval_or_pass_projection(self):
         setup, entry = fixture(self.root)

@@ -92,15 +92,14 @@ Drain the single worker at an experiment boundary only under that later approval
 preserve exact original envelopes, queue order, results, trial references,
 scientific definitions and program manifest. Do not restart a full storage scan.
 
-The program now contains trials from both the original and the currently approved
-executor. The current compatibility implementation represents one from/to pair;
-`committed_trial` assumes historical pins belong to the proposal's `from`
-implementation. A successor must explicitly reconcile the existing approval and
-both historical executor generations (including partial/orphan trial intents).
-Do not relabel earlier trials, reuse the old approval for a different fingerprint,
-omit intermediate-executor trials, or bypass that gate. Successor approval and
-reader support must be validated before calling this change deployable for the
-already-running frozen program. They are not silently broadened by this cache PR.
+The program contains trials from both the original and the currently approved
+executor. The successor procedure in `FROZEN_PROGRAM_PERFORMANCE.md` binds the
+exact installed predecessor approval and each historical trial's real executor.
+It includes partial/orphan trial intents and revalidates their original attempt
+and event provenance. Original program pins and earlier approvals remain
+immutable. Passing the benchmark does not grant execution permission: the exact
+merged artifact, bounded preservation review, successor approval and staged
+reader must all pass before resumption.
 
 After an authorized cutover, verify exact artifact/revision, bounded preservation,
 HTTP pages and the next existing queue item before resuming one worker. If any new
