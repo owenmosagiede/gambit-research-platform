@@ -144,7 +144,7 @@ def fixture_boundary(root, fixture):
         yield
 
 
-def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=None, production_shape=False, resume_checkpoint=None):
+def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=None, production_shape=False, resume_checkpoint=None, fresh_features=False):
     load_source(source)
     from data.feature_store import FeatureStore
     from data.fx_feature_recipes import build_fx_feature, get_fx_policy, _typed_parameters
@@ -205,7 +205,7 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
             f.profile['periods'] = {'P1': {'start_inclusive': f.days[0], 'end_exclusive': split},
                 'P2': {'start_inclusive': split, 'end_exclusive': '2022-06-01'}}
         from decimal import Decimal
-        from data.fx_records import make_record
+        from data.fx_records import make_record, write_rows
         from data.transformations.contracts import decimal_text
         from data.transformations.fx_currency import CURRENCIES
         from data.targets.fx import materialize
@@ -240,6 +240,12 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
                 if production_shape and symbol == 'CNHUSD' and day < '2020-04-14':
                     row.update(value=None, status='missing', reason_code='missing_source_value')
                 row['id'] = 'FXPRICE_' + digest(row); prices.append(row)
+            # Even the mocked-admission control persists its exact synthetic
+            # price payload, so buffer-eviction reloads exercise real I/O.
+            snapshot = make_record('snapshot_manifest', dict(snapshot['body'],
+                members=write_rows(f.store,prices,'isolated_synthetic_prices'),
+                record_count=len(prices),semantic_content_sha256=digest(prices)))
+            binding = f.store.install_record(snapshot)
             f.states[binding['id']] = (snapshot, prices)
             existing[symbol] = {'instrument_id': symbol, 'price_snapshot': binding}
             saved_targets = []
@@ -333,6 +339,10 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
                     plan = inputs.resolve_plan(f.root, intent, profile)
                 except inputs.InputsBlocked as exc:
                     raise AssertionError(getattr(exc, 'reasons', str(exc))) from exc
+                if fresh_features:
+                    plans[label + '_positive'] = plan
+                    expected_p2[label + '_positive'] = None  # not pre-evaluated
+                    continue
                 with execution_inputs(f.root, implementation()):
                     prepared = inputs.prepare_phase(f.root, plan, 'P1'); admitted = []
                     for horizon in plan['horizons']:

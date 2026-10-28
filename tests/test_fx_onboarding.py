@@ -18,7 +18,8 @@ from data.transformations.identity import digest
 PROJECT = Path(__file__).resolve().parents[1]
 
 
-def build_fixture(directory, days=('2020-01-02', '2020-01-03', '2020-01-06', '2020-01-07')):
+def build_fixture(directory, days=('2020-01-02', '2020-01-03', '2020-01-06', '2020-01-07'),
+                  *, source_days=None, price_function=None):
     root, legacy = directory / 'platform', directory / 'legacy'
     root.mkdir(); legacy.mkdir()
     shutil.copytree(PROJECT / 'specs', root / 'specs')
@@ -30,14 +31,15 @@ def build_fixture(directory, days=('2020-01-02', '2020-01-03', '2020-01-06', '20
     sources = []
     capture = '2026-09-06T21:03:46Z'
     for number, symbol in enumerate(SOURCE_SYMBOLS):
+        dates = (source_days or {}).get(symbol, days)
         base, quote = symbol.split('/')
         safe = symbol.replace('/', '_')
         dataset_id = 'DS_TWELVE_' + safe
         directory = legacy / 'production/twelve_data_fx' / ('symbol=' + safe) / 'page=0001'
         directory.mkdir(parents=True)
         rows = [{'datetime': day, 'open': str(number + 1), 'high': str(number + 2),
-                 'low': str(number + 1), 'close': str(number + 1 + i / 10)}
-                for i, day in enumerate(days)]
+                 'low': str(number + 1), 'close': str(price_function(number, day) if price_function else number + 1 + i / 10)}
+                for i, day in enumerate(dates)]
         raw = {'meta': {'symbol': symbol, 'interval': '1day'}, 'values': rows}
         raw_bytes = canonical(raw)
         raw_hash = sha(raw_bytes)
@@ -74,9 +76,9 @@ def build_fixture(directory, days=('2020-01-02', '2020-01-03', '2020-01-06', '20
                 'raw_path': raw_relative, 'raw_sha256': raw_hash, 'retrieved_at': capture,
                 'ingestion_id': ingestion_id, 'actual_ohlc_rows': len(rows)*4, 'actual_close_rows': len(rows)}],
             'actual_close_rows': len(rows), 'unique_close_dates': len(rows),
-            'coverage_min': min(days), 'coverage_max': max(days),
+            'coverage_min': min(dates), 'coverage_max': max(dates),
             'all_raw_artifacts': [{'path': raw_relative, 'sha256': raw_hash,
-                'known_ingestions': [ingestion], 'date_min': min(days), 'date_max': max(days)}],
+                'known_ingestions': [ingestion], 'date_min': min(dates), 'date_max': max(dates)}],
             'raw_dates_absent_from_canonical': []})
     audit = {'sources': sources, 'legacy_root': str(legacy)}
     # The caller receives a stable fixture path outside the read-only source root.

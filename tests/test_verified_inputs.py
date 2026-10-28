@@ -10,7 +10,7 @@ from time import perf_counter
 import unittest
 from unittest.mock import patch
 
-from data.verified_inputs import execution_inputs, phase_inputs, memo, fresh_inputs, compact_memo, probe
+from data.verified_inputs import execution_inputs, phase_inputs, memo, fresh_inputs, compact_memo, probe, retain_price_inputs
 from data.transformations.identity import reference, digest
 from data.fx_records import make_record
 from data import fx_feature_store as fx
@@ -24,6 +24,85 @@ from decimal import Decimal
 
 
 class ContextTests(unittest.TestCase):
+    def test_price_bytes_preserve_exact_values_private_copies_and_dependency_checks(self):
+        from data.verified_inputs import verified_prices, retained_size
+        from data.alfred_onboarding import stable_read
+        from types import SimpleNamespace
+        with TemporaryDirectory() as folder:
+            root=Path(folder);path=root/'source';path.write_bytes(b'good')
+            plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
+            original=({'id':'exact'},[{'value':'1.2345678901234567890123456789','available_at':None,
+                'input_dependencies':[{'id':str(i),'flag':True,'integer':2**64}]} for i in range(200)])
+            calls=[]
+            def load(*args):
+                calls.append(1)
+                if stable_read(path)!=b'good':raise ValueError('tampered source')
+                return deepcopy(original)
+            with execution_inputs(root,'code') as context,phase_inputs(root,plan,'P1'):
+                first=verified_prices(SimpleNamespace(root=root),'snapshot','policy',load)
+                self.assertEqual(first,original)
+                first[1][0]['input_dependencies'][0]['id']='caller mutation'
+                self.assertEqual(verified_prices(SimpleNamespace(root=root),'snapshot','policy',load),original)
+                entry=next(v for k,v in context.entries.items() if k[1]=='prices')
+                self.assertIsInstance(entry[0],bytes)
+                self.assertLess(retained_size(entry[0]),retained_size(original))
+                self.assertEqual(len(calls),1)
+                path.write_bytes(b'evil')
+                with self.assertRaisesRegex(ValueError,'tampered'):
+                    verified_prices(SimpleNamespace(root=root),'snapshot','policy',load)
+
+    def test_current_price_survives_pressure_without_extending_budget_or_skipping_witnesses(self):
+        from data.alfred_onboarding import stable_read
+        with TemporaryDirectory() as folder:
+            root=Path(folder); path=root/'source'; path.write_bytes(b'good')
+            plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
+            key={'snapshot':'exact','policy':'fixed'}; calls=[]
+            def load():
+                calls.append(1)
+                if stable_read(path)!=b'good':raise ValueError('tampered source')
+                return list(range(40))
+            with execution_inputs(root,'code',max_bytes=5000) as context, phase_inputs(root,plan,'P1'):
+                with retain_price_inputs(root,'exact','fixed'):
+                    memo(root,'prices',key,load)
+                    for index in range(12):
+                        memo(root,'bulk',index,lambda:list(range(60)))
+                        compact_memo(root,'compact',index,lambda:list(range(20)))
+                        self.assertLessEqual(context.bytes,5000)
+                        self.assertLessEqual(context.compact_bytes,2500)
+                    value=memo(root,'prices',key,load); value.append('private')
+                    self.assertEqual(memo(root,'prices',key,load),list(range(40)))
+                    self.assertEqual(len(calls),1)
+                    self.assertEqual(context.counts['prices.evictions'],0)
+                    self.assertGreater(context.counts['retention_bypasses'],0)
+                    path.write_bytes(b'evil')
+                    with self.assertRaisesRegex(ValueError,'tampered'):memo(root,'prices',key,load)
+                self.assertIsNone(context.retained_price)
+                path.write_bytes(b'good'); memo(root,'prices',key,load)
+                for index in range(12):memo(root,'bulk',index,lambda:list(range(60)))
+                memo(root,'prices',key,load)
+                self.assertEqual(len(calls),4) # invalidated failure and normal eviction still reload
+
+    def test_retention_is_exact_scoped_and_oversize_falls_back(self):
+        with TemporaryDirectory() as root:
+            plan={'plan_id':'test','periods':{p:{'end_exclusive':e} for p,e in
+                  [('P1','2020-01-01'),('P2','2021-01-01')]}}
+            with execution_inputs(root,'code',max_bytes=1000) as context, phase_inputs(root,plan,'P1'):
+                with self.assertRaisesRegex(RuntimeError,'cancelled'):
+                    with retain_price_inputs(root,'a','policy'):
+                        first=context.retained_price
+                        with retain_price_inputs(root,'b','policy'):
+                            self.assertNotEqual(context.retained_price,first)
+                        self.assertEqual(context.retained_price,first)
+                        for _ in range(2):memo(root,'prices',{'snapshot':'a','policy':'policy'},lambda:list(range(1000)))
+                        self.assertEqual(context.counts['prices.loads'],2)
+                        self.assertEqual(context.bytes,0)
+                        raise RuntimeError('cancelled')
+                self.assertIsNone(context.retained_price)
+                with retain_price_inputs(root,'a','policy'):
+                    with phase_inputs(root,plan,'P2'):
+                        self.assertIsNone(context.retained_price)
+                self.assertIsNone(context.retained_price)
+
     def test_compact_private_snapshot_survives_bulk_evictions_with_same_total_bound(self):
         with TemporaryDirectory() as folder:
             plan={'plan_id':'test','periods':{'P1':{'end_exclusive':'2020-01-01'}}}
@@ -96,6 +175,125 @@ class ContextTests(unittest.TestCase):
                 self.assertLessEqual(context.bytes,1000);self.assertGreater(context.counts['evictions'],0)
                 memo(folder,'large',{},lambda:list(range(1000)))
                 self.assertEqual(context.counts['oversize'],1)
+
+
+class SourceEvidenceTests(unittest.TestCase):
+    """Real provider/closure/price replay, independent of synthetic price mocks."""
+    def setUp(self):
+        from test_fx_targets import fixture as real_fixture, PROJECT
+        from data.feature_store import FeatureStore
+        self.temp = TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        shutil.copytree(PROJECT/'specs/schemas',self.root/'specs/schemas')
+        self.binding,self.policy,self.prices = real_fixture(self.root)
+        self.store = FeatureStore(self.root)
+        self.plan = {'plan_id':'isolated-proof','periods':{
+            'P1':{'end_exclusive':'2021-01-01'},'P2':{'end_exclusive':'2022-01-01'}}}
+
+    def read(self):
+        from data.verified_inputs import verified_prices
+        from data.targets.fx import _price_snapshot
+        return verified_prices(self.store,self.binding,self.policy,_price_snapshot)
+
+    def evict_prices(self,cache):
+        # Real ordinary-LRU pressure: proofs are small but still budgeted.
+        for i in range(4): memo(self.root,'pressure',i,lambda:b'x'*(1024*1024))
+        self.assertFalse(any(k[1]=='prices' for k in cache.entries))
+
+    def test_source_proof_survives_buffer_eviction_with_exact_private_reload(self):
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            first=self.read(); self.evict_prices(cache)
+            second=self.read(); self.assertEqual(first,second)
+            second[1][0]['value']='caller mutation'
+            self.evict_prices(cache); self.assertEqual(self.read(),first)
+            self.assertEqual(cache.counts['price_proof.loads'],1)
+            self.assertEqual(cache.counts['price_proof.hits'],2)
+            self.assertEqual(cache.counts['prices.loads'],3)
+            self.assertLessEqual(cache.high_water_bytes,3*1024*1024)
+            self.assertLessEqual(cache.compact_bytes,cache.compact_limit)
+
+    def test_changed_upstream_raw_bytes_invalidate_proof_even_with_restored_mtime(self):
+        import os
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            # Select the EUR/USD raw dependency, not another unrelated fixture.
+            raw=next(p for p in (self.root/'fixture_sources/legacy/raw').rglob('*.json') if b'EUR/USD' in p.read_bytes())
+            stamp=raw.stat(); data=raw.read_bytes(); raw.write_bytes(data.replace(b'"1"',b'"9"',1))
+            if raw.read_bytes()==data: raw.write_bytes(data+b' ')
+            os.utime(raw,ns=(stamp.st_atime_ns,stamp.st_mtime_ns))
+            with self.assertRaises(ValueError): self.read()
+            self.assertEqual(cache.counts['price_proof.invalidations'],1)
+
+    def test_standalone_and_new_phase_repeat_full_independent_source_verification(self):
+        from data.targets import fx as target_fx
+        original=target_fx._price_snapshot
+        with patch.object(target_fx,'_price_snapshot',wraps=original) as full:
+            with execution_inputs(self.root,'code') as cache:
+                for phase in ('P1','P2'):
+                    with phase_inputs(self.root,self.plan,phase): self.read(); self.read()
+                with fresh_inputs(): self.read()
+            self.read()
+            self.assertEqual(full.call_count,4)
+
+    def test_compact_evidence_eviction_falls_back_to_full_verifier(self):
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            expected=self.read(); self.evict_prices(cache)
+            for index in range(3): compact_memo(self.root,'proof-pressure',index,lambda:b'z'*(1024*1024))
+            self.assertFalse(any(k[1]=='price_proof' for k in cache.compact_entries))
+            self.assertEqual(self.read(),expected)
+            self.assertEqual(cache.counts['price_proof.loads'],2)
+            self.assertLessEqual(cache.high_water_bytes,3*1024*1024)
+
+    def test_oversize_proof_uses_full_verifier_without_exceeding_budget(self):
+        with execution_inputs(self.root,'code',max_bytes=1) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.assertEqual(self.read(),self.read())
+            self.assertEqual(cache.counts['price_proof.loads'],2)
+            self.assertEqual(cache.bytes,0)
+            self.assertFalse(cache.entries or cache.compact_entries)
+
+    def test_proof_reload_dependencies_propagate_to_enclosing_entry(self):
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            memo(self.root,'enclosing','key',lambda:self.read()[1][0]['value'])
+            self.assertEqual(cache.counts['price_proof.hits'],1)
+            raw=next(p for p in (self.root/'fixture_sources/legacy/raw').rglob('*.json') if b'EUR/USD' in p.read_bytes())
+            raw.write_bytes(raw.read_bytes()+b' ')
+            with self.assertRaises(ValueError): memo(self.root,'enclosing','key',lambda:self.read()[1][0]['value'])
+            self.assertEqual(cache.counts['enclosing.invalidations'],1)
+
+    def test_new_ambiguous_definition_invalidates_source_proof(self):
+        from data.transformations.identity import canonical_bytes
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            snapshot,_=self.read(); self.evict_prices(cache)
+            view=self.store.resolve(snapshot['body']['definition'])
+            alias=self.root/'definitions/datasets'/view['id']/(view['version']+'.json')
+            alias.parent.mkdir(parents=True); alias.write_bytes(canonical_bytes(view)+b'\n')
+            with self.assertRaisesRegex(ValueError,'Ambiguous definition identity'): self.read()
+            self.assertEqual(cache.counts['price_proof.invalidations'],1)
+
+    def test_change_during_reload_is_rejected_before_publication(self):
+        from data import fx_records
+        original=fx_records.read_rows
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            def changing(store,members):
+                rows=original(store,members)
+                raw=next(p for p in (self.root/'fixture_sources/legacy/raw').rglob('*.json') if b'EUR/USD' in p.read_bytes())
+                raw.write_bytes(raw.read_bytes()+b' ')
+                return rows
+            with patch.object(fx_records,'read_rows',side_effect=changing),self.assertRaisesRegex(ValueError,'changed before cache publication'):
+                self.read()
+            self.assertFalse(any(k[1]=='prices' for k in cache.entries))
+
+    def test_reload_must_equal_the_entire_proven_record_and_price_rows(self):
+        from data import fx_records
+        original=fx_records.read_rows
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            def wrong(store,members):
+                rows=original(store,members); rows[0]['value']='42'; return rows
+            with patch.object(fx_records,'read_rows',side_effect=wrong),self.assertRaisesRegex(ValueError,'Reloaded prices differ'):
+                self.read()
 
 
 class VerifiedPreparationTests(unittest.TestCase):
@@ -200,6 +398,17 @@ class VerifiedPreparationTests(unittest.TestCase):
 
     def test_ts_multiyear_equivalence_and_reduced_work(self):self.compare('TS')
     def test_cs_multimember_equivalence_and_reduced_work(self):self.compare('CS')
+
+    def test_packed_multimember_warmup_follows_all_publications(self):
+        import os
+        plan=self.expanded_fixture('CS')
+        with patch.dict(os.environ,GAMBIT_FX_LINEAGE_STORAGE='packed_v1'),execution_inputs(self.root,'code') as context:
+            prepared=inputs.prepare_phase(self.root,plan,'P1')
+            self.assertTrue(all(len(m['materializations'])>1 for m in prepared['members']))
+            for h in (1,7,21,63,252):inputs.load_phase(self.root,plan,prepared,'P1',h)
+            self.assertEqual(context.counts['feature_lookup.loads'],len(plan['members']))
+            self.assertEqual(context.counts['feature_lookup.invalidations'],0)
+            self.assertIsNone(context.retained_price)
 
     def test_fresh_inspection_and_new_execution_reject_tampered_payload(self):
         plan=self.f.plan()

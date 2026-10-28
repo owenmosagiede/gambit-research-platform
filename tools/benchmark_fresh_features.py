@@ -44,7 +44,7 @@ def identified(record, prefix):
     return dict(value, id=prefix + digest(value))
 
 
-def compare_reports(before, after):
+def compare_reports(before, after, *, publication_keys=('P1', 'P2')):
     require(before['schema'] == after['schema'] == 'fresh_feature_evidence_v1', 'schema differs')
     for report in (before, after):
         actual = report['source_implementation']; files = actual['files']
@@ -54,9 +54,10 @@ def compare_reports(before, after):
                 actual['fingerprint'] == digest(files), 'actual source implementation fingerprint differs')
     require(before['fixture'] == after['fixture'], 'source, recipe or phase fixture differs')
     require(before['lineage_storage_mode'] == after['lineage_storage_mode'], 'physical mode differs')
-    require(set(before['phases']) == set(after['phases']) == {'P1', 'P2'}, 'both fresh phases required')
-    mapped_materializations = {}; proof = []
-    for phase in ('P1', 'P2'):
+    require(bool(publication_keys) and len(set(publication_keys)) == len(publication_keys), 'unique publication keys required')
+    require(set(before['phases']) == set(after['phases']) == set(publication_keys), 'all fresh publications required')
+    mapped_materializations = {}; proof = []; deferred_entries = []
+    for phase in publication_keys:
         old, new = before['phases'][phase], after['phases'][phase]
         old_impl, new_impl = old['implementation'], new['implementation']
         for report, item in ((before, old), (after, new)):
@@ -129,6 +130,14 @@ def compare_reports(before, after):
         manifest['partitions'][0].update(blob_sha256=sha256(raw).hexdigest(), byte_count=len(raw))
         require(normalized == old['verified'], 'verified values, statuses, operands or manifest fields changed')
         mapped_materializations[digest(reference(new['verified']['manifest']))] = reference(manifest)
+        deferred_entries.append((old, new, reference(manifest)))
+        proof.append({'phase':phase, 'changed_producer_code_paths':changed,
+            'producer_reference':{'baseline':reference(old_impl),'optimized':reference(new_impl)},
+            'materialization_reference':{'baseline':reference(manifest),'optimized':reference(new['verified']['manifest'])},
+            'mapped_lineages':len(lineage_map), 'exact_scientific_equality':True})
+    # Entries captured after preparation may reference later publications.
+    # Validate every materialization mapping before translating any entry.
+    for old, new, manifest_ref in deferred_entries:
         entry = deepcopy(new['entry'])
         require(all(digest(r) in mapped_materializations for r in entry['feature_materializations']), 'unproven library materialization')
         entry['feature_materializations'] = sorted(
@@ -136,12 +145,8 @@ def compare_reports(before, after):
         entry = identified(entry, 'LIBRARYENTRY_')
         require(entry == old['entry'], 'library entry changed beyond proven materializations')
         publication = deepcopy(new['publication'])
-        publication.update(materialization=reference(manifest), entry=reference(entry))
+        publication.update(materialization=manifest_ref, entry=reference(entry))
         require(publication == old['publication'], 'publication result changed')
-        proof.append({'phase':phase, 'changed_producer_code_paths':changed,
-            'producer_reference':{'baseline':reference(old_impl),'optimized':reference(new_impl)},
-            'materialization_reference':{'baseline':reference(manifest),'optimized':reference(new['verified']['manifest'])},
-            'mapped_lineages':len(lineage_map), 'exact_scientific_equality':True})
     return {'schema':'fresh_feature_comparison_v1','exact_scientific_equality':True,'phases':proof,
             'production_data_used':False,'mapping_rule':'validated producer code leaves and only recomputed transitive references'}
 

@@ -396,53 +396,63 @@ def _prepare_phase(root, plan, phase, progress=None, cancelled=None, admission=N
     if plan.get('application_class') == 'external_stored_feature_to_individual_ts':
         from research.external_features import prepare
         return prepare(root, plan, phase, period, cancelled)
+    from data.verified_inputs import current, retain_price_inputs
     requested = set(_period_days(period))
     prepared = {'plan_id': plan['plan_id'], 'phase': phase, 'period': deepcopy(period), 'members': []}
+    published = False
     for member in plan['members']:
         _check_cancel(cancelled)
-        output = {'instrument_id': member['instrument_id'], 'materializations': [], 'unavailable': []}
-        covered = set()
-        for candidate in member['feature_materializations']:
-            p = candidate['period']
-            # Do not read an observation payload extending into another phase.
-            if not period['start_inclusive'] <= p['start_inclusive'] <= p['end_inclusive'] < period['end_exclusive']:
-                continue
+        with retain_price_inputs(root, member['price_snapshot'], plan['batch_policy']):
+            output = {'instrument_id': member['instrument_id'], 'materializations': [], 'unavailable': []}
+            covered = set()
+            for candidate in member['feature_materializations']:
+                p = candidate['period']
+                # Do not read an observation payload extending into another phase.
+                if not period['start_inclusive'] <= p['start_inclusive'] <= p['end_inclusive'] < period['end_exclusive']:
+                    continue
+                _check_cancel(cancelled)
+                item = _verified_feature(root, candidate['reference'])
+                if reference(item['manifest']) != candidate['reference']:
+                    raise InputsBlocked('Frozen Feature materialization reference differs')
+                _check_output(item, member, plan, period)
+                covered.update(row['reference_time'] for row in item['observations'])
+                output['materializations'].append(candidate['reference'])
+            for start, end in _chunks(sorted(requested - covered)):
+                _check_cancel(cancelled)
+                if progress:
+                    progress({'stage': phase, 'action': 'preparing_feature', 'instrument': member['instrument_id'], 'start': start, 'end': end})
+                try:
+                    saved = prepare_fx_feature(root, member['feature'], price_snapshot=member['price_snapshot'],
+                        batch_policy=plan['batch_policy'], knowledge_cutoff=plan['knowledge_cutoff'], start=start, end=end)
+                except PublicationError as exc:
+                    # Null-only warm-up/member windows remain explicit missing input,
+                    # not successful publications or silently omitted Scope members.
+                    if str(exc) not in ('No valid FX Feature observations; recipe remains registered only',
+                                        'Output interval has no scheduled weekdays'):
+                        raise
+                    output['unavailable'].append({'start_inclusive': start, 'end_inclusive': end,
+                        'reason': 'NO_VALID_FEATURE_OBSERVATIONS'})
+                    continue
+                published = True
+                item = _verified_feature(root, saved['materialization'])
+                if reference(item['manifest']) != saved['materialization']:
+                    raise InputsBlocked('Published Feature reference differs')
+                _check_output(item, member, plan, period)
+                output['materializations'].append(saved['materialization'])
+            output['materializations'] = sorted({r['id']: r for r in output['materializations']}.values(), key=lambda r: r['id'])
+            if current(root) is not None:
+                if not published:
+                    _feature_lookup(root, member, output, plan, period)
+                _target_prices(root, member, plan, period)
+            prepared['members'].append(output)
+    # A later member's lineage publication changes the catalog generation.
+    # Warm Feature lookups only after all publications, retaining the ordinary
+    # catalog/index witnesses and their conflicting-identity detection.
+    if published and current(root) is not None:
+        for member, output in zip(plan['members'], prepared['members']):
             _check_cancel(cancelled)
-            item = _verified_feature(root, candidate['reference'])
-            if reference(item['manifest']) != candidate['reference']:
-                raise InputsBlocked('Frozen Feature materialization reference differs')
-            _check_output(item, member, plan, period)
-            covered.update(row['reference_time'] for row in item['observations'])
-            output['materializations'].append(candidate['reference'])
-        for start, end in _chunks(sorted(requested - covered)):
-            _check_cancel(cancelled)
-            if progress:
-                progress({'stage': phase, 'action': 'preparing_feature', 'instrument': member['instrument_id'], 'start': start, 'end': end})
-            try:
-                saved = prepare_fx_feature(root, member['feature'], price_snapshot=member['price_snapshot'],
-                    batch_policy=plan['batch_policy'], knowledge_cutoff=plan['knowledge_cutoff'], start=start, end=end)
-            except PublicationError as exc:
-                # Null-only warm-up/member windows remain explicit missing input,
-                # not successful publications or silently omitted Scope members.
-                if str(exc) not in ('No valid FX Feature observations; recipe remains registered only',
-                                    'Output interval has no scheduled weekdays'):
-                    raise
-                output['unavailable'].append({'start_inclusive': start, 'end_inclusive': end,
-                    'reason': 'NO_VALID_FEATURE_OBSERVATIONS'})
-                continue
-            item = _verified_feature(root, saved['materialization'])
-            if reference(item['manifest']) != saved['materialization']:
-                raise InputsBlocked('Published Feature reference differs')
-            _check_output(item, member, plan, period)
-            output['materializations'].append(saved['materialization'])
-        output['materializations'] = sorted({r['id']: r for r in output['materializations']}.values(), key=lambda r: r['id'])
-        # Retain only the verified columns needed by all horizons, while this
-        # member's independently verified materializations are still warm.
-        from data.verified_inputs import current
-        if current(root) is not None:
-            _feature_lookup(root, member, output, plan, period)
-            _target_prices(root, member, plan, period)
-        prepared['members'].append(output)
+            with retain_price_inputs(root, member['price_snapshot'], plan['batch_policy']):
+                _feature_lookup(root, member, output, plan, period)
     prepared['prepared_id'] = 'PREPARED_' + digest(prepared)
     return prepared
 
