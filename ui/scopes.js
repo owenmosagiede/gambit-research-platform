@@ -217,6 +217,9 @@
   }
   select.addEventListener("change", resolveSelection);
   retry.addEventListener("click", () => retrySelection && selected() ? resolveSelection() : load());
-  window.addEventListener("experiment-catalog-refresh", load);
-  load();
+  window.addEventListener("experiment-catalog-refresh", event => {
+    if (typeof event?.detail?.enqueue === "function") event.detail.enqueue("scope", load);
+    else load();
+  });
+  // The contract coordinator starts this read only when its page is visible.
 })();

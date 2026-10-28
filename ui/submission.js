@@ -13,7 +13,8 @@
   const same = (a, b) => exact(a) && exact(b) && equal(a, b) && a.content_sha256 === b.content_sha256;
   const valid = field => !field.disabled && (!field.validity || field.validity.valid !== false);
   let readiness = null, readinessBusy = false, healthTimer = null, pageActive = true;
-  let lastCatalogRefresh = Date.now();
+  let queueSettled = false, readinessStarted = false, catalogStarted = false;
+  let catalogRefreshRunning = false, catalogRefreshPending = false, lastCatalogRefresh = 0;
 
   function selection(id, key) {
     const field = $(id), chosen = parse(field.value), binding = parse(field.dataset[key]);
@@ -86,14 +87,16 @@
     if (!Array.isArray(value) || value.some(row => !row || !text(row.message))) throw Error('Invalid service status');
     return value;
   }
+  // Match the router, including skip links and exact historical trial links.
   const visible = () => pageActive && document.visibilityState !== 'hidden' &&
-    (!window.location.hash || window.location.hash === '#experiment' || window.location.hash.startsWith('#trial-'));
+    !['#ledger', '#ledger-page', '#signals', '#signal-page'].includes(window.location.hash);
   function schedule() {
     window.clearTimeout(healthTimer);
-    if (visible()) healthTimer = window.setTimeout(loadReadiness, 30000);
+    if (queueSettled && visible()) healthTimer = window.setTimeout(loadReadiness, 30000);
   }
   async function loadReadiness() {
-    if (readinessBusy) return;
+    if (!queueSettled || !visible() || readinessBusy) return;
+    readinessStarted = true;
     readinessBusy = true;
     $('research-readiness-retry').disabled = true;
     const controller = new AbortController(), timeout = window.setTimeout(() => controller.abort(), 20000);
@@ -118,20 +121,48 @@
       render(); schedule();
     }
   }
-  function refreshCatalog(force = false) {
-    if (!visible() || (!force && (Date.now() - lastCatalogRefresh < 30000 || fields.some(field => field.getAttribute('aria-busy') === 'true')))) return;
+  async function refreshCatalog(force = false) {
+    if (!queueSettled || !visible()) return;
+    if (catalogRefreshRunning) { if (force) catalogRefreshPending = true; return; }
+    if (!force && !catalogRefreshPending && catalogStarted &&
+        (Date.now() - lastCatalogRefresh < 30000 || fields.some(field => field.getAttribute('aria-busy') === 'true'))) return;
+    catalogRefreshRunning = true; catalogRefreshPending = false;
     lastCatalogRefresh = Date.now();
-    window.dispatchEvent(new CustomEvent('experiment-catalog-refresh'));
+    const readers = new Map();
+    // Give the first queue/history read the available request slots. Once it
+    // settles, warm only the visible contract's catalogs, one at a time.
+    window.dispatchEvent(new CustomEvent('experiment-catalog-refresh', {detail: {
+      enqueue(name, read) { if (['scope', 'feature', 'target'].includes(name) && typeof read === 'function') readers.set(name, read); }
+    }}));
     render();
+    try {
+      for (const name of ['scope', 'feature', 'target']) {
+        if (!visible()) { catalogRefreshPending = true; break; }
+        if (readers.has(name)) await readers.get(name)();
+      }
+      catalogStarted = true;
+    } finally {
+      catalogRefreshRunning = false;
+      render();
+      if (catalogRefreshPending && visible()) refreshCatalog(true);
+    }
+  }
+  function activate() {
+    if (queueSettled && visible()) {
+      refreshCatalog();
+      if (!readinessStarted) loadReadiness();
+    }
+    schedule();
   }
   for (const field of fields) field.addEventListener('change', render);
   for (const event of ['feature-state-change', 'scope-state-change', 'target-state-change']) window.addEventListener(event, render);
   $('contract-refresh').addEventListener('click', () => refreshCatalog(true));
   $('research-readiness-retry').addEventListener('click', loadReadiness);
-  window.addEventListener('focus', () => refreshCatalog());
-  window.addEventListener('hashchange', () => { refreshCatalog(); schedule(); });
-  document.addEventListener('visibilitychange', () => { refreshCatalog(); schedule(); });
+  window.addEventListener('research-queue-settled', () => { queueSettled = true; activate(); });
+  window.addEventListener('focus', activate);
+  window.addEventListener('hashchange', activate);
+  document.addEventListener('visibilitychange', activate);
   window.addEventListener('pagehide', () => { pageActive = false; window.clearTimeout(healthTimer); });
-  window.addEventListener('pageshow', () => { pageActive = true; refreshCatalog(); schedule(); });
-  render(); loadReadiness();
+  window.addEventListener('pageshow', () => { pageActive = true; activate(); });
+  render();
 })();

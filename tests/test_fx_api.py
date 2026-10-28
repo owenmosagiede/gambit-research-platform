@@ -33,10 +33,12 @@ class Element {
  addEventListener(name,fn){this.listeners[name]=fn;} setAttribute(name,value){this.attributes[name]=value;}
 }
 const names=["target","target-status","target-retry","target-details","target-details-link","target-instruments","target-instrument-table","target-instruments-heading","target-details-title","target-details-status","target-details-body","target-detail-retry"];
-const ids=Object.fromEntries(names.map(id=>[id,new Element(id)]));let paths=[],timeouts=[],loadingStatuses=[],loadingOptions=[];
+const events={};const ids=Object.fromEntries(names.map(id=>[id,new Element(id)]));let paths=[],timeouts=[],loadingStatuses=[],loadingOptions=[];
 const context={document:{getElementById:id=>ids[id],createElement:tag=>new Element(tag)},AbortController,
- window:{setTimeout:(_fn,delay)=>{timeouts.push(delay);return timeouts.length;},clearTimeout:()=>{}},fetch:async url=>{paths.push(url);loadingStatuses.push(ids["target-status"].textContent);loadingOptions.push(ids.target.children.map(x=>({value:x.value,text:x.textContent,disabled:x.disabled})));return {ok:true,json:async()=>url==="/api/target-library"?input.catalog:input.detail};}};
+ window:{addEventListener:(name,fn)=>events[name]=fn,setTimeout:(_fn,delay)=>{timeouts.push(delay);return timeouts.length;},clearTimeout:()=>{}},fetch:async url=>{paths.push(url);loadingStatuses.push(ids["target-status"].textContent);loadingOptions.push(ids.target.children.map(x=>({value:x.value,text:x.textContent,disabled:x.disabled})));return {ok:true,json:async()=>url==="/api/target-library"?input.catalog:input.detail};}};
 vm.runInNewContext(fs.readFileSync(input.script,"utf8").replaceAll("} catch (_error) {", "} catch (_error) { globalThis.testError = _error.stack;"),context);
+// The page coordinator activates the standalone Target selector.
+events["experiment-catalog-refresh"]();
 function content(item){return [item.textContent,...item.children.map(content)].join(" ");}
 function emit(){process.stdout.write(JSON.stringify({disabled:ids.target.disabled,value:ids.target.value,dataset:ids.target.dataset,pin:ids.target.dataset.materializationId||null,
  options:ids.target.children.map(x=>({value:x.value,text:x.textContent,disabled:x.disabled})),status:ids["target-status"].textContent,

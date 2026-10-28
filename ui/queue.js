@@ -12,6 +12,7 @@
   const labels = {rejected:"Submission rejected", submitting:"Saving submission", unconfirmed:"Receipt unconfirmed", queued: "Queued", resolving: "Checking inputs", preparing: "Preparing observations",
     p1: "In P1", p2: "In P2", blocked: "Blocked", failed: "Execution failed", succeeded: "Completed", cancelled: "Cancelled"};
   let timer = null, loading = false, active = true, last = null, stale = false, rendered = null, ledgerRendered = null;
+  let initialReadSettled = false;
   let focusedRequest = null;
   const publishedResults = new Map();
   const dismissalKey = "research-platform.queue-dismissals.v1";
@@ -252,6 +253,10 @@
     } finally {
       window.clearTimeout(deadline); loading = false; refresh.disabled = false;
       board.setAttribute("aria-busy", "false"); $("ledger-items")?.setAttribute("aria-busy", "false");
+      if (!initialReadSettled) {
+        initialReadSettled = true;
+        window.dispatchEvent(new CustomEvent("research-queue-settled", {detail: {verified: Boolean(last && !stale)}}));
+      }
       if (active) timer = window.setTimeout(load, 5000);
     }
   }

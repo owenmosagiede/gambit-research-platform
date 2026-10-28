@@ -342,6 +342,9 @@
   const detailRetry = document.getElementById("target-detail-retry");
   if (detailRetry) detailRetry.addEventListener("click", loadDetail);
   retry.addEventListener("click", load);
-  window.addEventListener("experiment-catalog-refresh", load);
-  load();
+  window.addEventListener("experiment-catalog-refresh", event => {
+    if (typeof event?.detail?.enqueue === "function") event.detail.enqueue("target", load);
+    else load();
+  });
+  // The contract coordinator starts this read only when its page is visible.
 })();
