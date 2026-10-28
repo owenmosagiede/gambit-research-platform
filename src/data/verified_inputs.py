@@ -22,6 +22,7 @@ from copy import deepcopy
 from datetime import date, timedelta
 import sys
 import json
+from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
 from types import MappingProxyType
@@ -300,14 +301,34 @@ def verified_prices(store, binding, policy, loader):
     if current(store.root) is None or _PHASE.get() is None:
         return verify()
     def encoded():
-        snapshot, prices = verify()
-        # These are canonical persisted JSON values already checked by the full
-        # source verifier. Retain their exact bytes instead of a second Python
-        # object graph. No fields or precision are dropped, and each caller gets
-        # private decoded containers. Ordinary memo witnesses still cover every
-        # dependency and the bytes count against the same shared cache limit.
-        with measure('inputs.price_encode'):
-            return canonical_bytes([snapshot, prices])
+        first = []
+        def prove():
+            snapshot, prices = verify()
+            with measure('inputs.price_encode'):
+                data = canonical_bytes([snapshot, prices])
+            first.append(data)
+            # Only the independent source replay can create this evidence. Its
+            # complete dependency witnesses are retained by compact_memo, under
+            # the same phase/executor/root and total byte bound as other inputs.
+            return sha256(data).hexdigest()
+        proof = compact_memo(store.root, 'price_proof',
+                             {'snapshot': binding, 'policy': policy}, prove)
+        if first:
+            return first[0]
+        # A valid proof can outlive the large price buffer. Reload exact pinned
+        # bytes with the ordinary member checksum/row validation, then bind the
+        # entire decoded record and rows to the independently reproduced result.
+        # The proof's witnesses propagate into the enclosing prices capture:
+        # publication checks them again AFTER this read, including negative
+        # definition probes, raw source files and all upstream lineage payloads.
+        from data.fx_records import read_rows
+        with measure('source_prices.reload'):
+            snapshot = store.resolve(binding)
+            prices = read_rows(store, snapshot['body']['members'])
+            data = canonical_bytes([snapshot, prices])
+            if sha256(data).hexdigest() != proof:
+                raise ChangedInput('Reloaded prices differ from independently verified source evidence')
+            return data
     data = memo(store.root, 'prices', {'snapshot': binding, 'policy': policy}, encoded)
     with measure('inputs.price_decode'):
         snapshot, prices = json.loads(data)

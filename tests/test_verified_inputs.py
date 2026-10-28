@@ -177,6 +177,118 @@ class ContextTests(unittest.TestCase):
                 self.assertEqual(context.counts['oversize'],1)
 
 
+class SourceEvidenceTests(unittest.TestCase):
+    """Real provider/closure/price replay, independent of synthetic price mocks."""
+    def setUp(self):
+        from test_fx_targets import fixture as real_fixture, PROJECT
+        from data.feature_store import FeatureStore
+        self.temp = TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        shutil.copytree(PROJECT/'specs/schemas',self.root/'specs/schemas')
+        self.binding,self.policy,self.prices = real_fixture(self.root)
+        self.store = FeatureStore(self.root)
+        self.plan = {'plan_id':'isolated-proof','periods':{
+            'P1':{'end_exclusive':'2021-01-01'},'P2':{'end_exclusive':'2022-01-01'}}}
+
+    def read(self):
+        from data.verified_inputs import verified_prices
+        from data.targets.fx import _price_snapshot
+        return verified_prices(self.store,self.binding,self.policy,_price_snapshot)
+
+    def evict_prices(self,cache):
+        # Real ordinary-LRU pressure: proofs are small but still budgeted.
+        for i in range(4): memo(self.root,'pressure',i,lambda:b'x'*(1024*1024))
+        self.assertFalse(any(k[1]=='prices' for k in cache.entries))
+
+    def test_source_proof_survives_buffer_eviction_with_exact_private_reload(self):
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            first=self.read(); self.evict_prices(cache)
+            second=self.read(); self.assertEqual(first,second)
+            second[1][0]['value']='caller mutation'
+            self.evict_prices(cache); self.assertEqual(self.read(),first)
+            self.assertEqual(cache.counts['price_proof.loads'],1)
+            self.assertEqual(cache.counts['price_proof.hits'],2)
+            self.assertEqual(cache.counts['prices.loads'],3)
+            self.assertLessEqual(cache.high_water_bytes,3*1024*1024)
+            self.assertLessEqual(cache.compact_bytes,cache.compact_limit)
+
+    def test_changed_upstream_raw_bytes_invalidate_proof_even_with_restored_mtime(self):
+        import os
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            # Select the EUR/USD raw dependency, not another unrelated fixture.
+            raw=next(p for p in (self.root/'fixture_sources/legacy/raw').rglob('*.json') if b'EUR/USD' in p.read_bytes())
+            stamp=raw.stat(); data=raw.read_bytes(); raw.write_bytes(data.replace(b'"1"',b'"9"',1))
+            if raw.read_bytes()==data: raw.write_bytes(data+b' ')
+            os.utime(raw,ns=(stamp.st_atime_ns,stamp.st_mtime_ns))
+            with self.assertRaises(ValueError): self.read()
+            self.assertEqual(cache.counts['price_proof.invalidations'],1)
+
+    def test_standalone_and_new_phase_repeat_full_independent_source_verification(self):
+        from data.targets import fx as target_fx
+        original=target_fx._price_snapshot
+        with patch.object(target_fx,'_price_snapshot',wraps=original) as full:
+            with execution_inputs(self.root,'code') as cache:
+                for phase in ('P1','P2'):
+                    with phase_inputs(self.root,self.plan,phase): self.read(); self.read()
+                with fresh_inputs(): self.read()
+            self.read()
+            self.assertEqual(full.call_count,4)
+
+    def test_compact_evidence_eviction_falls_back_to_full_verifier(self):
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            expected=self.read(); self.evict_prices(cache)
+            for index in range(3): compact_memo(self.root,'proof-pressure',index,lambda:b'z'*(1024*1024))
+            self.assertFalse(any(k[1]=='price_proof' for k in cache.compact_entries))
+            self.assertEqual(self.read(),expected)
+            self.assertEqual(cache.counts['price_proof.loads'],2)
+            self.assertLessEqual(cache.high_water_bytes,3*1024*1024)
+
+    def test_proof_reload_dependencies_propagate_to_enclosing_entry(self):
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            memo(self.root,'enclosing','key',lambda:self.read()[1][0]['value'])
+            self.assertEqual(cache.counts['price_proof.hits'],1)
+            raw=next(p for p in (self.root/'fixture_sources/legacy/raw').rglob('*.json') if b'EUR/USD' in p.read_bytes())
+            raw.write_bytes(raw.read_bytes()+b' ')
+            with self.assertRaises(ValueError): memo(self.root,'enclosing','key',lambda:self.read()[1][0]['value'])
+            self.assertEqual(cache.counts['enclosing.invalidations'],1)
+
+    def test_new_ambiguous_definition_invalidates_source_proof(self):
+        from data.transformations.identity import canonical_bytes
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            snapshot,_=self.read(); self.evict_prices(cache)
+            view=self.store.resolve(snapshot['body']['definition'])
+            alias=self.root/'definitions/datasets'/view['id']/(view['version']+'.json')
+            alias.parent.mkdir(parents=True); alias.write_bytes(canonical_bytes(view)+b'\n')
+            with self.assertRaisesRegex(ValueError,'Ambiguous definition identity'): self.read()
+            self.assertEqual(cache.counts['price_proof.invalidations'],1)
+
+    def test_change_during_reload_is_rejected_before_publication(self):
+        from data import fx_records
+        original=fx_records.read_rows
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            def changing(store,members):
+                rows=original(store,members)
+                raw=next(p for p in (self.root/'fixture_sources/legacy/raw').rglob('*.json') if b'EUR/USD' in p.read_bytes())
+                raw.write_bytes(raw.read_bytes()+b' ')
+                return rows
+            with patch.object(fx_records,'read_rows',side_effect=changing),self.assertRaisesRegex(ValueError,'changed before cache publication'):
+                self.read()
+            self.assertFalse(any(k[1]=='prices' for k in cache.entries))
+
+    def test_reload_must_equal_the_entire_proven_record_and_price_rows(self):
+        from data import fx_records
+        original=fx_records.read_rows
+        with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.read(); self.evict_prices(cache)
+            def wrong(store,members):
+                rows=original(store,members); rows[0]['value']='42'; return rows
+            with patch.object(fx_records,'read_rows',side_effect=wrong),self.assertRaisesRegex(ValueError,'Reloaded prices differ'):
+                self.read()
+
+
 class VerifiedPreparationTests(unittest.TestCase):
     def setUp(self):
         self.f=fixture.ResearchInputsTests(methodName='runTest');self.f.setUp();self.addCleanup(self.f.tearDown)

@@ -28,6 +28,23 @@ def report(code):
 
 
 class PreparationProofTests(unittest.TestCase):
+    def test_full_source_gate_requires_repeated_preparation_improvement_not_moved_work(self):
+        spec=importlib.util.spec_from_file_location('full_prep',bench.ROOT/'tools/benchmark_source_preparation.py')
+        full=importlib.util.module_from_spec(spec);spec.loader.exec_module(full)
+        row={'exact_scientific_equality':True,'source_verification_mocked':False,'baseline':{'wall_seconds':120},'candidate':{'wall_seconds':80},
+             'baseline_preparation':{'timings':{'feature.preparation':{'wall_seconds':100},'source_prices.verify':{'calls':36}}},
+             'candidate_preparation':{'timings':{'feature.preparation':{'wall_seconds':70},'source_prices.verify':{'calls':18}}}}
+        self.assertTrue(full.performance_gate([row,row])['passed'])
+        self.assertFalse(full.performance_gate([row])['passed'])
+        for field in ('preparation','replays','total','science','mocked'):
+            changed=deepcopy(row)
+            if field=='preparation':changed['candidate_preparation']['timings']['feature.preparation']['wall_seconds']=101
+            if field=='replays':changed['candidate_preparation']['timings']['source_prices.verify']['calls']=36
+            if field=='total':changed['candidate']['wall_seconds']=130
+            if field=='science':changed['exact_scientific_equality']=False
+            if field=='mocked':changed['source_verification_mocked']=True
+            with self.subTest(field=field):self.assertFalse(full.performance_gate([row,changed])['passed'])
+
     def test_child_rejects_external_existing_store_paths(self):
         with self.assertRaisesRegex(ValueError,'isolated temporary'):
             bench.isolated_child(Path('/srv/gambit/research_platform'),Path('/srv/gambit/research_platform'))

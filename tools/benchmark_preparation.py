@@ -8,6 +8,7 @@ five Target alignments and P1 decisions are real. This is not a production ETA.
 """
 import argparse
 from copy import deepcopy
+from contextlib import nullcontext
 import gzip
 import importlib.util
 import json
@@ -78,10 +79,14 @@ def run(source, root, output):
         return value
     report = {'schema':'fresh_feature_evidence_v1', 'fixture':proof.digest(fixture), 'phases':{},
               'lineage_storage_mode':os.environ['GAMBIT_FX_LINEAGE_STORAGE'],
+              'source_verification_mocked':fixture.get('schema') != 'full_source_preparation_fixture_v1',
               'source_implementation':implementation(), 'environment':benchmark.locked_environment(source)}
-    with benchmark.fixture_boundary(root, fixture), patch.object(inputs, 'prepare_fx_feature', publish):
+    boundary = (nullcontext() if fixture.get('schema') == 'full_source_preparation_fixture_v1'
+                else benchmark.fixture_boundary(root, fixture))
+    with boundary, patch.object(inputs, 'prepare_fx_feature', publish):
         with performance.profiling() as measurement, execution_inputs(root, implementation()) as cache:
             prepared = inputs.prepare_phase(root, plan, 'P1')
+            report['preparation_performance'] = measurement.report()
             loaded = [inputs.load_phase(root, plan, prepared, 'P1', h) for h in plan['horizons']]
             period = plan['periods']['P1']
             kernel = dict(fixture['profile']['kernel'], structural_common_start=plan['structural_common_start'],
@@ -96,7 +101,8 @@ def run(source, root, output):
                       source_admission_boundary=fixture['source_admission'])
         print('Measured fresh preparation:', source.name, json.dumps({
             'seconds':report['performance']['wall_seconds'], 'dimensions':report['dimensions'],
-            'price_verifications':cache.counts['prices.loads'],
+            'full_price_verifications':report['performance']['timings'].get('source_prices.verify',{}).get('calls'),
+            'price_buffer_loads':cache.counts['prices.loads'],
             'feature_lookup_invalidations':cache.counts['feature_lookup.invalidations']}), flush=True)
         # Independent inspection is outside timing and cannot inherit a cache.
         store = FeatureStore(root)
@@ -156,11 +162,15 @@ def compare(before, after):
     # Translate only the references already proven above, never metric fields.
     proof.require(translate(after['decisions']) == before['decisions'], 'P1 scientific decisions changed')
     proof.require(before['dimensions'] == after['dimensions'], 'fixture dimensions changed')
+    proof.require(before.get('source_verification_mocked') == after.get('source_verification_mocked'), 'source verification boundary changed')
     proof.require(after['cache_high_water_bytes'] <= 128*1024*1024, 'retained cache exceeded budget')
     return {'exact_scientific_equality':True, 'publications_verified':len(checked['phases']),
             'five_horizons_equal':True, 'P1_decisions_equal':True, 'dimensions':before['dimensions'],
             'source_admission_boundary':before['source_admission_boundary'],
+            'source_verification_mocked':before.get('source_verification_mocked'),
             'baseline':before['performance'], 'candidate':after['performance'],
+            'baseline_preparation':before.get('preparation_performance'),
+            'candidate_preparation':after.get('preparation_performance'),
             'candidate_cache_high_water_bytes':after['cache_high_water_bytes'], 'production_data_used':False}
 
 

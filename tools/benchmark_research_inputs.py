@@ -205,7 +205,7 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
             f.profile['periods'] = {'P1': {'start_inclusive': f.days[0], 'end_exclusive': split},
                 'P2': {'start_inclusive': split, 'end_exclusive': '2022-06-01'}}
         from decimal import Decimal
-        from data.fx_records import make_record
+        from data.fx_records import make_record, write_rows
         from data.transformations.contracts import decimal_text
         from data.transformations.fx_currency import CURRENCIES
         from data.targets.fx import materialize
@@ -240,6 +240,12 @@ def build(source, destination, *, member_count=5, cases=CASES, scheduled_dates=N
                 if production_shape and symbol == 'CNHUSD' and day < '2020-04-14':
                     row.update(value=None, status='missing', reason_code='missing_source_value')
                 row['id'] = 'FXPRICE_' + digest(row); prices.append(row)
+            # Even the mocked-admission control persists its exact synthetic
+            # price payload, so buffer-eviction reloads exercise real I/O.
+            snapshot = make_record('snapshot_manifest', dict(snapshot['body'],
+                members=write_rows(f.store,prices,'isolated_synthetic_prices'),
+                record_count=len(prices),semantic_content_sha256=digest(prices)))
+            binding = f.store.install_record(snapshot)
             f.states[binding['id']] = (snapshot, prices)
             existing[symbol] = {'instrument_id': symbol, 'price_snapshot': binding}
             saved_targets = []

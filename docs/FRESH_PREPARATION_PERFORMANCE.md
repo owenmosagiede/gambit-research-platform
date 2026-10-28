@@ -7,6 +7,16 @@ and propagates it into enclosing verifiers. Fully verified snapshot/price values
 are retained as lossless canonical JSON bytes, reducing the retained object graph
 and repeated deep copies. Every caller receives private decoded containers;
 decimal strings, large integers, nulls and all provenance fields remain exact.
+The small proof of full source replay is retained separately from the large price
+buffer. It binds the complete canonical snapshot and prices with SHA256 and the
+full verifier's file witnesses. A buffer eviction therefore permits a checksum
+checked reload of the pinned price payload, followed by exact comparison to that
+proof, without reconstructing unchanged provider sources and normalized legs.
+Witnesses are checked before the reload, propagated to enclosing entries, and
+checked again before publication. Changed dependencies trigger full verification;
+changed reloaded values fail. The proof can itself be evicted and never survives
+a phase, executor, root, request, restart or standalone inspection boundary.
+
 A source too large to retain is verified normally. Temporary payloads and series
 may bypass retention rather than displacing that member's price entry. The total
 retained-cache limit stays 128 MiB; compact lookups retain their 64 MiB sublimit.
@@ -29,21 +39,37 @@ Use the exact locked dependencies and Node.js in a source-only checkout:
 
 ```
 python -B tools/run_release_checks.py
-python -B tools/benchmark_preparation.py --production-shape --repeats 2 --output /tmp/fresh-preparation-proof
+python -B tools/benchmark_source_preparation.py --long-history --repeats 2 --output /tmp/full-preparation-proof
 ```
 
-The benchmark builds an isolated seed from the deployed commit
-`992ced766dd76b7a311a8bddf4dfaa05d9077679`, with 18 currencies, 12,185 synthetic
-source weekdays, 449 P1 weekdays and two bounded publication windows per member.
+The full-source benchmark builds an isolated seed from the deployed commit
+`992ced766dd76b7a311a8bddf4dfaa05d9077679`, with 18 currencies against CHF, long
+synthetic source histories, 449 P1 weekdays and two bounded publication windows per member.
 It compares separate baseline/candidate processes in alternating order. Features
 are fresh; Target outputs and frozen scientific inputs are shared exactly. The
 smaller default fixture is a regression control, not a production forecast.
 
+The provider adapter, source-closure verification, normalized legs, cross/inverse
+price construction, Feature publication and independent replay are real. Only
+registry discovery for the isolated Scope/recipe is supplied by the fixture;
+no price verifier is mocked. The 18 synthetic provider files remain fixed for all
+runs. No production files or credentials are read.
+
 Timing covers fresh P1 preparation, all five horizon reads and P1 evaluation.
 Independent post-run verification is outside timing. Provider/source admission
-is an explicitly synthetic boundary, so its timings do not estimate the cost
-of production's full source traversal. Report full-verifier call counts as well
-as measured times. Nested measurements must not be added together.
+and Target publication happen once while building the shared seed, just as they
+already exist before a queued experiment. Full source traversal during preparation
+is included in measured time. Report full-verifier call counts during preparation
+separately from loading. Nested measurements must not be added together.
+
+The performance gate requires two reversed-order runs with at least 10% lower
+preparation time in each, fewer full source replays, lower combined time and exact
+scientific equality. A faster loading stage cannot satisfy a slower preparation
+stage. These local measurements establish this mechanism, not a production ETA.
+
+The earlier `benchmark_preparation.py` mode retains its explicitly mocked source
+boundary as a smaller regression control. Its timings alone cannot establish
+that the production preparation bottleneck has improved.
 
 The comparison proves producer code leaves and every transitive materialization
 and lineage reference before translating only those references. It compares all
