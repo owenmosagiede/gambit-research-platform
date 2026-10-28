@@ -244,6 +244,13 @@ class SourceEvidenceTests(unittest.TestCase):
             self.assertEqual(cache.counts['price_proof.loads'],2)
             self.assertLessEqual(cache.high_water_bytes,3*1024*1024)
 
+    def test_oversize_proof_uses_full_verifier_without_exceeding_budget(self):
+        with execution_inputs(self.root,'code',max_bytes=1) as cache,phase_inputs(self.root,self.plan,'P1'):
+            self.assertEqual(self.read(),self.read())
+            self.assertEqual(cache.counts['price_proof.loads'],2)
+            self.assertEqual(cache.bytes,0)
+            self.assertFalse(cache.entries or cache.compact_entries)
+
     def test_proof_reload_dependencies_propagate_to_enclosing_entry(self):
         with execution_inputs(self.root,'code',max_bytes=3*1024*1024) as cache,phase_inputs(self.root,self.plan,'P1'):
             self.read(); self.evict_prices(cache)

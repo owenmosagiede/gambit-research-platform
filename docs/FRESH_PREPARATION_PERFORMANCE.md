@@ -17,7 +17,8 @@ checked again before publication. Changed dependencies trigger full verification
 changed reloaded values fail. The proof can itself be evicted and never survives
 a phase, executor, root, request, restart or standalone inspection boundary.
 
-A source too large to retain is verified normally. Temporary payloads and series
+A price buffer too large to retain can still use the bounded proof for reloads;
+if the proof itself cannot be retained, the full verifier runs again. Temporary payloads and series
 may bypass retention rather than displacing that member's price entry. The total
 retained-cache limit stays 128 MiB; compact lookups retain their 64 MiB sublimit.
 The bound concerns cached objects, not total process memory.
