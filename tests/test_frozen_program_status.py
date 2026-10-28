@@ -232,6 +232,36 @@ class MetadataStatusTests(unittest.TestCase):
         self.assertIsNone(baseline['new_passes_since_previous'])
         self.assertEqual(len(baseline['verified_pass_identity_history']), 2)
 
+    def test_successor_checkpoint_keeps_known_passes_across_verified_approval_chain(self):
+        setup, entry = fixture(self.root)
+        outcomes = self.verify(setup, entry)
+        previous_approval = compat.resolve(self.root, setup['approval_reference'])
+        successor = synthetic_approval(successor_proposal(setup['store'], previous_approval,
+            entry['original'], synthetic_implementation('successor')))
+        old = {'schema':'momentum_program_heartbeat_approved_execution_v1',
+            'manifest_sha256':sha256(setup['manifest_bytes']).hexdigest(),
+            'execution_compatibility':ref(previous_approval), 'observed_at':'before',
+            'issues':[], 'verified_passes':outcomes[:1], 'checkpoint_advanced':True}
+        current = {'schema':old['schema'], 'manifest_sha256':old['manifest_sha256'],
+            'execution_compatibility':ref(successor), 'observed_at':'after',
+            'verified_predecessor_approvals':[ref(previous_approval)],
+            'issues':[], 'planned':1, 'verified_receipts':1, 'intake_complete':True,
+            'verified_passes':outcomes, 'rows':[{'receipt_verified':True,
+                'status':'succeeded', 'outcomes':outcomes}]}
+        before = deepcopy(old)
+        merged = merge_checkpoint(current, old)
+        self.assertEqual(old, before)
+        self.assertEqual(merged['new_passes_since_previous'], outcomes[1:])
+        self.assertEqual(len(merged['verified_pass_identity_history']), 5)
+        failed = merge_checkpoint(dict(current, issues=[{'incomplete':'snapshot'}]), old)
+        self.assertFalse(failed['checkpoint_advanced'])
+        self.assertEqual(failed['verified_pass_identity_history'], [outcomes[0]['relationship']['id']])
+        self.assertEqual(failed['last_successful_observed_at'], 'before')
+        for refs in ([], [ref(successor)], [ref(previous_approval)]*2,
+                     [dict(ref(previous_approval), content_sha256='0'*64)]):
+            with self.subTest(refs=refs), self.assertRaises(ResearchConflict):
+                merge_checkpoint(dict(current, verified_predecessor_approvals=refs), old)
+
     def test_checkpoint_refuses_other_program_approval_or_pass_projection(self):
         setup, entry = fixture(self.root)
         passes = self.verify(setup, entry)

@@ -303,8 +303,13 @@ def read_status(root, manifest_path, operator_path, approval_reference):
         outcomes = [o for row in rows for o in row.get('outcomes', [])]
         passes = [o for o in outcomes if o['stage_gates_passed']]
         planned = len(manifest['entries']); receipts = sum(row.get('receipt_verified', False) for row in rows)
+        predecessors = []; ancestor = approval['proposal'].get('predecessor_approval')
+        while ancestor is not None:
+            predecessors.append(ref(ancestor))
+            ancestor = ancestor['proposal'].get('predecessor_approval')
         return {'schema': 'momentum_program_heartbeat_approved_execution_v1', 'observed_at': observed,
             'manifest_sha256': sha, 'execution_compatibility': approval_reference, 'planned': planned,
+            'verified_predecessor_approvals': predecessors,
             'verification': 'immutable metadata only; no artifact manifest/payload reads or numerical recomputation',
             'monitor_activation': 'staged candidate; active health/process/checkpoint wrapper must be retained',
             'verified_receipts': receipts, 'intake_complete': receipts == planned and not issues,
@@ -338,8 +343,20 @@ def merge_checkpoint(current, previous=None):
                 previous.get('manifest_sha256') == result['manifest_sha256'],
                 'previous checkpoint belongs to another program')
         if previous.get('execution_compatibility'):
-            require(previous['execution_compatibility'] == result.get('execution_compatibility'),
-                    'previous checkpoint uses another execution approval')
+            if previous['execution_compatibility'] != result.get('execution_compatibility'):
+                # read_status emits this only after resolving the immutable
+                # installed chain. The pinned wrapper checks the reader and
+                # current approval before using this pure merge function.
+                inherited = result.get('verified_predecessor_approvals', [])
+                require(type(inherited) is list and 0 < len(inherited) < 16 and
+                        all(type(r) is dict and set(r) == {'id', 'version', 'content_sha256'} and
+                            isinstance(r['id'], str) and re.fullmatch('EXECAPPROVAL_[0-9a-f]{64}', r['id']) and
+                            r['version'] == '1.0.0' and isinstance(r['content_sha256'], str) and
+                            re.fullmatch('[0-9a-f]{64}', r['content_sha256']) for r in inherited) and
+                        len({r['id'] for r in inherited}) == len(inherited) and
+                        result.get('execution_compatibility') not in inherited and
+                        previous['execution_compatibility'] in inherited,
+                        'previous checkpoint uses another execution approval')
         known.update(previous.get('verified_pass_identity_history', []))
         if previous.get('checkpoint_advanced', not previous.get('issues', [])):
             known.update(p['relationship']['id'] for p in previous.get('verified_passes', []))
