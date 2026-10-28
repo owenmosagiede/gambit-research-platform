@@ -60,6 +60,8 @@ function snapshot() {
 const flush = () => new Promise(resolve => setImmediate(resolve));
 (async () => {
   vm.runInNewContext(fs.readFileSync(input.script, "utf8"), context);
+  // The page coordinator activates catalog reads after queue startup.
+  context.window.dispatchEvent(new context.CustomEvent("experiment-catalog-refresh"));
   await flush();
   const select = ids.target;
   if (input.selection !== null) { select.value = input.selection; select.listeners.change(); }

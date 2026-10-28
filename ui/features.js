@@ -304,9 +304,12 @@
   const scopeChanged = () => { if (scopeBinding() !== lastScopeBinding) resolveSelection(); };
   scope.addEventListener("change", scopeChanged);
   window.addEventListener("scope-state-change", scopeChanged);
-  window.addEventListener("experiment-catalog-refresh", load);
+  window.addEventListener("experiment-catalog-refresh", event => {
+    if (typeof event?.detail?.enqueue === "function") event.detail.enqueue("feature", load);
+    else load();
+  });
   $("feature-retry").addEventListener("click", load);
   $("feature-coverage-retry").addEventListener("click", resolveSelection);
   $("feature-details-link").addEventListener("click", () => { const item = selected(); if (item) openSignal(item.signal_id); });
-  load();
+  // The contract coordinator starts this read only when its page is visible.
 })();

@@ -98,7 +98,9 @@ function snap(){views.push(JSON.parse(JSON.stringify({calls,dispatched:sent,save
  specification:ids['research-specification'].textContent,method:ids['research-method-summary'].textContent,
  readiness:ids['research-readiness-status'].textContent,blockers:tree(ids['research-readiness-blockers']),incidents:tree(ids['research-operational-incidents']),
  refreshDisabled:ids['contract-refresh'].disabled,readinessRetryDisabled:ids['research-readiness-retry'].disabled})));}
-(async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),context);await flush();snap();
+(async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),context);
+// The actual queue module supplies this initial read-completion event.
+fire(events,'research-queue-settled',{detail:{verified:true}});await flush();snap();
 for(const step of input.steps){
  now+=step.ms||0;
  if(step.action==='change'){select(step.id,step.value);ids[step.id].fire('change');}
@@ -264,29 +266,30 @@ class ResearchContractUITests(unittest.TestCase):
         self.assert_read_only(states[-1])
 
     def test_manual_refresh_broadcasts_once_without_any_research_submission(self):
+        # One startup activation plus one explicit refresh.
         state = ui([{'action': 'click', 'id': 'contract-refresh'}])[-1]
-        self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in state['dispatched']), 1)
+        self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in state['dispatched']), 2)
         self.assert_read_only(state)
 
     def test_returning_to_page_refreshes_only_when_old_visible_and_idle(self):
         for name in ('focus', 'pageshow', 'hashchange'):
             with self.subTest(event=name):
                 states = ui([{'action':'event','name':name}, {'action':'event','name':name,'ms':30001}])
-                self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in states[1]['dispatched']), 0)
-                self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in states[2]['dispatched']), 1)
+                self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in states[1]['dispatched']), 1)
+                self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in states[2]['dispatched']), 2)
         for hidden in ('hidden_document', 'other_page', 'busy_catalog'):
             with self.subTest(hidden=hidden):
                 setup = {'hidden_document':[{'action':'visibility','hidden':True}],
                          'other_page':[{'action':'event','name':'hashchange','hash':'#signals'}],
                          'busy_catalog':[{'action':'busy','id':'feature','value':True}]}[hidden]
                 state = ui(setup + [{'action':'event','name':'focus','ms':30001}])[-1]
-                self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in state['dispatched']), 0)
+                self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in state['dispatched']), 1)
                 self.assert_read_only(state)
 
     def test_visibility_refresh_and_readiness_poll_only_read_status(self):
         state = ui([{'action':'visibility','hidden':True}, {'action':'visibility','hidden':False,'ms':30001},
                     {'action':'health'}])[-1]
-        self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in state['dispatched']), 1)
+        self.assertEqual(sum(event['type'] == 'experiment-catalog-refresh' for event in state['dispatched']), 2)
         self.assert_read_only(state)
 
     def test_unavailable_or_blocked_readiness_does_not_enable_a_mutation_path(self):

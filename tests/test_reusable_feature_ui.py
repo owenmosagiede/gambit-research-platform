@@ -138,6 +138,8 @@ function snapshot() {
 }
 (async () => {
   vm.runInNewContext(fs.readFileSync(input.script, "utf8"), context);
+  // The page coordinator activates catalog reads after queue startup.
+  context.window.dispatchEvent(new context.CustomEvent("experiment-catalog-refresh"));
   await flush(); snapshot();
   for (const step of input.steps) {
     if (step.action === "select") {
