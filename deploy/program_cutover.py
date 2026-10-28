@@ -24,6 +24,7 @@ from release_bundle import verify, sha, canonical
 from research.contracts import digest, ref, HORIZONS, scientific
 from research.store import read_json, inside
 from runtime.execution_compatibility import validate_approval, install_approval, make_proposal
+from runtime import execution_compatibility as compatibility
 
 
 def implementation_at(root):
@@ -93,7 +94,7 @@ def authority_inventory(root):
     return result
 
 
-def capture(root, manifest_bytes):
+def capture(root, manifest_bytes, *, predecessor_approval=None):
     """Read immutable envelopes/events; never repair projections or publish."""
     from runtime.research_jobs import ResearchJobs, ACTIVE
     from runtime.experiment_identity import IdentityIndex, scientific_key
@@ -108,13 +109,23 @@ def capture(root, manifest_bytes):
     index = IdentityIndex(jobs)
     events = jobs._event_snapshot()
     catalog, targets = frozen_metadata(root, manifest)
+    verifier = None
+    if predecessor_approval is not None:
+        if compatibility.resolve(root, ref(predecessor_approval)) != predecessor_approval:
+            raise RuntimeError('Exact installed predecessor approval required')
+        from frozen_program_status import MetadataVerifier
+        verifier = MetadataVerifier(jobs.store, manifest_bytes=manifest_bytes,
+            operator_sha256=predecessor_approval['proposal']['operator_sha256'],
+            approval_reference=ref(predecessor_approval),
+            actual_implementation=predecessor_approval['proposal']['to_implementation'],
+            feature_catalog=catalog, target_metadata=targets)
     # Include committed trials even if a crash preceded link/event publication.
     by_relationship = {}
     trial_folder = root/'storage/catalog/trial_ledger/records'
     for path in sorted(trial_folder.glob('TRIAL_*.json')):
         trial = jobs.store.get('trial', path.stem)
         by_relationship.setdefault(trial['scientific_key']['relationship']['id'], []).append(trial)
-    cohort, states = [], {}
+    cohort, states, historical_implementations = [], {}, {}
     for entry in entries:
         journal = index.journal(entry['request_id'])
         if journal is None:
@@ -126,6 +137,18 @@ def capture(root, manifest_bytes):
         job = jobs._read_job(cid, events)
         if job is None or job['status'] in ACTIVE - {'queued'}:
             raise RuntimeError('Drain active execution before capturing the cutover')
+        eligible = None
+        if verifier is not None:
+            history = jobs._events(cid, events)
+            receipt = read_json(inside(root, 'storage/catalog/operations/program_intake_receipts/' +
+                                      sha(manifest_bytes) + '/' + entry['request_id'] + '.json'))
+            verifier.verify_entry(entry['request_id'], original=original, journal=journal,
+                                  receipt=receipt, job=job, events=history)
+            prior_row = compatibility.row_for(predecessor_approval, entry['request_id'])
+            eligible = {r['id']: r for r in prior_row['committed_trials']}
+            if verifier._execution_provenance(original, history):
+                eligible.update({r['id']: r for r in
+                    compatibility._claimed_trials(jobs.store, predecessor_approval, original)})
         if (original['intent'] != entry['intent'] or journal['intent'] != entry['intent']
                 or journal['scientific_identity'] != scientific_key(original)):
             raise RuntimeError('Frozen cohort identity differs')
@@ -165,12 +188,22 @@ def capture(root, manifest_bytes):
                             or relationship['body'] != scientific(relation) or key['relationship'] != ref(relationship)):
                         raise RuntimeError('Committed trial relationship or horizon differs')
                     refs[trial['id']] = ref(trial)
+        if eligible is not None:
+            if any(eligible.get(k) != v for k, v in refs.items()):
+                raise RuntimeError('Historical trial lacks exact predecessor approval or execution provenance')
+            for binding in refs.values():
+                trial = jobs.store.resolve('trial', binding)
+                implementation = jobs.store.resolve('implementation', trial['scientific_key']['implementation'])
+                previous = historical_implementations.setdefault(trial['id'], ref(implementation))
+                if previous != ref(implementation):
+                    raise RuntimeError('Historical executor reference changed during capture')
         if job['status'] != 'succeeded':
             seen = set()
             for binding in refs.values():
                 trial = jobs.store.resolve('trial', binding); key = trial['scientific_key']
                 pair = key['stage'], key['horizon']
-                if pair in seen or jobs.store.resolve('implementation', key['implementation'])['body'] != original['implementation']:
+                if pair in seen or (predecessor_approval is None and
+                        jobs.store.resolve('implementation', key['implementation'])['body'] != original['implementation']):
                     raise RuntimeError('Ambiguous or unexpected executor in partial trial closure')
                 seen.add(pair)
                 prepared = key['prepared']
@@ -226,6 +259,9 @@ def capture(root, manifest_bytes):
         raise RuntimeError('Unapproved legacy batch remains pending')
     result = {'authority_scope': AUTHORITY_SCOPE, 'manifest_sha256': sha(manifest_bytes), 'cohort': cohort,
               'states': states, 'authority': authority_inventory(root)}
+    if predecessor_approval is not None:
+        result.update(predecessor_approval=ref(predecessor_approval),
+                      historical_trial_implementations=historical_implementations)
     result['snapshot_sha256'] = digest(result)
     return result
 
@@ -285,7 +321,8 @@ def frozen_metadata(root, manifest):
 
 class Machine(release.Machine):
     def snapshot(self, manifest_bytes):
-        return capture(self.root, manifest_bytes)
+        return capture(self.root, manifest_bytes,
+                       predecessor_approval=getattr(self, 'predecessor_approval', None))
 
     def publish_approval(self, approval):
         # The release runs as root; the existing worker runs as gambit. Keep
@@ -294,13 +331,15 @@ class Machine(release.Machine):
         import pwd
         account = pwd.getpwnam('gambit')
         from runtime.execution_compatibility import BASE
-        for suffix in ('', '/approvals', '/attempts', '/trial_intents'):
+        for suffix in ('', '/approvals', '/successor_approvals', '/attempts', '/trial_intents'):
             directory = release.safe_target(self.root, BASE + suffix)
             directory.mkdir(exist_ok=True, parents=True)
             os.chown(directory, account.pw_uid, account.pw_gid)
             os.chmod(directory, 0o750)
         install_approval(self.root, approval)
-        path = release.safe_target(self.root, BASE + '/approvals/' + approval['id'] + '.json')
+        path = release.safe_target(self.root, BASE + '/' +
+                                   compatibility.approval_path(self.root, approval).parent.name + '/' +
+                                   approval['id'] + '.json')
         os.chown(path, account.pw_uid, account.pw_gid)
         os.chmod(path, 0o640)
 
@@ -384,7 +423,7 @@ def check_original_release(machine, approval, *, source_manifest, source_files,
 
 def _proposal_bundle(machine, manifest_bytes, release_manifest, files, *, operator_sha256,
             source_manifest, source_files, source_archive_sha256, target_archive_sha256,
-            checks_bytes, equivalence_bytes, retirement=None):
+            checks_bytes, equivalence_bytes, retirement=None, predecessor_approval=None):
     """Construct a reviewable, inert proposal only at the quiescent boundary.
 
     This does not install an approval, change a queue, or alter the manifest.
@@ -396,7 +435,18 @@ def _proposal_bundle(machine, manifest_bytes, release_manifest, files, *, operat
     future = code_plan(machine.root, release_manifest, files, target_archive_sha256, retirement)
     if prior['changes'] or prior['blockers'] or future['blockers']:
         raise RuntimeError('Source archive or proposed code plan differs from the reviewed migration')
-    old = implementation_at(machine.root)
+    installed = implementation_at(machine.root)
+    old = installed
+    if predecessor_approval is not None:
+        if compatibility.resolve(machine.root, ref(predecessor_approval)) != predecessor_approval:
+            raise RuntimeError('Exact installed predecessor approval required')
+        prior_proposal = predecessor_approval['proposal']
+        if (prior_proposal['manifest_sha256'] != sha(manifest_bytes) or
+                prior_proposal['operator_sha256'] != operator_sha256 or
+                installed != prior_proposal['to_implementation']):
+            raise RuntimeError('Predecessor does not authorize the installed program executor')
+        old = prior_proposal['from_implementation']
+    machine.predecessor_approval = predecessor_approval
     pins = json.loads(manifest_bytes)['global_pins']
     if (pins['implementation_digest'] != digest(old)
             or pins['implementation_fingerprint'] != old['fingerprint']):
@@ -404,12 +454,14 @@ def _proposal_bundle(machine, manifest_bytes, release_manifest, files, *, operat
     new_files = {name[4:]: sha(raw) for name, raw in files.items() if name.startswith('src/')
                  and name[4:].split('/')[0] in {'research', 'runtime', 'data', 'contracts'}
                  and name.endswith('.py')}
-    new = dict(old, files=new_files, fingerprint=digest(new_files))
+    new = dict(installed, files=new_files, fingerprint=digest(new_files))
     snapshot = machine.snapshot(manifest_bytes)
     proposal = make_proposal(manifest_sha256=sha(manifest_bytes), operator_sha256=operator_sha256,
         from_implementation=old, to_implementation=new, cohort=snapshot['cohort'],
         evidence={'tests_sha256': sha(checks_bytes), 'equivalence_sha256': sha(equivalence_bytes)},
-        source_archive_sha256=source_archive_sha256, target_archive_sha256=target_archive_sha256)
+        source_archive_sha256=source_archive_sha256, target_archive_sha256=target_archive_sha256,
+        predecessor_approval=predecessor_approval,
+        historical_trial_implementations=snapshot.get('historical_trial_implementations'))
     check_evidence({'proposal': proposal}, release_manifest, checks_bytes, equivalence_bytes, retirement)
     return {'proposal': proposal, 'snapshot': snapshot, 'code_plan': future}
 
@@ -467,6 +519,8 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
               *, retirement=None, equivalence_bytes=None):
     validate_approval(approval)
     proposal = approval['proposal']
+    compatibility.verify_predecessor(machine.root, approval)
+    machine.predecessor_approval = proposal.get('predecessor_approval')
     check_retirement_evidence(retirement, equivalence_bytes, proposal)
     if retirement is not None:
         # Repeat the complete source comparison under apply's maintenance locks.
@@ -492,10 +546,15 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
     snapshot = machine.snapshot(manifest_bytes)
     if snapshot['cohort'] != proposal['cohort']:
         raise RuntimeError('Approved cohort or committed trial references changed; refresh proposal')
-    if implementation_at(machine.root) != proposal['from_implementation']:
+    if proposal.get('predecessor_approval') is not None and (
+            snapshot.get('predecessor_approval') != ref(proposal['predecessor_approval']) or
+            snapshot.get('historical_trial_implementations') != proposal['historical_trial_implementations']):
+        raise RuntimeError('Approved historical executor references changed; refresh proposal')
+    source = compatibility.source_implementation(proposal)
+    if implementation_at(machine.root) != source:
         raise RuntimeError('Installed implementation differs from approval')
     expected = proposal['to_implementation']['files']
-    prospective = dict(proposal['from_implementation']['files'])
+    prospective = dict(source['files'])
     for name, data in files.items():
         if name.startswith('src/') and name[4:].split('/')[0] in {'research', 'runtime', 'data', 'contracts'} and name.endswith('.py'):
             prospective[name[4:]] = sha(data)
@@ -509,6 +568,8 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
         'source_archive_sha256': proposal['source_archive_sha256'], 'operator_sha256': proposal['operator_sha256'],
         'code': code, 'snapshot': snapshot,
         'restart_automatic': False, 'requires_complete_intake_and_safe_drain': True}
+    if proposal.get('predecessor_approval') is not None:
+        result['predecessor_approval'] = ref(proposal['predecessor_approval'])
     if retirement is not None:
         result.update(schema='frozen_program_cutover_plan_v2',
                       retirement_context=retirement.binding,
@@ -600,6 +661,8 @@ def recover(machine, manifest_bytes, release_id):
         raise ValueError('Invalid program release ID')
     folder = machine.state/release_id
     record = read_json(folder/'receipt.json')
+    if record.get('predecessor_approval') is not None:
+        machine.predecessor_approval = compatibility.resolve(machine.root, record['predecessor_approval'])
     if sha(manifest_bytes) != record['manifest_sha256']:
         raise RuntimeError('Recovery manifest differs')
     with ExitStack() as guards:
@@ -642,6 +705,8 @@ def main():
     parser.add_argument('--state', type=Path, default=release.STATE)
     parser.add_argument('--backup', type=Path, default=release.BACKUP)
     parser.add_argument('--approval', type=Path)
+    parser.add_argument('--predecessor-approval', type=Path,
+                        help='Exact installed approval reference for a successor proposal/review')
     parser.add_argument('--archive', type=Path); parser.add_argument('--sha256')
     parser.add_argument('--checks', type=Path); parser.add_argument('--equivalence', type=Path)
     parser.add_argument('--source-archive', type=Path); parser.add_argument('--source-sha256')
@@ -662,6 +727,11 @@ def main():
         retirement = retired_definitions.load_context(retirement_paths,
             args.source_archive, args.source_sha256, args.archive, args.sha256)
     raw = args.manifest.read_bytes()
+    predecessor = None
+    if args.predecessor_approval:
+        if args.action not in ('propose', 'review'):
+            parser.error('Predecessor reference is explicit only for proposal/review; plan/apply use approved pins')
+        predecessor = compatibility.resolve(args.root, read_json(args.predecessor_approval))
     if args.action == 'snapshot':
         result = machine.snapshot(raw)
     elif args.action == 'recover':
@@ -677,7 +747,8 @@ def main():
         result = (review if args.action == 'review' else propose)(machine, raw, manifest, files, operator_sha256=args.operator_sha256,
             source_manifest=source, source_files=source_files, source_archive_sha256=args.source_sha256,
             target_archive_sha256=args.sha256, checks_bytes=args.checks.read_bytes(),
-            equivalence_bytes=args.equivalence.read_bytes(), retirement=retirement)
+            equivalence_bytes=args.equivalence.read_bytes(), retirement=retirement,
+            predecessor_approval=predecessor)
     else:
         if not all((args.approval, args.archive, args.sha256, args.checks, args.equivalence,
                     args.source_archive, args.source_sha256, args.operator)):

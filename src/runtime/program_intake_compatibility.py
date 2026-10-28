@@ -11,7 +11,7 @@ from types import ModuleType
 
 from research.contracts import digest, ref, ResearchConflict
 from runtime.execution_compatibility import (for_program, row_for,
-    validate_cohort_packet, validate_cohort_envelope)
+    validate_cohort_packet, validate_cohort_envelope, requested_implementations)
 
 
 def load_operator(path, expected_sha256):
@@ -188,7 +188,7 @@ def bridge_class(operator, approval, *, manifest_sha256, operator_sha256, frozen
                     journal['canonical_request_id'] == row.get('expected_existing_request_id', rid),
                     'Accepted journal differs from approved request')
             require(journal.get('requested_implementation') in
-                    (approval['proposal']['from_implementation'], approval['proposal']['to_implementation']),
+                    requested_implementations(approval),
                     'Accepted requested implementation is outside exact approval')
             canonical_id = journal['canonical_request_id']
             require(self.jobs._submission_path(canonical_id).is_file(),

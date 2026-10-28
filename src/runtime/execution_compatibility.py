@@ -12,6 +12,7 @@ from research.store import inside, read_json, install_bytes
 
 BASE = 'storage/catalog/operations/execution_compatibility'
 PROPOSAL_SCHEMA = 'frozen_program_execution_proposal_v1'
+SUCCESSOR_SCHEMA = 'frozen_program_execution_proposal_v2'
 APPROVAL_SCHEMA = 'frozen_program_execution_approval_v1'
 SCOPES = ['intake', 'pending_execution']
 
@@ -46,23 +47,35 @@ def _implementation(value):
 
 def make_proposal(*, manifest_sha256, operator_sha256, from_implementation,
                   to_implementation, cohort, evidence, source_archive_sha256,
-                  target_archive_sha256):
+                  target_archive_sha256, predecessor_approval=None,
+                  historical_trial_implementations=None):
     """Create an inert proposal. No approval or store write is performed."""
-    value = _seal('EXECPROPOSAL', {'schema': PROPOSAL_SCHEMA, 'version': '1.0.0',
+    body = {'schema': PROPOSAL_SCHEMA, 'version': '1.0.0',
         'state': 'proposed', 'manifest_sha256': manifest_sha256,
         'operator_sha256': operator_sha256, 'from_implementation': deepcopy(from_implementation),
         'to_implementation': deepcopy(to_implementation), 'scopes': SCOPES,
         'cohort': deepcopy(cohort), 'evidence': deepcopy(evidence),
-        'source_archive_sha256': source_archive_sha256, 'target_archive_sha256': target_archive_sha256})
+        'source_archive_sha256': source_archive_sha256, 'target_archive_sha256': target_archive_sha256}
+    if predecessor_approval is not None:
+        body.update(schema=SUCCESSOR_SCHEMA, version='2.0.0',
+                    predecessor_approval=deepcopy(predecessor_approval),
+                    historical_trial_implementations=deepcopy(historical_trial_implementations))
+    else:
+        _require(historical_trial_implementations is None, 'historical executor pins require a predecessor')
+    value = _seal('EXECPROPOSAL', body)
     return validate_proposal(value)
 
 
-def validate_proposal(value):
+def validate_proposal(value, *, _depth=0):
+    _require(_depth < 16, 'approval chain exceeds review bound')
     _identity(value, 'EXECPROPOSAL')
+    successor = value.get('schema') == SUCCESSOR_SCHEMA
+    extra = {'predecessor_approval', 'historical_trial_implementations'} if successor else set()
     _require(set(value) == {'id', 'schema', 'version', 'state', 'manifest_sha256', 'operator_sha256',
         'from_implementation', 'to_implementation', 'scopes', 'cohort', 'evidence',
-        'source_archive_sha256', 'target_archive_sha256'}, 'unexpected proposal fields')
-    _require(value['schema'] == PROPOSAL_SCHEMA and value['version'] == '1.0.0' and
+        'source_archive_sha256', 'target_archive_sha256'} | extra, 'unexpected proposal fields')
+    _require((value['schema'], value['version']) in
+             ((PROPOSAL_SCHEMA, '1.0.0'), (SUCCESSOR_SCHEMA, '2.0.0')) and
              value['state'] == 'proposed' and value['scopes'] == SCOPES, 'proposal contract differs')
     for name in ('manifest_sha256', 'operator_sha256', 'source_archive_sha256', 'target_archive_sha256'):
         _require(_hash(value[name]), 'exact ' + name + ' required')
@@ -91,15 +104,47 @@ def validate_proposal(value):
             trial_ids.add(binding['id'])
         _require(row['submission_sha256'] is not None or not row['committed_trials'],
                  'unaccepted entry cannot own committed trials')
+    if successor:
+        previous = validate_approval(value['predecessor_approval'], _depth=_depth + 1)
+        prior = previous['proposal']
+        _require(all(value[k] == prior[k] for k in
+                     ('manifest_sha256', 'operator_sha256', 'from_implementation')),
+                 'successor changes the original frozen program')
+        _require(value['to_implementation'] not in requested_implementations(previous),
+                 'successor must use a distinct executor; reverse migration needs separate review')
+        prior_rows = {r['request_id']: r for r in prior['cohort']}
+        _require(set(prior_rows) == seen, 'successor cohort differs from predecessor')
+        all_trials = {r['id'] for row in rows for r in row['committed_trials']}
+        generations = value['historical_trial_implementations']
+        _require(type(generations) is dict and set(generations) == all_trials,
+                 'exact executor reference required for every historical trial')
+        for binding in generations.values():
+            _require(type(binding) is dict and set(binding) == {'id', 'version', 'content_sha256'} and
+                     isinstance(binding['id'], str) and
+                     re.fullmatch('RESEARCHIMPLEMENTATION_[0-9a-f]{64}', binding['id']) and
+                     isinstance(binding['version'], str) and _hash(binding['content_sha256']),
+                     'invalid historical executor reference')
+        for row in rows:
+            before = prior_rows[row['request_id']]
+            _require(all(row[k] == before[k] for k in
+                         ('canonical_request_id', 'intent_sha256', 'scientific_identity')) and
+                     (before['submission_sha256'] is None or
+                      row['submission_sha256'] == before['submission_sha256']),
+                     'successor changes an existing envelope or scientific identity')
+            _require(all(binding in row['committed_trials'] for binding in before['committed_trials']),
+                     'successor omits or changes predecessor trial references')
+        if prior['schema'] == SUCCESSOR_SCHEMA:
+            _require(all(generations.get(k) == v for k, v in prior['historical_trial_implementations'].items()),
+                     'successor relabels a historical executor')
     return value
 
 
-def validate_approval(value):
+def validate_approval(value, *, _depth=0):
     _identity(value, 'EXECAPPROVAL')
     _require(set(value) == {'id', 'schema', 'version', 'decision', 'proposal', 'approval'}, 'unexpected approval fields')
     _require(value['schema'] == APPROVAL_SCHEMA and value['version'] == '1.0.0' and
              value['decision'] == 'equivalent_execution', 'explicit execution approval required')
-    validate_proposal(value['proposal'])
+    validate_proposal(value['proposal'], _depth=_depth)
     approval = value['approval']
     _require(type(approval) is dict and set(approval) == {'approved_by', 'approved_at', 'decision_reference'} and
              all(isinstance(v, str) and v.strip() for v in approval.values()), 'human approval evidence required')
@@ -111,10 +156,50 @@ def validate_approval(value):
     return value
 
 
+def source_implementation(proposal):
+    """The installed predecessor is distinct from the unchanged original pins."""
+    previous = proposal.get('predecessor_approval')
+    return previous['proposal']['to_implementation'] if previous else proposal['from_implementation']
+
+
+def requested_implementations(approval):
+    values = [approval['proposal']['to_implementation']]
+    current = approval
+    while current['proposal'].get('predecessor_approval'):
+        current = current['proposal']['predecessor_approval']
+        values.append(current['proposal']['to_implementation'])
+    return values + [current['proposal']['from_implementation']]
+
+
+def verify_predecessor(root, approval):
+    previous = approval['proposal'].get('predecessor_approval')
+    if previous is not None:
+        _require(resolve(root, ref(previous)) == previous, 'installed predecessor approval differs')
+
+
+def historical_executor_matches(approval, trial, implementation, *, original=None):
+    proposal = approval['proposal']
+    if proposal['schema'] == SUCCESSOR_SCHEMA:
+        return (trial['scientific_key']['implementation'] == ref(implementation) ==
+                proposal['historical_trial_implementations'].get(trial['id']))
+    # Older historical aliases can have an older original executor. The status
+    # reader supplies that immutable envelope; pending execution uses from.
+    expected = original['implementation'] if original is not None else proposal['from_implementation']
+    return implementation['body'] == expected
+
+
+def approval_path(root, value):
+    # An older executor must still be able to start after code-only recovery.
+    # Its v1 reader never enters this new append-only namespace.
+    folder = 'successor_approvals' if value['proposal']['schema'] == SUCCESSOR_SCHEMA else 'approvals'
+    return inside(root, BASE + '/' + folder + '/' + value['id'] + '.json')
+
+
 def install_approval(root, value):
     """Publish an already explicitly approved record; never convert a proposal."""
     validate_approval(value)
-    install_bytes(inside(root, BASE + '/approvals/' + value['id'] + '.json'), canonical(value) + b'\n')
+    verify_predecessor(root, value)
+    install_bytes(approval_path(root, value), canonical(value) + b'\n')
     return ref(value)
 
 
@@ -122,18 +207,26 @@ def resolve(root, binding):
     _require(type(binding) is dict and set(binding) == {'id', 'version', 'content_sha256'} and
              isinstance(binding['id'], str) and re.fullmatch('EXECAPPROVAL_[0-9a-f]{64}', binding['id']),
              'exact approval reference required')
-    path = inside(root, BASE + '/approvals/' + binding['id'] + '.json')
+    paths = [inside(root, BASE + '/' + folder + '/' + binding['id'] + '.json')
+             for folder in ('approvals', 'successor_approvals')]
+    found = [p for p in paths if p.exists()]
+    _require(len(found) <= 1, 'duplicate approval publication')
+    path = found[0] if found else paths[0]
     value = validate_approval(read_json(path))
-    _require(ref(value) == binding and path.read_bytes() == canonical(value) + b'\n', 'approval bytes/reference differ')
+    _require(ref(value) == binding and path == approval_path(root, value) and
+             path.read_bytes() == canonical(value) + b'\n', 'approval bytes/reference differ')
+    verify_predecessor(root, value)
     return value
 
 
 def approvals(root):
-    for path in sorted(inside(root, BASE + '/approvals').glob('*.json')):
-        value = validate_approval(read_json(path))
-        _require(path.name == value['id'] + '.json' and path.read_bytes() == canonical(value) + b'\n',
-                 'noncanonical approval publication')
-        yield value
+    for folder in ('approvals', 'successor_approvals'):
+        for path in sorted(inside(root, BASE + '/' + folder).glob('*.json')):
+            value = validate_approval(read_json(path))
+            _require(path == approval_path(root, value) and path.read_bytes() == canonical(value) + b'\n',
+                     'noncanonical approval publication')
+            verify_predecessor(root, value)
+            yield value
 
 
 def row_for(approval, rid, *, canonical=False):
@@ -211,7 +304,7 @@ def authorize_execution(root, submission, actual_implementation):
     matches = []
     for approval in approvals(root):
         p = approval['proposal']
-        if p['from_implementation'] != submission['implementation'] or p['to_implementation'] != actual_implementation:
+        if submission['implementation'] not in requested_implementations(approval) or p['to_implementation'] != actual_implementation:
             continue
         rows = [r for r in p['cohort'] if r['canonical_request_id'] == submission['request_id']]
         if not rows:
@@ -310,12 +403,17 @@ def verify_committed_closure(store, approval, submission, plan):
             if key.get('period') != plan['periods'][phase] or not all(key.get(k) == scientific(v) for k,v in context.items()):
                 continue
             impl = store.resolve('implementation', key['implementation'])
-            if impl['body'] == approval['proposal']['from_implementation']:
+            if approval['proposal']['schema'] == SUCCESSOR_SCHEMA and trial['id'] in pins:
+                _require(pins[trial['id']] == ref(trial) and historical_executor_matches(approval, trial, impl),
+                         'committed historical trial or executor differs from exact successor pins')
+            elif impl['body'] == approval['proposal']['from_implementation']:
                 _require(pins.get(trial['id']) == ref(trial),
                          'committed historical trial omitted from exact approved closure')
             elif impl['body'] == approval['proposal']['to_implementation']:
                 _require(claimed.get(trial['id']) == ref(trial),
                          'committed new-executor trial lacks this exact request trial intent')
+            elif approval['proposal']['schema'] == SUCCESSOR_SCHEMA:
+                raise ResearchConflict('Execution compatibility: unpinned historical executor trial in committed closure')
     return True
 
 
@@ -342,7 +440,9 @@ def committed_trial(store, approval, submission, plan, phase, horizon, relations
         from research.contracts import scientific
         _require(all(key.get(k) == scientific(v) for k, v in expected.items()), 'committed trial belongs to different science')
         old_impl = store.resolve('implementation', key['implementation'])
-        _require(old_impl['body'] == expected_implementation, 'committed trial executor differs')
+        historical = binding in row['committed_trials']
+        _require(historical_executor_matches(approval, trial, old_impl) if historical else
+                 old_impl['body'] == expected_implementation, 'committed trial executor differs')
         _require(key['prepared']['phase'] == phase and key['prepared']['period'] == plan['periods'][phase] and
                  [m['instrument_id'] for m in key['prepared']['members']] ==
                  [m['instrument_id'] for m in plan['members']], 'committed prepared membership differs')

@@ -14,7 +14,7 @@ from research.store import ResearchStore
 from runtime import execution_compatibility as compat
 from runtime.experiment_identity import scientific_key
 from test_program_intake_compatibility import binding_fixture, RID
-from test_execution_compatibility import synthetic_implementation, synthetic_approval
+from test_execution_compatibility import synthetic_implementation, synthetic_approval, successor_proposal
 
 ATTEMPT = '00000000-0000-0000-0000-000000000003'
 HISTORICAL = '00000000-0000-0000-0000-000000000002'
@@ -129,6 +129,33 @@ class MetadataStatusTests(unittest.TestCase):
                 expected = ['approved_historical_reference', 'approved_new_executor'] if mode == 'mixed' else (
                     ['approved_new_executor'] * 2 if mode == 'new' else ['approved_historical_reference'] * 2)
                 self.assertEqual(rows[0]['trial_execution_provenance'], expected)
+
+    def test_successor_reads_mixed_generations_without_relabeling_or_losing_passes(self):
+        for mode in ('old', 'new', 'mixed', 'historical'):
+            setup, entry = fixture(self.root/mode, mode=mode)
+            before = self.verify(setup, entry)
+            previous = compat.resolve(setup['store'].root, setup['approval_reference'])
+            actual = synthetic_implementation('successor')
+            proposal = successor_proposal(setup['store'], previous, entry['original'], actual)
+            approved = synthetic_approval(proposal); compat.install_approval(setup['store'].root, approved)
+            rows = self.verify(dict(setup, approval_reference=ref(approved), actual_implementation=actual), entry)
+            self.assertEqual([{k:v for k,v in r.items() if k != 'trial_execution_provenance'} for r in rows],
+                             [{k:v for k,v in r.items() if k != 'trial_execution_provenance'} for r in before])
+            self.assertTrue(all(r['trial_execution_provenance'] == ['approved_historical_reference']*2 for r in rows))
+
+    def test_successor_still_checks_predecessor_intents_attempts_and_events(self):
+        for missing in ('intent', 'attempt', 'event'):
+            setup, entry = fixture(self.root/missing, mode='mixed')
+            store = setup['store'];previous = compat.resolve(store.root, setup['approval_reference'])
+            actual = synthetic_implementation('successor')
+            approved = synthetic_approval(successor_proposal(store, previous, entry['original'], actual))
+            compat.install_approval(store.root, approved)
+            if missing == 'event': entry['events'] = []
+            else:
+                folder = 'trial_intents/'+RID if missing == 'intent' else 'attempts'
+                next((store.root/compat.BASE/folder).glob('*.json')).unlink()
+            with self.subTest(missing=missing), self.assertRaises(ResearchConflict):
+                self.verify(dict(setup, approval_reference=ref(approved), actual_implementation=actual), entry)
 
     def test_no_approval_wrong_manifest_operator_executor_or_cohort_is_rejected(self):
         setup, entry = fixture(self.root)

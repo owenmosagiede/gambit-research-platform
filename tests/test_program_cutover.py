@@ -448,3 +448,142 @@ class CatalogCaptureTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class SuccessorCutoverTests(unittest.TestCase):
+    setUp = CutoverTests.setUp
+    plan = CutoverTests.plan
+    apply = CutoverTests.apply
+
+    def successor(self):
+        self.apply()
+        previous = self.approval
+        source = dict(self.files)
+        self.files = {'src/runtime/example.py': b'third executor\n'}
+        self.release_manifest = artifact(self.files)
+        self.code.write_bytes(self.files['src/runtime/example.py'])
+        target = cutover.implementation_at(self.m.root)
+        self.code.write_bytes(source['src/runtime/example.py'])
+        self.proposal = make_proposal(manifest_sha256=cutover.sha(self.manifest_bytes),
+            operator_sha256='b'*64, from_implementation=self.old,
+            to_implementation=target, cohort=self.m.cohort,
+            evidence={'tests_sha256':cutover.sha(self.tests_bytes),
+                      'equivalence_sha256':cutover.sha(self.equivalence_bytes)},
+            source_archive_sha256='e'*64, target_archive_sha256='f'*64,
+            predecessor_approval=previous, historical_trial_implementations={})
+        self.approval = synthetic_approval(self.proposal)
+        snapshot = self.m.snapshot
+        def generations(raw):
+            result = snapshot(raw)
+            if getattr(self.m, 'predecessor_approval', None):
+                result.update(predecessor_approval=ref(self.m.predecessor_approval),
+                              historical_trial_implementations={})
+            return result
+        self.m.snapshot = generations
+        return previous, source, target
+
+    def test_successor_apply_and_code_recovery_preserve_history_and_old_reader_namespace(self):
+        from runtime.execution_compatibility import resolve, approvals, approval_path
+        previous, source, target = self.successor()
+        result = self.apply()
+        self.assertEqual(cutover.implementation_at(self.m.root), target)
+        self.assertEqual(resolve(self.m.root, ref(self.approval)), self.approval)
+        self.assertEqual(len(list(approvals(self.m.root))), 2)
+        old_namespace = self.m.root/'storage/catalog/operations/execution_compatibility/approvals'
+        self.assertEqual([p.name for p in old_namespace.glob('*.json')], [previous['id']+'.json'])
+        self.assertEqual(approval_path(self.m.root, self.approval).parent.name, 'successor_approvals')
+        recovered = cutover.recover(self.m, self.manifest_bytes, result['release_id'])
+        self.assertEqual(recovered['status'], 'rolled_back_stopped')
+        self.assertEqual(cutover.implementation_at(self.m.root), previous['proposal']['to_implementation'])
+        self.assertEqual(self.history.read_bytes(), b'preserved historical authority')
+        self.assertEqual(len(list(approvals(self.m.root))), 2)
+        self.assertFalse(self.m.events)
+
+    def test_successor_proposal_requires_exact_installed_predecessor(self):
+        previous, source, target = self.successor()
+        args = dict(operator_sha256='b'*64, source_manifest=artifact(source), source_files=source,
+            source_archive_sha256='e'*64, target_archive_sha256='f'*64,
+            checks_bytes=self.tests_bytes, equivalence_bytes=self.equivalence_bytes)
+        proposed = cutover.propose(self.m, self.manifest_bytes, self.release_manifest, self.files,
+                                  predecessor_approval=previous, **args)
+        self.assertEqual(proposed, self.proposal)
+        with self.assertRaisesRegex(RuntimeError, 'original frozen executor'):
+            cutover.propose(self.m, self.manifest_bytes, self.release_manifest, self.files, **args)
+
+    def test_successor_recovery_never_overwrites_new_results(self):
+        previous, source, target = self.successor()
+        result = self.apply()
+        new_trial = self.history.with_name('new-trial.json')
+        new_trial.write_text('new immutable outcome')
+        with self.assertRaisesRegex(RuntimeError, 'Research advanced'):
+            cutover.recover(self.m, self.manifest_bytes, result['release_id'])
+        self.assertEqual(new_trial.read_text(), 'new immutable outcome')
+        self.assertEqual(cutover.implementation_at(self.m.root), target)
+
+
+class SuccessorCaptureTests(unittest.TestCase):
+    def capture_fixture(self, mode='mixed', partial=False, mutation=None):
+        from unittest.mock import MagicMock
+        from test_frozen_program_status import fixture
+        from runtime import execution_compatibility as compat
+        from test_execution_compatibility import synthetic_implementation
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        setup, entry = fixture(root, mode=mode)
+        original = entry['original']; rid = original['request_id']
+        previous = compat.resolve(root, setup['approval_reference'])
+        entry['job'].update(sequence=7, plan=None)
+        if partial:
+            entry['job'].update(status='failed', results=[])
+        if mutation == 'event': entry['events'] = []
+        if mutation == 'intent':
+            next((root/compat.BASE/'trial_intents'/rid).glob('*.json')).unlink()
+        if mutation == 'unknown':
+            trial = next(t for t in (setup['store'].get('trial', p.stem) for p in
+                (root/'storage/catalog/trial_ledger/records').glob('*.json'))
+                if t['scientific_key']['stage'] == 'P1')
+            key = deepcopy(trial['scientific_key'])
+            impl = synthetic_implementation('unclaimed')
+            key['implementation'] = ref(setup['store'].put('implementation', impl, impl))
+            setup['store'].put('trial', key, trial['body'])
+        submission = root/'storage/catalog/submissions'/(rid+'.json')
+        submission.parent.mkdir(parents=True, exist_ok=True); submission.write_bytes(canonical(original))
+        receipt = root/'storage/catalog/operations/program_intake_receipts'/cutover.sha(setup['manifest_bytes'])/(entry['journal']['request_id']+'.json')
+        receipt.parent.mkdir(parents=True); receipt.write_bytes(canonical(entry['receipt']))
+        jobs = MagicMock(); jobs.store = setup['store']
+        jobs._event_snapshot.return_value = {rid: entry['events']}
+        jobs._events.return_value = entry['events']
+        jobs._submission.return_value = original
+        jobs._submission_path.return_value = submission
+        jobs._incident_path.return_value = root/'nonexistent-incident'
+        jobs._read_job.return_value = entry['job']
+        index = MagicMock(); index.journal.return_value = entry['journal']
+        index.base = root/'storage/catalog/operations/experiment_intake'
+        before = {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file()}
+        # Freeze the event-snapshot boundary; exercise the real predecessor
+        # metadata validator and full closure. Artifact manifests are covered by
+        # CatalogCaptureTests using real runtime-published fixtures separately.
+        with patch('runtime.research_jobs.ResearchJobs', return_value=jobs), patch(
+                'runtime.experiment_identity.IdentityIndex', return_value=index), patch.object(
+                cutover, 'frozen_metadata', return_value=(setup['feature_catalog'], setup['target_metadata'])), patch.object(
+                cutover, 'verify_trial_artifact_metadata'):
+            result = cutover.capture(root, setup['manifest_bytes'], predecessor_approval=previous)
+        self.assertEqual(before, {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file()})
+        self.assertEqual(len(result['cohort'][0]['committed_trials']), 10)
+        self.assertEqual(result['predecessor_approval'], ref(previous))
+        self.assertEqual(set(result['historical_trial_implementations']),
+                         {r['id'] for r in result['cohort'][0]['committed_trials']})
+        self.assertEqual(result['states'][rid]['sequence'], 7)
+        for tid, impl in result['historical_trial_implementations'].items():
+            self.assertEqual(impl, setup['store'].get('trial', tid)['scientific_key']['implementation'])
+        return result
+
+    def test_capture_preserves_all_executor_generations_and_partial_unlinked_trials(self):
+        for mode in ('old', 'new', 'mixed', 'historical'):
+            with self.subTest(mode=mode): self.capture_fixture(mode)
+        self.capture_fixture(partial=True)
+
+    def test_capture_rejects_missing_provenance_and_unclaimed_executor(self):
+        for mutation in ('event', 'intent', 'unknown'):
+            with self.subTest(mutation=mutation), self.assertRaises((RuntimeError, cutover.compatibility.ResearchConflict)):
+                self.capture_fixture(mutation=mutation)

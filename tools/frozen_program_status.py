@@ -63,6 +63,12 @@ class MetadataVerifier:
         manifest_view(self.manifest, self.approval, actual_implementation)
         self.rows = {row['request_id']: row for row in self.manifest['entries']}
         self.catalog, self.targets = deepcopy(feature_catalog), deepcopy(target_metadata)
+        previous = self.approval['proposal'].get('predecessor_approval')
+        self.previous = (MetadataVerifier(store, manifest_bytes=manifest_bytes,
+            operator_sha256=operator_sha256, approval_reference=ref(previous),
+            actual_implementation=previous['proposal']['to_implementation'],
+            feature_catalog=feature_catalog, target_metadata=target_metadata) if previous else None)
+        self.historical_context = {}
         self.attempts = {}
         for path in sorted(inside(store.root, compatibility.BASE + '/attempts').glob('*.json')):
             value = read_json(path)
@@ -93,6 +99,17 @@ class MetadataVerifier:
             if value['attempt_id'] in observed:
                 visible.append(value)
         return visible
+
+    def _history_context(self, original, events):
+        """Recheck inherited intents and event provenance, not only new pins."""
+        if self.previous is None:
+            return
+        self.previous._history_context(original, events)
+        row = compatibility.row_for(self.previous.approval, original['request_id'], canonical=True)
+        self.historical_context[original['request_id']] = (
+            {r['id']: r for r in row['committed_trials']},
+            {r['id']: r for r in compatibility._claimed_trials(self.store, self.previous.approval, original)},
+            self.previous._execution_provenance(original, events))
 
     def _trial(self, trial, original, pinned, claimed, attempts, discovery=None):
         plan = original['frozen_plan']; key = trial['scientific_key']; body = trial['body']
@@ -129,7 +146,12 @@ class MetadataVerifier:
         impl = self.store.resolve('implementation', key['implementation'])
         require(impl['scientific_key'] == impl['body'], 'implementation identity differs')
         if pinned.get(trial['id']) == ref(trial):
-            require(impl['body'] == original['implementation'], 'pinned historical trial executor differs')
+            require(compatibility.historical_executor_matches(self.approval, trial, impl, original=original),
+                    'pinned historical trial executor differs')
+            if self.previous is not None:
+                require(original['request_id'] in self.historical_context, 'historical provenance context missing')
+                old_pins, old_claimed, old_attempts = self.historical_context[original['request_id']]
+                self.previous._trial(trial, original, old_pins, old_claimed, old_attempts, discovery=discovery)
             return 'approved_historical_reference'
         require(impl['body'] == self.approval['proposal']['to_implementation'] and
                 claimed.get(trial['id']) == ref(trial) and bool(attempts),
@@ -144,8 +166,8 @@ class MetadataVerifier:
                 journal['intent'] == original['intent'] == row['intent'] and
                 journal['scientific_identity'] == scientific_key(original) and
                 journal['sha256'] == digest({k: v for k, v in journal.items() if k != 'sha256'}) and
-                journal['requested_implementation'] in (self.approval['proposal']['from_implementation'],
-                    self.approval['proposal']['to_implementation']), 'accepted journal differs')
+                journal['requested_implementation'] in compatibility.requested_implementations(self.approval),
+                'accepted journal differs')
         require(journal.get('submission') == original or
                 (rid != original['request_id'] and journal.get('submission') is None),
                 'journal submission differs from frozen envelope')
@@ -162,11 +184,12 @@ class MetadataVerifier:
                     journal['scientific_identity'] == row['expected_existing_scientific_identity'],
                     'historical alias result references differ')
         else:
-            require(original['implementation'] in (self.approval['proposal']['from_implementation'],
-                    self.approval['proposal']['to_implementation']), 'request executor is outside exact approval')
+            require(original['implementation'] in compatibility.requested_implementations(self.approval),
+                    'request executor is outside exact approval')
         pinned = {r['id']: r for r in pin['committed_trials']}
         claimed = {r['id']: r for r in compatibility._claimed_trials(self.store, self.approval, original)}
         attempts = self._execution_provenance(original, events)
+        self._history_context(original, events)
         # Include committed partial/orphan authority, not just currently linked
         # outcomes. An interrupted publication is never counted as a pass.
         closure = {**pinned, **(claimed if attempts else {})}
