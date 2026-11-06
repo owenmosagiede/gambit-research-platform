@@ -10,6 +10,10 @@ from read_model.storage import (SCHEMA, CursorExpired, Unavailable, confined, co
                                 current, encoded, freshness, read_document)
 
 
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+PAGE_ENVELOPE_RESERVE = 64 * 1024
+
+
 class InvalidQuery(ValueError):
     pass
 
@@ -108,14 +112,22 @@ def page(directory, kind, query=None, *, recipe=None):
         sql = 'SELECT value,' + columns + ' FROM ' + table + ' WHERE ' + (' AND '.join(page_clauses) or '1')
         sql += ' ORDER BY ' + ','.join(k+' '+d for k,d in zip(keys,directions)) + ' LIMIT ?'
         records = db.execute(sql, [*page_params, limit+1]).fetchall()
-        if sum(len(r['value'].encode()) for r in records[:limit]) > 4 * 1024 * 1024:
-            raise Unavailable('Page exceeds the serving response bound')
+        # A row may carry substantial frozen provenance. The requested limit is
+        # a maximum count, not permission to exceed the response byte budget.
+        # Keep each row intact and continue after the last actually served key.
+        selected_records = []; payload_bytes = 0
+        for record in records[:limit]:
+            size = len(record['value'].encode())
+            if payload_bytes + size > MAX_RESPONSE_BYTES - PAGE_ENVELOPE_RESERVE: break
+            selected_records.append(record); payload_bytes += size
+        if records and not selected_records:
+            raise Unavailable('A single row exceeds the serving page bound')
         next_cursor = None
-        if len(records) > limit:
-            last = records[limit-1]
+        if len(records) > len(selected_records):
+            last = selected_records[-1]
             next_cursor = cursor_encode({'generation':manifest['generation'],'query':fingerprint,
                                          'key':[last['key'+str(i)] for i in range(len(keys))]})
-        items = [json.loads(r['value']) for r in records[:limit]]
+        items = [json.loads(r['value']) for r in selected_records]
         if kind in ('queue','ledger'):
             for item in items:
                 job = item['job']; item['queue_position'] = None
@@ -128,6 +140,8 @@ def page(directory, kind, query=None, *, recipe=None):
         if kind in ('ledger','queue'):
             value['status_counts'] = dict(db.execute('SELECT status,COUNT(*) FROM experiments GROUP BY status'))
             value['worker'] = {'state':'not_live_checked', 'message':'This snapshot shows recorded work, not a live worker-health check.'}
+    if len(encoded(value).encode()) > MAX_RESPONSE_BYTES:
+        raise Unavailable('Page exceeds the serving response bound')
     return value
 
 

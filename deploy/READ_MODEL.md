@@ -48,7 +48,9 @@ opens its pinned generation with `mode=ro` and `query_only`; integrity revocatio
 are checked before and after the query. Publication validates SQLite integrity and
 foreign keys and records database hash/signature plus a semantic projection hash.
 SQL work has a two-second interruption budget. Display rows are capped at 256 KiB;
-page/detail JSON metadata is capped at 4 MiB. Oversize rows become visible
+page/detail JSON metadata is capped at 4 MiB. Collection pages may return fewer
+than the requested number of rows to fit that byte budget; their cursor continues
+after the last complete row, without trimming provenance fields. Oversize rows become visible
 verification issues, never truncated scientific records. No full database hash, metadata scan or research file open runs on normal HTTP
 requests. The trusted publisher owns these files; the web account must have only
 read permissions. A changed database signature makes it unavailable.
