@@ -48,8 +48,9 @@ opens its pinned generation with `mode=ro` and `query_only`; integrity revocatio
 are checked before and after the query. Publication validates SQLite integrity and
 foreign keys and records database hash/signature plus a semantic projection hash.
 SQL work has a two-second interruption budget. Display rows are capped at 256 KiB;
-page/detail JSON metadata is capped at 4 MiB. Collection pages may return fewer
-than the requested number of rows to fit that byte budget; their cursor continues
+page/detail JSON metadata is capped at 4 MiB. Collection pages prefer at most 1 MiB of row payload, with a whole larger
+single record allowed up to the hard bound. They may return fewer rows
+than requested; their cursor continues
 after the last complete row, without trimming provenance fields. Oversize rows become visible
 verification issues, never truncated scientific records. No full database hash, metadata scan or research file open runs on normal HTTP
 requests. The trusted publisher owns these files; the web account must have only
@@ -101,6 +102,12 @@ authorized service. One output-only lock prevents two builders. The default buil
 budget is 600 seconds, 200,000 captured metadata files, 64 MiB per source record,
 1 GiB per closed database and 4 GiB for the serving directory.
 The initial production shadow exceeded the earlier 256 MiB pilot database cap.
+Production-sized query qualification also exposed temporary sorting of large
+provenance values. Queries now sort compact identities first, then fetch only
+the rows returned plus at most one row needed to discover the byte boundary.
+This preserves complete provenance and stable cursors while bounding concurrent
+JSON decoding and serialization.
+
 Production shadow also exposed all-branch retention of full trial metadata.
 Branch selection now retains compact summaries and hydrates one verified SQLite
 unit at a time, preserving the same evidence-set supersession and stored records.

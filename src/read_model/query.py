@@ -12,6 +12,9 @@ from read_model.storage import (SCHEMA, CursorExpired, Unavailable, confined, co
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 PAGE_ENVELOPE_RESERVE = 64 * 1024
+# Smaller pages keep concurrent JSON decoding/serialization bounded even when
+# each experiment carries hundreds of kilobytes of original provenance.
+PAGE_PAYLOAD_BYTES = 1024 * 1024
 
 
 class InvalidQuery(ValueError):
@@ -109,17 +112,24 @@ def page(directory, kind, query=None, *, recipe=None):
                 page_params.extend(key[:i+1])
             page_clauses.append('(' + ' OR '.join(alternatives) + ')')
         columns = ','.join(k + ' AS key' + str(i) for i,k in enumerate(keys))
-        sql = 'SELECT value,' + columns + ' FROM ' + table + ' WHERE ' + (' AND '.join(page_clauses) or '1')
+        # Sort compact identities first. Including provenance in this SELECT
+        # makes SQLite copy every matching large value into its temporary sort
+        # when a filter index is chosen instead of the ordering index.
+        sql = 'SELECT id,' + columns + ' FROM ' + table + ' WHERE ' + (' AND '.join(page_clauses) or '1')
         sql += ' ORDER BY ' + ','.join(k+' '+d for k,d in zip(keys,directions)) + ' LIMIT ?'
         records = db.execute(sql, [*page_params, limit+1]).fetchall()
         # A row may carry substantial frozen provenance. The requested limit is
         # a maximum count, not permission to exceed the response byte budget.
         # Keep each row intact and continue after the last actually served key.
-        selected_records = []; payload_bytes = 0
+        selected_records = []; selected_values = []; payload_bytes = 0
         for record in records[:limit]:
-            size = len(record['value'].encode())
-            if payload_bytes + size > MAX_RESPONSE_BYTES - PAGE_ENVELOPE_RESERVE: break
-            selected_records.append(record); payload_bytes += size
+            raw = db.execute('SELECT value FROM ' + table + ' WHERE id=?', (record['id'],)).fetchone()[0]
+            size = len(raw.encode())
+            if payload_bytes + size > PAGE_PAYLOAD_BYTES:
+                # A single record may exceed the preferred page size. Preserve
+                # it whole if it still fits the hard response bound.
+                if selected_records or size > MAX_RESPONSE_BYTES - PAGE_ENVELOPE_RESERVE: break
+            selected_records.append(record); selected_values.append(raw); payload_bytes += size
         if records and not selected_records:
             raise Unavailable('A single row exceeds the serving page bound')
         next_cursor = None
@@ -127,7 +137,7 @@ def page(directory, kind, query=None, *, recipe=None):
             last = selected_records[-1]
             next_cursor = cursor_encode({'generation':manifest['generation'],'query':fingerprint,
                                          'key':[last['key'+str(i)] for i in range(len(keys))]})
-        items = [json.loads(r['value']) for r in selected_records]
+        items = [json.loads(raw) for raw in selected_values]
         if kind in ('queue','ledger'):
             for item in items:
                 job = item['job']; item['queue_position'] = None

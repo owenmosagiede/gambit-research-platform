@@ -124,7 +124,7 @@ class ReadModelTests(unittest.TestCase):
     def test_large_provenance_pages_are_bounded_without_losing_rows(self):
         from read_model.extract import Extractor
         from read_model.storage import encoded
-        from read_model.query import MAX_RESPONSE_BYTES
+        from read_model.query import MAX_RESPONSE_BYTES, PAGE_PAYLOAD_BYTES
         self.submit();before=self.files();extract=Extractor.run
         def large_rows(extractor):
             result=extract(extractor)
@@ -142,16 +142,28 @@ class ReadModelTests(unittest.TestCase):
         with patch.object(Extractor,'run',large_rows):build(self.root,self.output)
         found=[];positions=[];query={'limit':'50'};pages=0
         while True:
-            value=page(self.output,'queue',query);pages+=1
+            statements=[]
+            def traced(path):
+                db=connect(path);db.set_trace_callback(statements.append);return db
+            with patch('read_model.query.connect',traced):
+                value=page(self.output,'queue',query)
+            pages+=1
             self.assertLessEqual(len(encoded(value).encode()),MAX_RESPONSE_BYTES)
             self.assertTrue(value['items']);self.assertEqual(value['total'],60)
             self.assertLess(len(value['items']),50)
+            self.assertLess(sum(len(encoded(r).encode()) for r in value['items']),PAGE_PAYLOAD_BYTES)
+            # Provenance is fetched only for served rows and at most one row
+            # that discovers the byte boundary, never for the full sorted set.
+            payload_reads=[s for s in statements if s.startswith('SELECT value FROM experiments')]
+            self.assertLessEqual(len(payload_reads),len(value['items'])+1)
+            self.assertTrue(all(' WHERE id=' in s for s in payload_reads))
+            self.assertFalse(any(s.startswith('SELECT value,') for s in statements))
             for row in value['items']:
                 found.append(row['job']['request_id']);positions.append(row['queue_position'])
                 self.assertEqual(row['provenance']['complete_fixture_metadata'],'x'*(160*1024))
             if value['next_cursor'] is None:break
             query={'limit':'50','cursor':value['next_cursor']}
-            self.assertLess(pages,5,'Byte-limited cursor failed to advance')
+            self.assertLess(pages,20,'Byte-limited cursor failed to advance')
         self.assertEqual(found,['fixture-'+str(n).zfill(3) for n in range(60)])
         self.assertEqual(positions,list(range(1,61)))
         self.assertEqual(before,self.files())
