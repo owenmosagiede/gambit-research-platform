@@ -206,6 +206,12 @@ class ReadModelTests(unittest.TestCase):
             self.assertEqual(read.call_count,2)
         with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'unavailable':False}]) as read:
             storage.verified_status(self.output);self.assertEqual(read.call_count,2)
+        with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'generation':'new'}]) as read:
+            self.assertEqual(storage.published_pointer(self.output),{'generation':'new'})
+            self.assertEqual(read.call_count,2)
+        with patch.object(storage,'read_document',side_effect=storage.DocumentChanged('atomic replacement')) as read:
+            with self.assertRaisesRegex(Unavailable,'pointer did not stabilize'):storage.published_pointer(self.output)
+            self.assertEqual(read.call_count,3)
 
     def test_source_guard_blocks_writes_locks_and_payloads(self):
         (self.root/'storage/payloads').mkdir(parents=True)

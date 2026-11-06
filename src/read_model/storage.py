@@ -87,6 +87,16 @@ def verified_status(directory):
     raise Unavailable('Serving status did not stabilize')
 
 
+def published_pointer(directory):
+    path = confined(directory, 'current.json')
+    for _ in range(3):
+        try:
+            return read_document(path)
+        except DocumentChanged:
+            continue
+    raise Unavailable('Serving publication pointer did not stabilize')
+
+
 def atomic(directory, name, value):
     directory = Path(directory)
     destination = confined(directory, name)
@@ -151,7 +161,7 @@ def current(directory, generation=None):
     try:
         status_path = confined(directory, 'status.json')
         status_signature = verified_status(directory)
-        pointer = read_document(confined(directory, 'current.json'))
+        pointer = published_pointer(directory)
         selected = generation or pointer['generation']
         if not GENERATION.fullmatch(selected): raise ValueError('Invalid generation')
         manifest = read_document(confined(directory, 'generation-' + selected + '.json'))
