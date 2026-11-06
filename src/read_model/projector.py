@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from read_model.storage import (SCHEMA, MAX_DATABASE_BYTES, IntegrityFailure,
+from read_model.storage import (SCHEMA, MAX_DATABASE_BYTES, MAX_DIRECTORY_BYTES, IntegrityFailure, file_digest,
     atomic, confined, connect, current, encoded, initialize, read_document, signature, sync_directory)
 
 _GUARD = ContextVar('serving_source_guard', default=None)
@@ -57,7 +57,7 @@ def stamp():
     return datetime.now(timezone.utc).isoformat()
 
 
-def build(root, directory, *, timeout=600, max_bytes=1024 * 1024 * 1024, fail_at=None):
+def build(root, directory, *, timeout=600, max_bytes=MAX_DIRECTORY_BYTES, fail_at=None):
     root = Path(root).resolve(); directory = Path(directory).absolute()
     if directory.resolve() != directory or directory.is_relative_to(root) or root.is_relative_to(directory):
         raise ValueError('Serving output must be separate from the research tree')
@@ -88,7 +88,7 @@ def _build(root, directory, timeout, max_bytes, fail_at):
             if not GENERATION.fullmatch(old['generation']): raise IntegrityFailure('Invalid previous generation')
             previous = confined(directory, 'generation-' + old['generation'] + '.sqlite')
             manifest = read_document(confined(directory, 'generation-' + old['generation'] + '.json'))
-            if signature(previous) != manifest['database_signature'] or hashlib.sha256(previous.read_bytes()).hexdigest() != manifest['database_sha256']:
+            if signature(previous) != manifest['database_signature'] or file_digest(previous) != manifest['database_sha256']:
                 raise IntegrityFailure('Previous derived generation is corrupt; recovery required')
             if manifest['schema_version'] != SCHEMA: raise IntegrityFailure('Incompatible previous generation')
             shutil.copyfile(previous, stage)
@@ -119,12 +119,14 @@ def _build(root, directory, timeout, max_bytes, fail_at):
                 semantic.update(record[0].encode()); semantic.update(b'\n')
         metadata['projection_sha256'] = semantic.hexdigest()
         db.close(); db = None
-        if stage.stat().st_size > MAX_DATABASE_BYTES or total + stage.stat().st_size > max_bytes:
-            raise OSError('Derived database exceeds serving disk budget')
+        database_bytes = stage.stat().st_size
+        if database_bytes > MAX_DATABASE_BYTES or total + database_bytes > max_bytes:
+            raise OSError(f'Derived database exceeds serving disk budget: database={database_bytes}, '
+                          f'database_limit={MAX_DATABASE_BYTES}, retained={total}, directory_limit={max_bytes}')
         if fail_at == 'database': raise RuntimeError('Injected pre-publication failure')
         with stage.open('rb') as stream: os.fsync(stream.fileno())
         os.chmod(stage, 0o440); os.replace(stage, final); sync_directory(directory)
-        metadata.update(database_sha256=hashlib.sha256(final.read_bytes()).hexdigest(),
+        metadata.update(database_sha256=file_digest(final), database_bytes=database_bytes,
                         database_signature=signature(final), published_at=stamp(), counts=counts,
                         extraction={k:v for k,v in extraction.items() if k != 'issues'},
                         build_seconds=round(time.monotonic() - started, 3))
@@ -156,7 +158,7 @@ def _build(root, directory, timeout, max_bytes, fail_at):
                 confined(directory, 'generation-' + generation + '.json').unlink(missing_ok=True)
 
 
-def cleanup(directory, *, retention_seconds=3600, max_bytes=1024 * 1024 * 1024):
+def cleanup(directory, *, retention_seconds=3600, max_bytes=MAX_DIRECTORY_BYTES):
     """Only expired derived generations; current and previous are always retained."""
     directory = Path(directory).absolute()
     with confined(directory, 'projector.lock').open('a+b') as lock:

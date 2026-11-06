@@ -10,7 +10,19 @@ import time
 
 SCHEMA = 1
 GENERATION = re.compile(r'[0-9a-f]{32}\Z')
-MAX_DATABASE_BYTES = 256 * 1024 * 1024
+# Production metadata already exceeds the original 256 MiB pilot allocation.
+# Keep a bounded generation plus room for current, previous and the next build.
+MAX_DATABASE_BYTES = 1024 * 1024 * 1024
+MAX_DIRECTORY_BYTES = 4 * MAX_DATABASE_BYTES
+
+
+def file_digest(path):
+    """Hash a generation without loading its size into publisher memory."""
+    result = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
 
 class Unavailable(ValueError):
     pass

@@ -97,14 +97,19 @@ Without `--watch-seconds`, this performs **one** build. Nothing is scheduled.
 `--watch-seconds 30` is an explicit continuous-projector option for a separately
 authorized service. One output-only lock prevents two builders. The default build
 budget is 600 seconds, 200,000 captured metadata files, 64 MiB per source record,
-256 MiB per closed database and 1 GiB for the serving directory. The service example
+1 GiB per closed database and 4 GiB for the serving directory.
+The initial production shadow exceeded the earlier 256 MiB pilot database cap.
+Generation checksums now stream in 1 MiB chunks, including verification before an
+incremental copy, so a larger disk allowance does not require loading a database
+into publisher memory. Current and previous generations remain protected; cleanup
+reserves room for the next bounded build. Check free disk space before activation. The service example
 caps memory at 256 MiB and CPU at 25%; these are pilot limits, not measured proof
 that current production backfill meets them. Resource failure leaves the previous
 published snapshot, which visibly ages. No pressure response changes research.
 
 Cleanup removes expired generation files (default one hour), always retaining
 the current and previous generations. It can expire older cursors earlier under
-disk pressure to reserve 256 MiB for the next build; those clients receive 410
+disk pressure to reserve 1 GiB for the next build; those clients receive 410
 and refresh. This bounds retention without starving continuous publication. A build interrupted before pointer publication
 leaves the previous generation. If interrupted after pointer and before clearing
 integrity status, serving remains conservatively unavailable until a successful

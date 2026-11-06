@@ -90,6 +90,37 @@ class ReadModelTests(unittest.TestCase):
         with self.assertRaises(OSError): build(self.root,self.output,max_bytes=1)
         self.assertEqual(page(self.output,'queue')['total'],1)
 
+    def test_production_sized_generation_streams_hashes_and_preserves_sources(self):
+        from read_model.extract import Extractor
+        from read_model.storage import MAX_DATABASE_BYTES, MAX_DIRECTORY_BYTES
+        self.submit(); before=self.files()
+        extract=Extractor.run; read_bytes=Path.read_bytes
+        def with_padding(extractor):
+            result=extract(extractor)
+            # SQLite's zero-blob writes a realistic-sized derived file without
+            # manufacturing production research or a 300 MiB Python allocation.
+            extractor.db.execute('CREATE TABLE IF NOT EXISTS capacity_fixture(value BLOB)')
+            if not extractor.db.execute('SELECT 1 FROM capacity_fixture').fetchone():
+                extractor.db.execute('INSERT INTO capacity_fixture VALUES(zeroblob(?))',(300*1024*1024,))
+            return result
+        def forbid_whole_database_read(path):
+            if path.suffix=='.sqlite': raise AssertionError('Publisher loaded entire database into memory')
+            return read_bytes(path)
+        with patch.object(Extractor,'run',with_padding), patch.object(Path,'read_bytes',forbid_whole_database_read):
+            first=build(self.root,self.output)
+            second=build(self.root,self.output)
+            self.assertGreater(first['database_bytes'],256*1024*1024)
+            self.assertLess(second['database_bytes'],MAX_DATABASE_BYTES)
+            self.assertEqual(first['projection_sha256'],second['projection_sha256'])
+            self.assertEqual(second['extraction']['rebuilt'],{})
+            self.assertEqual(page(self.output,'queue')['total'],1)
+            with patch('read_model.projector.MAX_DATABASE_BYTES',256*1024*1024):
+                with self.assertRaisesRegex(OSError,'database_limit=268435456'):
+                    build(self.root,self.output)
+            self.assertEqual(current(self.output)[1]['generation'],second['generation'])
+        self.assertEqual(before,self.files())
+        self.assertGreaterEqual(MAX_DIRECTORY_BYTES,3*MAX_DATABASE_BYTES)
+
     def test_source_guard_blocks_writes_locks_and_payloads(self):
         (self.root/'storage/payloads').mkdir(parents=True)
         payload=self.root/'storage/payloads/test'; payload.write_text('secret')
