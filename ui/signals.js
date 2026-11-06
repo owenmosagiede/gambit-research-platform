@@ -1,6 +1,7 @@
 "use strict";
 
 (() => {
+  if (document.querySelector?.('meta[name="gambit-read-model"]')?.content === "enabled") return;
   const $ = id => document.getElementById(id);
   const tableContainer = $("signal-table-container");
   const catalogStatus = $("signal-library-status");

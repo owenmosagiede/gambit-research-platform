@@ -64,7 +64,7 @@ class ProductionAccessTests(unittest.TestCase):
         return self.client.post(path, data=json.dumps(data), content_type='application/json',
             HTTP_ORIGIN='http://testserver', **({'HTTP_X_CSRFTOKEN': token} if token else {}), **headers)
     def test_all_private_assets_and_routes_require_owner(self):
-        routes = ['/api/batches', '/api/batches/10000000-0000-4000-8000-000000000002', '/app/', '/session.js', '/api/experiments', '/api/research-readiness',
+        routes = ['/api/read-model/v1/recipes', '/api/read-model/v1/ledger', '/api/read-model/v1/queue', '/api/batches', '/api/batches/10000000-0000-4000-8000-000000000002', '/app/', '/session.js', '/api/experiments', '/api/research-readiness',
             '/api/feature-library', '/api/signal-library-summaries', '/api/pit-library',
             '/api/scope-library', '/api/target-library', '/api/trial-evidence/TRIAL_'+'a'*64,
             '/api/feature-research/FEATURE_RECIPE_'+'a'*64, '/api/research-results/FEATURE_RECIPE_'+'a'*64]
@@ -100,6 +100,20 @@ class ProductionAccessTests(unittest.TestCase):
         self.assertEqual(self.client.get('/batches.js').status_code,404)
         self.assertEqual(self.client.get('/api/batches-summary').status_code,404)
         self.assertEqual(self.post({},token,path='/api/batches-summary').status_code,405)
+
+    def test_dedicated_reads_require_owner_without_constructing_research_services(self):
+        from read_model.projector import build
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp).resolve()/'serving'
+            build(self.root,output)
+            self.client.force_login(self.owner)
+            with override_settings(READ_MODEL_DIR=output),patch('web.views.services',side_effect=AssertionError('Read model constructed research services')):
+                for endpoint in ('ledger','queue','recipes'):
+                    response=self.client.get('/api/read-model/v1/'+endpoint)
+                    self.assertEqual(response.status_code,200)
+                    self.assertEqual(response.json()['total'],0)
+                self.assertIn(b'name="gambit-read-model" content="enabled"',self.client.get('/app/').content)
+        self.assertFalse((self.root/'storage').exists())
 
     def test_public_has_no_private_bundle_or_research_metadata(self):
         for route in ('/', '/about/', '/login/', '/healthz', '/public/site.css', '/public/gambit-app-mark.svg'):

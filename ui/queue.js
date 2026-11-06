@@ -1,6 +1,7 @@
 "use strict";
 
 (() => {
+  if (document.querySelector?.('meta[name="gambit-read-model"]')?.content === "enabled") return;
   const $ = id => document.getElementById(id);
   const board = $("queue-board"), status = $("queue-status"), refresh = $("queue-refresh");
   if (!board || !status || !refresh) return;
