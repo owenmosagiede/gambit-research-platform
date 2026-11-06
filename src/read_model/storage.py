@@ -33,6 +33,9 @@ class IntegrityFailure(Unavailable):
 class CursorExpired(Unavailable):
     pass
 
+class DocumentChanged(Unavailable):
+    pass
+
 
 def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
@@ -60,8 +63,28 @@ def read_document(path, maximum=1024 * 1024):
         raise Unavailable('Serving document exceeds its bound')
     data = Path(path).read_bytes()
     if signature(path) != before:
-        raise Unavailable('Serving document changed during read')
+        raise DocumentChanged('Serving document changed during read')
     return json.loads(data)
+
+
+def verified_status(directory):
+    """Read an unrevoked status across a bounded atomic publication handoff.
+
+    Only an overlapping file replacement is retried. Observed revocation,
+    malformed data, symlinks and persistent churn still fail closed.
+    """
+    path = confined(directory, 'status.json')
+    for _ in range(3):
+        before = signature(path)
+        try:
+            status = read_document(path)
+        except DocumentChanged:
+            continue
+        if status.get('unavailable'):
+            raise Unavailable('Projection verification failed; prior rows are not current certification')
+        if signature(path) == before:
+            return before
+    raise Unavailable('Serving status did not stabilize')
 
 
 def atomic(directory, name, value):
@@ -127,10 +150,7 @@ def current(directory, generation=None):
     directory = Path(directory).absolute()
     try:
         status_path = confined(directory, 'status.json')
-        status_signature = signature(status_path)
-        status = read_document(status_path)
-        if status.get('unavailable'):
-            raise Unavailable('Projection verification failed; prior rows are not current certification')
+        status_signature = verified_status(directory)
         pointer = read_document(confined(directory, 'current.json'))
         selected = generation or pointer['generation']
         if not GENERATION.fullmatch(selected): raise ValueError('Invalid generation')
@@ -141,7 +161,10 @@ def current(directory, generation=None):
         if signature(path) != manifest['database_signature']:
             raise Unavailable('Serving database changed')
         if signature(status_path) != status_signature:
-            raise Unavailable('Integrity status changed')
+            # A healthy refresh may publish a new status while this immutable
+            # generation is selected. Recheck revocation instead of rejecting
+            # every successful publication. The generation remains pinned.
+            verified_status(directory)
         return path, manifest
     except FileNotFoundError as exc:
         if generation: raise CursorExpired('This page has expired; refresh to the latest records') from exc

@@ -168,6 +168,45 @@ class ReadModelTests(unittest.TestCase):
         self.assertEqual(positions,list(range(1,61)))
         self.assertEqual(before,self.files())
 
+    def test_healthy_publication_handoff_keeps_the_verified_generation_readable(self):
+        import read_model.storage as storage
+        from read_model.query import snapshot
+        self.submit();meta=build(self.root,self.output)
+        original=storage.read_document;changed=[]
+        def publishing(path,*args,**kwargs):
+            if path.name.startswith('generation-') and not changed:
+                changed.append(True);storage.atomic(self.output,'status.json',{'unavailable':False,'refresh':'healthy'})
+            return original(path,*args,**kwargs)
+        with patch.object(storage,'read_document',publishing):
+            self.assertEqual(storage.current(self.output)[1]['generation'],meta['generation'])
+        with snapshot(self.output) as (db,pinned):
+            storage.atomic(self.output,'status.json',{'unavailable':False,'refresh':'another'})
+            self.assertEqual(pinned['generation'],meta['generation'])
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM experiments').fetchone()[0],1)
+
+    def test_publication_handoff_never_accepts_revocation_or_unstable_status(self):
+        import read_model.storage as storage
+        from read_model.query import snapshot
+        self.submit();build(self.root,self.output)
+        original=storage.read_document;changed=[]
+        def revoking(path,*args,**kwargs):
+            if path.name.startswith('generation-') and not changed:
+                changed.append(True);storage.atomic(self.output,'status.json',{'unavailable':True})
+            return original(path,*args,**kwargs)
+        with patch.object(storage,'read_document',revoking):
+            with self.assertRaisesRegex(Unavailable,'verification failed'):storage.current(self.output)
+        storage.atomic(self.output,'status.json',{'unavailable':False})
+        with self.assertRaisesRegex(Unavailable,'verification failed'):
+            with snapshot(self.output):storage.atomic(self.output,'status.json',{'unavailable':True})
+        with patch.object(storage,'read_document',side_effect=storage.DocumentChanged('atomic replacement')) as read:
+            with self.assertRaisesRegex(Unavailable,'did not stabilize'):storage.verified_status(self.output)
+            self.assertEqual(read.call_count,3)
+        with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'unavailable':True}]) as read:
+            with self.assertRaisesRegex(Unavailable,'verification failed'):storage.verified_status(self.output)
+            self.assertEqual(read.call_count,2)
+        with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'unavailable':False}]) as read:
+            storage.verified_status(self.output);self.assertEqual(read.call_count,2)
+
     def test_source_guard_blocks_writes_locks_and_payloads(self):
         (self.root/'storage/payloads').mkdir(parents=True)
         payload=self.root/'storage/payloads/test'; payload.write_text('secret')

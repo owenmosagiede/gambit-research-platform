@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 import time
 
-from read_model.storage import (SCHEMA, CursorExpired, Unavailable, confined, connect,
-                                current, encoded, freshness, read_document)
+from read_model.storage import (SCHEMA, CursorExpired, Unavailable, connect,
+                                current, encoded, freshness, verified_status)
 
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -45,8 +45,7 @@ def snapshot(directory, generation=None):
         if schema is None or json.loads(schema[0]) != SCHEMA: raise Unavailable('Incompatible database')
         yield db, manifest
         # An integrity revocation published during this request invalidates it.
-        if read_document(confined(directory, 'status.json')).get('unavailable'):
-            raise Unavailable('Projection verification was revoked')
+        verified_status(directory)
     finally: db.close()
 
 

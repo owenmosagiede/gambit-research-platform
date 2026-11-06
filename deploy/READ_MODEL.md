@@ -44,7 +44,10 @@ hypothesis direction, without claiming a manifest association it did not verify.
 
 A closed rollback-journal SQLite file, schema/inventory manifest and atomic pointer
 form a generation. No WAL or shared mutable SQLite writer is used. Each request
-opens its pinned generation with `mode=ro` and `query_only`; integrity revocations
+opens its pinned generation with `mode=ro` and `query_only`. A bounded status
+re-read tolerates an overlapping healthy atomic publication while preserving the
+pinned immutable generation. Observed revocation and persistent status churn
+still fail closed; integrity revocations
 are checked before and after the query. Publication validates SQLite integrity and
 foreign keys and records database hash/signature plus a semantic projection hash.
 SQL work has a two-second interruption budget. Display rows are capped at 256 KiB;
