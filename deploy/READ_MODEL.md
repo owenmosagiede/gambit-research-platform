@@ -99,6 +99,9 @@ authorized service. One output-only lock prevents two builders. The default buil
 budget is 600 seconds, 200,000 captured metadata files, 64 MiB per source record,
 1 GiB per closed database and 4 GiB for the serving directory.
 The initial production shadow exceeded the earlier 256 MiB pilot database cap.
+Production shadow also exposed all-branch retention of full trial metadata.
+Branch selection now retains compact summaries and hydrates one verified SQLite
+unit at a time, preserving the same evidence-set supersession and stored records.
 Generation checksums now stream in 1 MiB chunks, including verification before an
 incremental copy, so a larger disk allowance does not require loading a database
 into publisher memory. Current and previous generations remain protected; cleanup

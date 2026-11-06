@@ -253,7 +253,12 @@ class Extractor:
         grouped = defaultdict(list)
         for path in self.files('storage/catalog/signal_library/research_links/RESEARCHLINK_*.json'):
             value = self.try_unit('branch', Path(path).stem, [path], lambda p=path: self.branch(p))
-            if value: grouped[encoded(value['row']['relationship'])].append(value)
+            if value:
+                # Keep only display/evidence keys while choosing branches. Full
+                # trial bodies already live in the verified SQLite unit and must
+                # not accumulate across the whole research history in RAM.
+                grouped[encoded(value['row']['relationship'])].append(
+                    {'row': value['row'], 'unit_id': Path(path).stem})
         selected = []
         for values in grouped.values():
             evidence = lambda v: frozenset(encoded(r) for k in ('trial_results','admission_results','validation_results') for r in v['row'][k])
@@ -283,8 +288,15 @@ class Extractor:
                 'research_stage_pass_count': len({encoded(r['relationship']) for r in rows if r['research_stage_pass']}),
                 'description': 'Each result belongs to its exact hypothesis and period; no recipe-wide validation is implied.'}
             self.db.execute('INSERT INTO recipes VALUES(?,?,?,?)', (rid, entry['name'].casefold(), encoded(entry).casefold(), encoded(entry)))
-            for value in values:
+            for selected_branch in values:
+                # Hydrate one already-verified unit at a time. Selection uses
+                # the same evidence sets and supersession rules as before.
+                cached = self.db.execute('SELECT value FROM units WHERE kind=? AND id=?',
+                                         ('branch', selected_branch['unit_id'])).fetchone()
+                if cached is None: raise IntegrityFailure('Selected branch unit disappeared')
+                value = json.loads(cached['value'])
                 row = value['row']
+                if row != selected_branch['row']: raise IntegrityFailure('Selected branch unit differs')
                 self.db.execute('INSERT OR IGNORE INTO relationships VALUES(?,?)', (row['relationship']['id'], encoded(value['relationship'])))
                 for table in ('trials', 'decisions'):
                     for record in value[table]: self.db.execute('INSERT OR IGNORE INTO ' + table + ' VALUES(?,?)', (record['id'], encoded(record)))
