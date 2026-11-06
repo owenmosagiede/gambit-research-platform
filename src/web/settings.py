@@ -72,5 +72,13 @@ HEALTH_STATUS_FILE = os.environ.get('GAMBIT_HEALTH_STATUS_FILE') or None
 # Do not emit request URLs, bodies, headers, cookies, or tracebacks into web logs.
 LOGGING = {'version': 1, 'disable_existing_loggers': False,
     'handlers': {'null': {'class': 'logging.NullHandler'}, 'console': {'class': 'logging.StreamHandler'}},
-    'loggers': {'web.access': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}, 'django.request': {'handlers': ['null'], 'propagate': False},
+    'loggers': {'web.read_model': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+                'web.access': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}, 'django.request': {'handlers': ['null'], 'propagate': False},
                 'django.security': {'handlers': ['null'], 'propagate': False}}}
+
+# Explicit operator switch; absent by default. Never starts a projector.
+READ_MODEL_DIR = os.environ.get('GAMBIT_READ_MODEL_DIR') or None
+if READ_MODEL_DIR:
+    serving = Path(READ_MODEL_DIR).absolute()
+    if serving.resolve() != serving or serving.is_relative_to(RESEARCH_ROOT) or RESEARCH_ROOT.is_relative_to(serving) or AUTH_DATABASE.is_relative_to(serving):
+        raise ImproperlyConfigured('Serving files must be separate from research and authentication storage')

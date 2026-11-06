@@ -1,0 +1,33 @@
+# REVIEWED EXAMPLE ONLY. Normal code deployment does not install/start this unit.
+# Provision a separate reader account with read access to authoritative metadata
+# and only write access to /var/lib/gambit-read-model. Do not use the worker user.
+[Unit]
+Description=Gambit disposable website metadata projector
+After=local-fs.target
+
+[Service]
+Type=simple
+User=gambit-reader
+Group=gambit-readers
+WorkingDirectory=/srv/gambit/research_platform
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/gambit/venv/bin/python -B tools/project_read_model.py --root /srv/gambit/research_platform --output /var/lib/gambit-read-model --watch-seconds 30
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/srv/gambit/research_platform
+ReadWritePaths=/var/lib/gambit-read-model
+InaccessiblePaths=/srv/gambit/research_platform/storage/payloads /srv/gambit/research_platform/storage/catalog/lineage /srv/gambit/research_platform/storage/catalog/trial_artifacts
+RestrictAddressFamilies=AF_UNIX
+CPUQuota=25%
+MemoryMax=256M
+Nice=15
+IOSchedulingClass=idle
+TasksMax=16
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

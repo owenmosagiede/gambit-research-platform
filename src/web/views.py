@@ -70,6 +70,8 @@ def private_asset(request):
     name, kind = asset
     content = stable_read(inside(settings.RESEARCH_ROOT, 'ui/' + name))
     if name == 'index.html':
+        if settings.READ_MODEL_DIR:
+            content = content.replace(b'name="gambit-read-model" content="disabled"', b'name="gambit-read-model" content="enabled"')
         token = escape(get_token(request))
         content = content.replace(b'</head>', (f'<meta name="csrf-token" content="{token}"></head>').encode())
         content = content.replace(b'<script ', b'<script src="/session.js" defer></script>\n  <script ', 1)
@@ -83,8 +85,11 @@ def api(request, endpoint):
         return response
     if is_retired_batch_path(request.path):
         return denied(request, 410, 'BATCH_RETIRED', BATCH_RETIRED_MESSAGE)
-    jobs, catalogs = services(str(settings.RESEARCH_ROOT))
-    route = ApplicationRoutes(settings.RESEARCH_ROOT, jobs, catalogs, request.method, request.get_full_path())
+    if request.method in ('GET', 'HEAD') and request.path.startswith('/api/read-model/v1/'):
+        jobs, catalogs = None, None
+    else:
+        jobs, catalogs = services(str(settings.RESEARCH_ROOT))
+    route = ApplicationRoutes(settings.RESEARCH_ROOT, jobs, catalogs, request.method, request.get_full_path(), read_model_dir=settings.READ_MODEL_DIR)
     if request.method == 'POST':
         if not settings.ALLOW_SUBMISSIONS and (request.path == '/api/experiments' or request.path.endswith('/resume')):
             return denied(request, 503, 'DEPLOYMENT_NOT_ACTIVATED', 'Cloud submissions are disabled until migration and recovery checks pass.')

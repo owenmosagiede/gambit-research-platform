@@ -2,6 +2,7 @@
 
 // Read-only presentation of exact saved relationships. No preparation or Submit calls.
 (() => {
+  if (document.querySelector?.('meta[name="gambit-read-model"]')?.content === "enabled") return;
   const node = (tag, text, cls) => {
     const element = document.createElement(tag);
     if (text !== undefined) element.textContent = text;

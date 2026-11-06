@@ -25,7 +25,8 @@ from services.research_worker import WebResearchJobs
 from api.catalog_cache import CatalogCache
 from api.feature_research import feature_research, trial_evidence, RECIPE, TRIAL, TABLE_ROLES
 
-ASSETS = dict(PIT_ASSETS, **{'/signals.js': ('signals.js', 'text/javascript; charset=utf-8'),
+ASSETS = dict(PIT_ASSETS, **{'/read-model.js': ('read-model.js', 'text/javascript; charset=utf-8'),
+                           '/signals.js': ('signals.js', 'text/javascript; charset=utf-8'),
                            '/signal-research.js': ('signal-research.js', 'text/javascript; charset=utf-8'),
                            '/signal-research.css': ('signal-research.css', 'text/css; charset=utf-8'),
                            '/targets.js': ('targets.js', 'text/javascript; charset=utf-8'),
@@ -58,10 +59,11 @@ def is_retired_batch_path(path):
 
 class ApplicationRoutes:
     """One request, one response. Does not open sockets or execute workers."""
-    def __init__(self, root, jobs, catalogs, method, path):
+    def __init__(self, root, jobs, catalogs, method, path, *, read_model_dir=None):
         self.root,self.jobs,self.catalogs=Path(root).resolve(),jobs,catalogs
         self.command,self.path=method,path
         self.response=None
+        self.read_model_dir=read_model_dir
 
     def send_bytes(self,status,content,content_type,head=False,allow=False):
         self.response=(status,content,content_type,allow)
@@ -77,6 +79,8 @@ class ApplicationRoutes:
         target=urlsplit(self.path)
         if target.scheme or target.netloc:
             self.error(404,'NOT_FOUND','This address is not available.',head);return
+        from api.read_model_views import serve
+        if serve(self,target,self.read_model_dir,head=head): return
         if target.path=='/api/research-readiness':
             if target.query:self.error(400,'UNSUPPORTED_QUERY','This endpoint accepts no query.',head);return
             try:
