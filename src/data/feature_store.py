@@ -146,13 +146,20 @@ class FeatureStore:
         loose = self.path(relative)
         probe(loose)
         packed = self._packed_lineage.resolve(binding, rebuild_missing=not loose.exists()) if identifier.startswith('LINEAGE_') else None
-        record = strict_json(stable_read(loose)) if loose.exists() else packed
+        loose_present = loose.exists()
+        record = strict_json(stable_read(loose)) if loose_present else packed
         if record is None:
             raise FileNotFoundError(loose)
         if packed is not None and record != packed:
             raise PublicationError('Conflicting loose and packed lineage')
-        self._validate(record)
-        if reference(record)!=binding or record_path(record)!=relative:raise PublicationError('Immutable reference or path mismatch')
+        # PackedLineage has already validated every row's schema, canonical
+        # bytes and exact reference before returning a private copy. Repeating
+        # that identical row validation here adds no evidence. Loose records
+        # still need their own validation, even when an equal pack also exists.
+        if packed is None or loose_present:
+            self._validate(record)
+            if reference(record)!=binding:raise PublicationError('Immutable reference or path mismatch')
+        if record_path(record)!=relative:raise PublicationError('Immutable reference or path mismatch')
         # Materializations contain every row-lineage reference. Catalog scans
         # must not retain the entire observation population in this store.
         # Exact numerical reuse is bounded separately by verified_inputs.

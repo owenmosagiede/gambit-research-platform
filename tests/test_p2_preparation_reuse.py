@@ -165,6 +165,66 @@ class FeatureProofTests(unittest.TestCase):
             self.assertEqual(verify.call_count, 4)
 
 
+class PackedCaptureTests(unittest.TestCase):
+    def fixture(self):
+        from test_lineage_packs import LineagePackTests
+        from data.feature_store import FeatureStore
+        from data.lineage_packs import PackedLineage
+        fixture=LineagePackTests();fixture.setUp();self.addCleanup(fixture.tearDown)
+        saved=fixture.packed();item=fixture.item(saved)
+        return fixture, PackedLineage(FeatureStore(fixture.root)), item['manifest']['lineage']
+
+    def phase(self, root):
+        return phase_inputs(root,{'plan_id':'isolated','periods':{'P2':{'end_exclusive':'2025-01-01'}}},'P2')
+
+    def test_same_read_reuses_verified_pack_but_independent_reads_check_again(self):
+        from data import lineage_packs as packs
+        f,reader,refs=self.fixture()
+        with execution_inputs(f.root,'code'),self.phase(f.root):
+            with patch.object(packs,'_generation',wraps=packs._generation) as generation:
+                first=memo(f.root,'read',{'n':1},lambda:[reader.resolve(r) for r in refs])
+                self.assertEqual(generation.call_count,1)
+                second=memo(f.root,'read',{'n':2},lambda:[reader.resolve(r) for r in refs])
+                self.assertEqual(second,first);self.assertEqual(generation.call_count,2)
+                first[0]['body']['prefix_count']=-1
+                self.assertNotEqual(first,second)
+        reader.resolve(refs[0])  # Standalone lookup remains independent.
+
+    def test_mid_read_payload_or_index_mutation_rejects_publication(self):
+        from data import lineage_packs as packs
+        from data.verified_inputs import ChangedInput
+        for kind in ('payload','index','catalog_membership'):
+            with self.subTest(kind=kind):
+                f,reader,refs=self.fixture()
+                catalog=json.loads(next(f.root.glob(packs.CATALOG+'/*.json')).read_bytes())
+                member=catalog['payload'];h=member['blob_sha256']
+                path=(f.root/f'storage/payloads/sha256/{h[:2]}/{h}.bin' if kind=='payload' else f.root/packs.INDEX)
+                def changed_read():
+                    first=reader.resolve(refs[0])
+                    if kind=='catalog_membership':
+                        (f.root/packs.CATALOG/('a'*64+'.json')).write_text('{}')
+                    else:
+                        stamp=path.stat();raw=path.read_bytes()
+                        path.write_bytes(bytes([raw[0]^1])+raw[1:])
+                        os.utime(path,ns=(stamp.st_atime_ns,stamp.st_mtime_ns))
+                    self.assertEqual(reader.resolve(refs[0]),first)
+                    return first
+                with execution_inputs(f.root,'code') as cache,self.phase(f.root):
+                    with self.assertRaises(ChangedInput):memo(f.root,'outer',{},changed_read)
+                    self.assertFalse(any(k[1]=='outer' for k in cache.entries))
+
+    def test_mutation_between_independent_reads_cannot_reuse_pack(self):
+        from data import lineage_packs as packs
+        f,reader,refs=self.fixture()
+        catalog=json.loads(next(f.root.glob(packs.CATALOG+'/*.json')).read_bytes())
+        member=catalog['payload'];h=member['blob_sha256']
+        path=f.root/f'storage/payloads/sha256/{h[:2]}/{h}.bin'
+        with execution_inputs(f.root,'code'),self.phase(f.root):
+            memo(f.root,'read',{'n':1},lambda:reader.resolve(refs[0]))
+            path.write_bytes(b'!'*path.stat().st_size)
+            with self.assertRaises(ValueError):memo(f.root,'read',{'n':2},lambda:reader.resolve(refs[0]))
+
+
 class EventHistoryTests(unittest.TestCase):
     def test_unchanged_reuse_append_cancel_tamper_and_restart(self):
         from test_research_runtime import RuntimeTests, intent, Adapter

@@ -30,6 +30,16 @@ every witness before publishing a cached result; a directory changed during that
 read rejects publication. Independent loads still check the directories afresh.
 Cancellation/event checks never use this same-read shortcut.
 
+Packed row-lineage reads also reuse the already checked locator and bounded
+pack within one enclosing verification read. The first lookup captures the
+index, catalog generation, exact pack catalog and payload. The enclosing verifier
+rechecks that complete read set before publication. A changed payload, index or
+catalog membership rejects the result. A separate read or phase performs the
+ordinary checks again; the existing two-pack bound remains unchanged.
+The Feature resolver accepts that pack reader's complete row validation instead
+of repeating the identical schema and reference checks on its private copy.
+Canonical path checks and independent validation of any loose record remain.
+
 A verified FX Feature can retain a compact SHA-256 proof after its observation
 buffer is evicted. That proof comes only from the full existing independent
 source, arithmetic and lineage verifier and retains its entire read-set witnesses.
