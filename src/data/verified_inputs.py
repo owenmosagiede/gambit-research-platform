@@ -103,7 +103,11 @@ class _WitnessPaths:
         # Preserve canonical spelling without rebuilding an identical string.
         # Relative, redundant-separator and symlink parents still use the
         # independently resolved spelling. All final witness checks remain.
-        return path if parent == resolved_parent else os.path.join(resolved_parent, name)
+        # split() strips repeated separators immediately before the basename.
+        # Only reuse the input when exactly one separator remains there.
+        if parent == resolved_parent and len(path) == len(parent) + len(name) + 1:
+            return path
+        return os.path.join(resolved_parent, name)
 
     def unchanged(self):
         try:

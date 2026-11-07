@@ -46,7 +46,9 @@ class WitnessPathTests(unittest.TestCase):
     def test_pass_matches_individual_signatures_and_detects_changed_files(self):
         from data import verified_inputs as v
         with TemporaryDirectory() as folder:
-            root=Path(folder); (root/'data').mkdir()
+            # Resolve macOS's temporary-directory symlink so the ordinary
+            # ancestor branch is exercised here as it is on Linux.
+            root=Path(folder).resolve(); (root/'data').mkdir()
             paths=[root/'data'/str(n) for n in range(5)]
             for path in paths:path.write_bytes(b'good')
             (root/'alias').symlink_to(root/'data',target_is_directory=True)
