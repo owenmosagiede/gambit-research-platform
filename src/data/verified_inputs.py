@@ -289,6 +289,19 @@ def compact_memo(root, kind, key, loader):
     return _freeze(loader()) if context is None else context.memo(kind, key, loader, compact=True)
 
 
+def record_memo(root, kind, key, loader):
+    """Retain small verified JSON records without bulk-payload eviction.
+
+    Canonical bytes are immutable and charged to the existing compact/total
+    budgets. Decode a private value on every read; all ordinary dependency and
+    phase checks still apply. Standalone readers keep their ordinary verifier.
+    """
+    if current(root) is None or _PHASE.get() is None:
+        return loader()
+    data = compact_memo(root, kind, key, lambda: canonical_bytes(loader()))
+    return json.loads(data)
+
+
 def phase_end(root, fallback):
     phase = _PHASE.get()
     return phase['end'] if current(root) is not None and phase else fallback

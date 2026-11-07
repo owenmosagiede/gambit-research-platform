@@ -26,7 +26,7 @@ prep = importlib.util.module_from_spec(spec); spec.loader.exec_module(prep)
 bench = prep.benchmark
 
 
-def build(source, destination, *, long_history=False):
+def build(source, destination, *, long_history=False, p2_case=None):
     bench.load_source(source)
     from test_fx_onboarding import build_fixture
     from test_fx_targets import approve
@@ -48,7 +48,7 @@ def build(source, destination, *, long_history=False):
     from research import inputs
     # The short-history control has the same 18-member, two-chunk P1 geometry.
     days = list(_dates('1979-12-24' if long_history else '2019-01-01',
-                       '2026-09-04' if long_history else '2022-12-30'))
+                       '2026-09-04' if long_history or p2_case else '2022-12-30'))
     def price(number, day):
         t = (date.fromisoformat(day)-date(1979,12,24)).days / 7 * 5
         return 10 * math.exp(.00004*(number+1)*t + .011*math.sin(t*.11+number*.9)
@@ -69,15 +69,17 @@ def build(source, destination, *, long_history=False):
     _, instruments = resolve_prices(root, reference(catalog))
     desired = sorted(s for s in instruments if s.endswith('CHF'))
     registry = Registry(source)
-    _copy_metadata_closure(root, [registry.operator(n) for n in ('TR_BASE_level_log','TR_BASE_change_diff')]+
+    operator, parameters = {'diff63':('TR_BASE_change_diff', {'k':63}),
+                            'volscale5':('TR_BASE_volscale_diff', {'k':5,'w':21})}.get(p2_case, ('TR_BASE_change_diff', {'k':63}))
+    _copy_metadata_closure(root, [registry.operator(n) for n in ('TR_BASE_level_log',operator)]+
         [registry.get_policy(n) for n in ('POL_TRANSFORM_EXECUTION','POL_TRANSFORM_HISTORY')])
     (root/'config/fx_retrospective_completion.json').write_text(json.dumps({'return_policy':batch,'knowledge_cutoff':'2026-10-09'}))
     policy, evidence, payload, _ = _policy_records(root,'ISOLATED BENCHMARK ONLY',{'fixture':True})
     store.io.blob(payload,'json','fixture_policy',None); store.install_record(evidence); store.install_record(policy)
     policy = deepcopy(policy); policy.update(id='POL_TRANSFORM_EVALUATION_FX_CURRENCY_SNAPSHOT',version='2.0.0')
     store.install_record(policy)
-    registry = Registry(root); op = registry.operator('TR_BASE_change_diff')
-    variant = {'operator':reference(op),'parameters':_typed_parameters(op,{'k':63}),
+    registry = Registry(root); op = registry.operator(operator)
+    variant = {'operator':reference(op),'parameters':_typed_parameters(op,parameters),
         'grid_policy':op['body']['execution_contract']['grid_profile'],'mode':'log_first','parameter_frequency':'daily'}
     recipe = _definition(registry,policy,variant); body = deepcopy(recipe['body'])
     body['input_contract'] = deepcopy(CURRENCY_INPUT_CONTRACT)
@@ -86,7 +88,7 @@ def build(source, destination, *, long_history=False):
     profile = approved_profile()
     profile.update(id='RSPEC_ISOLATED_FULL_SOURCE_PREPARATION',periods={
         'P1':{'start_inclusive':'2020-04-14','end_exclusive':'2022-01-01'},
-        'P2':{'start_inclusive':'2022-01-01','end_exclusive':'2026-09-01' if long_history else '2023-01-01'}})
+        'P2':{'start_inclusive':'2022-01-01','end_exclusive':'2026-09-01' if long_history or p2_case else '2023-01-01'}})
     profile = scheduled_profile(profile)
     profile['target_selection'].update(knowledge_cutoff='2026-10-09',selection_scope='currency_price_catalog',
         price_catalog=reference(catalog),source_snapshots={s:instruments[s]['price_snapshot'] for s in desired}, materializations={})

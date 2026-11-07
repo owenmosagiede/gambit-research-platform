@@ -8,6 +8,8 @@ from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 import sys
+import json
+from hashlib import sha256
 
 from data.alfred_onboarding import stable_read, strict_json
 from data.feature_store import FeatureStore, PublicationError, materialization_path, _publish_entry
@@ -259,12 +261,39 @@ def read_fx_materialization(root, identifier, *, research=False):
         from data.verified_inputs import fresh_inputs
         with fresh_inputs():
             return _read_fx_materialization(root, identifier)
+    from data.verified_inputs import compact_memo, ChangedInput
     def verify():
         item = _read_fx_materialization(root, identifier)
         # Source operand trees are available through fresh inspection, not copied
         # into every cached research window. Full verification has already run.
         return {key: value for key, value in item.items() if key != 'operands'}
-    return memo(root, 'fx_materialization', {'id': identifier}, verify)
+    def encoded():
+        first = []
+        def prove():
+            data = canonical_bytes(verify())
+            first.append(data)
+            return sha256(data).hexdigest()
+        proof = compact_memo(root, 'feature_proof', {'id': identifier}, prove)
+        if first:
+            return first[0]
+        # The compact proof retains the FULL independent verifier's witnesses,
+        # including source payloads, negative definitions and lineage catalogs.
+        # Only an unchanged proof permits a checksum-bound reload after the
+        # larger observation value has been evicted. No arithmetic is skipped
+        # on a new phase, changed dependency, missing proof or standalone read.
+        store = FeatureStore(root)
+        manifest = strict_json(stable_read(store.path(materialization_path(identifier))))
+        rows = [strict_json(line) for member in manifest['partitions']
+                for line in store.payload(member).splitlines()]
+        meta = manifest['metadata']
+        item = {'feature': store.resolve(manifest['definition']), 'manifest': manifest,
+                'observations': rows, 'metadata': {'dataset': store.resolve(meta['dataset']),
+                                                 'source_view': store.resolve(meta['source_view'])}}
+        data = canonical_bytes(item)
+        if sha256(data).hexdigest() != proof:
+            raise ChangedInput('Reloaded Feature differs from independently verified evidence')
+        return data
+    return json.loads(memo(root, 'fx_materialization', {'id': identifier}, encoded))
 
 
 def _read_fx_materialization(root, identifier):

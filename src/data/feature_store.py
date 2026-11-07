@@ -96,12 +96,12 @@ class FeatureStore:
 
     @measure('catalog.feature_resolution')
     def resolve(self, binding):
-        from data.verified_inputs import memo
+        from data.verified_inputs import record_memo
         # Window-specific causal lineage can dwarf the useful input cache and is
         # not shared across horizons once the materialization itself is verified.
         if str(binding.get('id', '')).startswith(('LINEAGE_', 'PIT_OPERAND_', 'MATERIALIZATION_')):
             return self._resolve_record(binding)
-        return memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding))
+        return record_memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding))
 
     def _resolve_record(self, binding):
         from data.verified_inputs import current, dependency_capture, probe, probe_definition
