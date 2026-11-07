@@ -90,6 +90,129 @@ class ReadModelTests(unittest.TestCase):
         with self.assertRaises(OSError): build(self.root,self.output,max_bytes=1)
         self.assertEqual(page(self.output,'queue')['total'],1)
 
+    def test_production_sized_generation_streams_hashes_and_preserves_sources(self):
+        from read_model.extract import Extractor
+        from read_model.storage import MAX_DATABASE_BYTES, MAX_DIRECTORY_BYTES
+        self.submit(); before=self.files()
+        extract=Extractor.run; read_bytes=Path.read_bytes
+        def with_padding(extractor):
+            result=extract(extractor)
+            # SQLite's zero-blob writes a realistic-sized derived file without
+            # manufacturing production research or a 300 MiB Python allocation.
+            extractor.db.execute('CREATE TABLE IF NOT EXISTS capacity_fixture(value BLOB)')
+            if not extractor.db.execute('SELECT 1 FROM capacity_fixture').fetchone():
+                extractor.db.execute('INSERT INTO capacity_fixture VALUES(zeroblob(?))',(300*1024*1024,))
+            return result
+        def forbid_whole_database_read(path):
+            if path.suffix=='.sqlite': raise AssertionError('Publisher loaded entire database into memory')
+            return read_bytes(path)
+        with patch.object(Extractor,'run',with_padding), patch.object(Path,'read_bytes',forbid_whole_database_read):
+            first=build(self.root,self.output)
+            second=build(self.root,self.output)
+            self.assertGreater(first['database_bytes'],256*1024*1024)
+            self.assertLess(second['database_bytes'],MAX_DATABASE_BYTES)
+            self.assertEqual(first['projection_sha256'],second['projection_sha256'])
+            self.assertEqual(second['extraction']['rebuilt'],{})
+            self.assertEqual(page(self.output,'queue')['total'],1)
+            with patch('read_model.projector.MAX_DATABASE_BYTES',256*1024*1024):
+                with self.assertRaisesRegex(OSError,'database_limit=268435456'):
+                    build(self.root,self.output)
+            self.assertEqual(current(self.output)[1]['generation'],second['generation'])
+        self.assertEqual(before,self.files())
+        self.assertGreaterEqual(MAX_DIRECTORY_BYTES,3*MAX_DATABASE_BYTES)
+
+    def test_large_provenance_pages_are_bounded_without_losing_rows(self):
+        from read_model.extract import Extractor
+        from read_model.storage import encoded
+        from read_model.query import MAX_RESPONSE_BYTES, PAGE_PAYLOAD_BYTES
+        self.submit();before=self.files();extract=Extractor.run
+        def large_rows(extractor):
+            result=extract(extractor)
+            # Query fixture sized from the real 160 KB provenance record. The
+            # authoritative experiment stays untouched; only derived rows vary.
+            template=json.loads(extractor.db.execute('SELECT value FROM experiments LIMIT 1').fetchone()[0])
+            extractor.db.execute('DELETE FROM experiments')
+            for number in range(60):
+                row=json.loads(encoded(template));rid='fixture-'+str(number).zfill(3)
+                row['job'].update(request_id=rid,status='queued',created_at='2026-01-01T00:00:00Z',queued_at='2026-01-01T00:00:00Z')
+                row['provenance']={'complete_fixture_metadata':'x'*(160*1024)}
+                extractor.db.execute('INSERT INTO experiments VALUES(?,?,?,?,?,?,?,?,?)',
+                    (rid,'queued',row['job']['queued_at'],row['job']['created_at'],'recipe','scope','POSITIVE','fixture',encoded(row)))
+            return result
+        with patch.object(Extractor,'run',large_rows):build(self.root,self.output)
+        found=[];positions=[];query={'limit':'50'};pages=0
+        while True:
+            statements=[]
+            def traced(path):
+                db=connect(path);db.set_trace_callback(statements.append);return db
+            with patch('read_model.query.connect',traced):
+                value=page(self.output,'queue',query)
+            pages+=1
+            self.assertLessEqual(len(encoded(value).encode()),MAX_RESPONSE_BYTES)
+            self.assertTrue(value['items']);self.assertEqual(value['total'],60)
+            self.assertLess(len(value['items']),50)
+            self.assertLess(sum(len(encoded(r).encode()) for r in value['items']),PAGE_PAYLOAD_BYTES)
+            # Provenance is fetched only for served rows and at most one row
+            # that discovers the byte boundary, never for the full sorted set.
+            payload_reads=[s for s in statements if s.startswith('SELECT value FROM experiments')]
+            self.assertLessEqual(len(payload_reads),len(value['items'])+1)
+            self.assertTrue(all(' WHERE id=' in s for s in payload_reads))
+            self.assertFalse(any(s.startswith('SELECT value,') for s in statements))
+            for row in value['items']:
+                found.append(row['job']['request_id']);positions.append(row['queue_position'])
+                self.assertEqual(row['provenance']['complete_fixture_metadata'],'x'*(160*1024))
+            if value['next_cursor'] is None:break
+            query={'limit':'50','cursor':value['next_cursor']}
+            self.assertLess(pages,20,'Byte-limited cursor failed to advance')
+        self.assertEqual(found,['fixture-'+str(n).zfill(3) for n in range(60)])
+        self.assertEqual(positions,list(range(1,61)))
+        self.assertEqual(before,self.files())
+
+    def test_healthy_publication_handoff_keeps_the_verified_generation_readable(self):
+        import read_model.storage as storage
+        from read_model.query import snapshot
+        self.submit();meta=build(self.root,self.output)
+        original=storage.read_document;changed=[]
+        def publishing(path,*args,**kwargs):
+            if path.name.startswith('generation-') and not changed:
+                changed.append(True);storage.atomic(self.output,'status.json',{'unavailable':False,'refresh':'healthy'})
+            return original(path,*args,**kwargs)
+        with patch.object(storage,'read_document',publishing):
+            self.assertEqual(storage.current(self.output)[1]['generation'],meta['generation'])
+        with snapshot(self.output) as (db,pinned):
+            storage.atomic(self.output,'status.json',{'unavailable':False,'refresh':'another'})
+            self.assertEqual(pinned['generation'],meta['generation'])
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM experiments').fetchone()[0],1)
+
+    def test_publication_handoff_never_accepts_revocation_or_unstable_status(self):
+        import read_model.storage as storage
+        from read_model.query import snapshot
+        self.submit();build(self.root,self.output)
+        original=storage.read_document;changed=[]
+        def revoking(path,*args,**kwargs):
+            if path.name.startswith('generation-') and not changed:
+                changed.append(True);storage.atomic(self.output,'status.json',{'unavailable':True})
+            return original(path,*args,**kwargs)
+        with patch.object(storage,'read_document',revoking):
+            with self.assertRaisesRegex(Unavailable,'verification failed'):storage.current(self.output)
+        storage.atomic(self.output,'status.json',{'unavailable':False})
+        with self.assertRaisesRegex(Unavailable,'verification failed'):
+            with snapshot(self.output):storage.atomic(self.output,'status.json',{'unavailable':True})
+        with patch.object(storage,'read_document',side_effect=storage.DocumentChanged('atomic replacement')) as read:
+            with self.assertRaisesRegex(Unavailable,'did not stabilize'):storage.verified_status(self.output)
+            self.assertEqual(read.call_count,3)
+        with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'unavailable':True}]) as read:
+            with self.assertRaisesRegex(Unavailable,'verification failed'):storage.verified_status(self.output)
+            self.assertEqual(read.call_count,2)
+        with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'unavailable':False}]) as read:
+            storage.verified_status(self.output);self.assertEqual(read.call_count,2)
+        with patch.object(storage,'read_document',side_effect=[storage.DocumentChanged('atomic replacement'),{'generation':'new'}]) as read:
+            self.assertEqual(storage.published_pointer(self.output),{'generation':'new'})
+            self.assertEqual(read.call_count,2)
+        with patch.object(storage,'read_document',side_effect=storage.DocumentChanged('atomic replacement')) as read:
+            with self.assertRaisesRegex(Unavailable,'pointer did not stabilize'):storage.published_pointer(self.output)
+            self.assertEqual(read.call_count,3)
+
     def test_source_guard_blocks_writes_locks_and_payloads(self):
         (self.root/'storage/payloads').mkdir(parents=True)
         payload=self.root/'storage/payloads/test'; payload.write_text('secret')

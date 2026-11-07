@@ -50,6 +50,49 @@ class BranchProjectionTests(unittest.TestCase):
             self.assertEqual(ref(trial),row['trial_results'][0])
         self.assertEqual(before,{p:p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
 
+    def test_full_trial_metadata_is_not_retained_for_every_branch(self):
+        import hashlib
+        import tracemalloc
+        store=ResearchStore(self.root); recipe=self.fixture.arguments['feature']
+        body={'recipe':reference(recipe),'scope':fake_reference('SCOPE_','USD'),
+              'mode':'CS','horizon':21,'expected_direction':'POSITIVE','target_family':'price_return'}
+        relation=store.put('relationship',body,body)
+        # Real immutable metadata, deliberately much larger than the compact
+        # branch summaries. No numerical evaluation or artifact payloads.
+        for branch in range(64):
+            key={'relationship':ref(relation),'stage':'P1','horizon':21,
+                 'research_spec':fake_reference('RSPEC_','spec'),'branch':branch}
+            trial=store.put('trial',key,{'stage':'P1','admission':'rejected','execution_status':'completed',
+                'metrics':{'diagnostic_fixture':'x'*(512*1024)},'sample':{},'artifact_manifests':[]})
+            admission=store.put('admission',{'trial':ref(trial)},
+                {'relationship':ref(relation),'trial':ref(trial),'decision':'rejected'})
+            link={'relationship':ref(relation),'trial_results':[ref(trial)],
+                  'admission_results':[ref(admission)],'validation_results':[]}
+            store.put('link',link,link)
+        expected=list_signal_summaries(self.root)['entries'][0]['research']['relationships']
+        source_hashes=lambda:{str(p.relative_to(self.root)):hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in self.root.rglob('*') if p.is_file()}
+        before=source_hashes(); projections=[]
+        for iteration in range(2):
+            tracemalloc.start()
+            try:
+                with patch.object(ResearchStore,'verify_artifact',side_effect=AssertionError('payload read')):
+                    meta=build(self.root,self.output)
+                peak=tracemalloc.get_traced_memory()[1]
+            finally:tracemalloc.stop()
+            self.assertLess(peak,16*1024*1024,'Full trial bodies accumulated across branches')
+            self.assertEqual(meta['issue_count'],0);projections.append(meta['projection_sha256'])
+            if iteration:self.assertEqual(meta['extraction']['rebuilt'],{})
+        self.assertEqual(projections[0],projections[1])
+        rows=page(self.output,'branches',{'limit':'100'},recipe=recipe['id'])['items']
+        self.assertEqual(len(rows),64)
+        for row in rows:
+            old=next(r for r in expected if r['projection']==row['projection'])
+            for key in old:self.assertEqual(row[key],old[key])
+            record=detail(self.output,'trial',row['trial_results'][0]['id'])['record']
+            self.assertEqual(record,store.get('trial',record['id']))
+        self.assertEqual(source_hashes(),before)
+
     def validated(self,direction='NEGATIVE',effect='-0.1',evaluated=True):
         store=ResearchStore(self.root);recipe=self.fixture.arguments['feature']
         body={'recipe':reference(recipe),'scope':fake_reference('SCOPE_','USD'), 'mode':'CS','horizon':21,

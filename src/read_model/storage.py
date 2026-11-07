@@ -10,7 +10,19 @@ import time
 
 SCHEMA = 1
 GENERATION = re.compile(r'[0-9a-f]{32}\Z')
-MAX_DATABASE_BYTES = 256 * 1024 * 1024
+# Production metadata already exceeds the original 256 MiB pilot allocation.
+# Keep a bounded generation plus room for current, previous and the next build.
+MAX_DATABASE_BYTES = 1024 * 1024 * 1024
+MAX_DIRECTORY_BYTES = 4 * MAX_DATABASE_BYTES
+
+
+def file_digest(path):
+    """Hash a generation without loading its size into publisher memory."""
+    result = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
 
 class Unavailable(ValueError):
     pass
@@ -19,6 +31,9 @@ class IntegrityFailure(Unavailable):
     pass
 
 class CursorExpired(Unavailable):
+    pass
+
+class DocumentChanged(Unavailable):
     pass
 
 
@@ -48,8 +63,38 @@ def read_document(path, maximum=1024 * 1024):
         raise Unavailable('Serving document exceeds its bound')
     data = Path(path).read_bytes()
     if signature(path) != before:
-        raise Unavailable('Serving document changed during read')
+        raise DocumentChanged('Serving document changed during read')
     return json.loads(data)
+
+
+def verified_status(directory):
+    """Read an unrevoked status across a bounded atomic publication handoff.
+
+    Only an overlapping file replacement is retried. Observed revocation,
+    malformed data, symlinks and persistent churn still fail closed.
+    """
+    path = confined(directory, 'status.json')
+    for _ in range(3):
+        before = signature(path)
+        try:
+            status = read_document(path)
+        except DocumentChanged:
+            continue
+        if status.get('unavailable'):
+            raise Unavailable('Projection verification failed; prior rows are not current certification')
+        if signature(path) == before:
+            return before
+    raise Unavailable('Serving status did not stabilize')
+
+
+def published_pointer(directory):
+    path = confined(directory, 'current.json')
+    for _ in range(3):
+        try:
+            return read_document(path)
+        except DocumentChanged:
+            continue
+    raise Unavailable('Serving publication pointer did not stabilize')
 
 
 def atomic(directory, name, value):
@@ -115,11 +160,8 @@ def current(directory, generation=None):
     directory = Path(directory).absolute()
     try:
         status_path = confined(directory, 'status.json')
-        status_signature = signature(status_path)
-        status = read_document(status_path)
-        if status.get('unavailable'):
-            raise Unavailable('Projection verification failed; prior rows are not current certification')
-        pointer = read_document(confined(directory, 'current.json'))
+        status_signature = verified_status(directory)
+        pointer = published_pointer(directory)
         selected = generation or pointer['generation']
         if not GENERATION.fullmatch(selected): raise ValueError('Invalid generation')
         manifest = read_document(confined(directory, 'generation-' + selected + '.json'))
@@ -129,7 +171,10 @@ def current(directory, generation=None):
         if signature(path) != manifest['database_signature']:
             raise Unavailable('Serving database changed')
         if signature(status_path) != status_signature:
-            raise Unavailable('Integrity status changed')
+            # A healthy refresh may publish a new status while this immutable
+            # generation is selected. Recheck revocation instead of rejecting
+            # every successful publication. The generation remains pinned.
+            verified_status(directory)
         return path, manifest
     except FileNotFoundError as exc:
         if generation: raise CursorExpired('This page has expired; refresh to the latest records') from exc
