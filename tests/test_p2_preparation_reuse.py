@@ -1,4 +1,4 @@
-"""Independent Feature proof and execution history invalidation boundaries."""
+"""Independent Feature reuse and execution history invalidation boundaries."""
 from copy import deepcopy
 import json
 import os
@@ -83,7 +83,7 @@ class WitnessPathTests(unittest.TestCase):
                 with patch.object(v,'_signature',swap):self.assertFalse(v._unchanged(expected))
 
 
-class FeatureProofTests(unittest.TestCase):
+class FeatureReuseTests(unittest.TestCase):
     setUp = fixtures.VerifiedPreparationTests.setUp
 
     def test_definition_membership_reuse_detects_new_alias_and_version(self):
@@ -107,7 +107,7 @@ class FeatureProofTests(unittest.TestCase):
                     with self.assertRaises(ValueError):FeatureStore(self.root).resolve(lineage)
                 alias.unlink()
 
-    def test_compact_proof_outlives_observations_but_not_changed_source(self):
+    def test_evicted_observations_reverify_without_displacing_compact_lookups(self):
         plan = self.f.plan()
         prepared = inputs.prepare_phase(self.root, plan, 'P1')
         binding = prepared['members'][0]['materializations'][0]
@@ -115,10 +115,11 @@ class FeatureProofTests(unittest.TestCase):
             with patch.object(fx, '_read_fx_materialization', wraps=fx._read_fx_materialization) as verify:
                 first = fx.read_fx_materialization(self.root, binding['id'], research=True)
                 for identity in list(cache.entries):
-                    cache._remove(cache.entries, identity, False)
+                    if identity[1] == 'fx_materialization':cache._remove(cache.entries, identity, False)
                 second = fx.read_fx_materialization(self.root, binding['id'], research=True)
                 self.assertEqual(second, first)
-                self.assertEqual(verify.call_count, 1)
+                self.assertEqual(verify.call_count, 2)
+                self.assertFalse(any(key[1] == 'feature_proof' for key in cache.compact_entries))
                 second['observations'][0]['value'] = 'caller mutation'
                 self.assertEqual(fx.read_fx_materialization(self.root, binding['id'], research=True), first)
                 part = first['manifest']['partitions'][0]; h = part['blob_sha256']
@@ -128,16 +129,17 @@ class FeatureProofTests(unittest.TestCase):
                 os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
                 with self.assertRaises(Exception):
                     fx.read_fx_materialization(self.root, binding['id'], research=True)
-                self.assertEqual(verify.call_count, 2)
+                self.assertEqual(verify.call_count, 3)
                 self.assertLessEqual(cache.bytes, cache.max_bytes)
 
-    def test_reload_cannot_substitute_values_after_full_verification(self):
+    def test_reverification_cannot_substitute_values(self):
         from data.feature_store import FeatureStore
         plan=self.f.plan();prepared=inputs.prepare_phase(self.root,plan,'P1')
         binding=prepared['members'][0]['materializations'][0]
         with execution_inputs(self.root,'code') as cache,phase_inputs(self.root,plan,'P1'):
             fx.read_fx_materialization(self.root,binding['id'],research=True)
-            for identity in list(cache.entries):cache._remove(cache.entries,identity,False)
+            for identity in list(cache.entries):
+                if identity[1] == 'fx_materialization':cache._remove(cache.entries,identity,False)
             original=FeatureStore.payload
             def changed(store,member):
                 raw=original(store,member)
@@ -145,10 +147,10 @@ class FeatureProofTests(unittest.TestCase):
                     rows=[json.loads(line) for line in raw.splitlines()];rows[0]['value']='999'
                     return b''.join(canonical(row)+b'\n' for row in rows)
                 return raw
-            with patch.object(FeatureStore,'payload',changed),self.assertRaisesRegex(ValueError,'Reloaded Feature differs'):
+            with patch.object(FeatureStore,'payload',changed),self.assertRaises(ValueError):
                 fx.read_fx_materialization(self.root,binding['id'],research=True)
 
-    def test_proof_eviction_phase_change_and_standalone_repeat_full_verifier(self):
+    def test_eviction_phase_change_and_standalone_repeat_full_verifier(self):
         plan = self.f.plan()
         prepared = inputs.prepare_phase(self.root, plan, 'P1')
         binding = prepared['members'][0]['materializations'][0]

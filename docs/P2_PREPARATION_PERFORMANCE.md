@@ -48,14 +48,13 @@ The Feature resolver accepts that pack reader's complete row validation instead
 of repeating the identical schema and reference checks on its private copy.
 Canonical path checks and independent validation of any loose record remain.
 
-A verified FX Feature can retain a compact SHA-256 proof after its observation
-buffer is evicted. That proof comes only from the full existing independent
-source, arithmetic and lineage verifier and retains its entire read-set witnesses.
-A reload reconstructs all returned fields from checksummed stored bytes and must
-match the proven content exactly. Every enclosing cache captures these witnesses
-and checks them again before publication. Packed-catalog changes conservatively
-invalidate proof; no persistent verified flag or verification exemption exists.
-Standalone inspection, missing proof and new phases use full independent replay.
+A verified FX Feature retains canonical bytes in the ordinary cache. Its full
+independent source, arithmetic and lineage verification remains required on a
+miss. The complete dependency witnesses are checked on every hit and before
+publication. It does not retain a second proof in the compact tier: the stored
+input benchmark showed that duplicate witness sets displaced shared prices,
+lookups and Target endpoints and increased total P2 time. Eviction, a changed
+dependency, a new phase and standalone inspection all require full verification.
 
 All reuse is local to one execution and phase. P2 still needs the exact admission
 token and admitted horizon before access. Cancellation, failed publication,
