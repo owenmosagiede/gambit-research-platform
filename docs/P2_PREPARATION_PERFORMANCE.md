@@ -24,6 +24,11 @@ negative file lookups for every lineage record. Directory identities witness
 membership, so a newly added identifier invalidates the index. Existing identifiers
 still use the ordinary version lookup, full record validation and ambiguity checks.
 Standalone readers retain their existing lookup path.
+Repeated directory lookups within the very same enclosing verification read may
+reuse its already captured directory witnesses. The enclosing verifier checks
+every witness before publishing a cached result; a directory changed during that
+read rejects publication. Independent loads still check the directories afresh.
+Cancellation/event checks never use this same-read shortcut.
 
 A verified FX Feature can retain a compact SHA-256 proof after its observation
 buffer is evicted. That proof comes only from the full existing independent

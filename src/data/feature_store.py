@@ -124,7 +124,7 @@ class FeatureStore:
         # Exact directory membership proves the many negative catalog lookups.
         # A newly added identifier invalidates this bounded, phase-local index.
         # Existing identifiers still take the ordinary version/file checks.
-        names=(compact_memo(self.root,'definition_directory_membership',{},inventory)
+        names=(compact_memo(self.root,'definition_directory_membership',{},inventory,within_capture=True)
                if phase_active(self.root) else None)
         for folder in folders:
             if names is not None and identifier not in names[folder]:continue

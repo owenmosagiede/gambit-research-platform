@@ -22,6 +22,7 @@ from copy import deepcopy
 from datetime import date, timedelta
 import sys
 import json
+import os
 import stat
 from hashlib import sha256
 from pathlib import Path
@@ -74,30 +75,33 @@ class _WitnessPaths:
                 else (value.st_dev, value.st_ino, value.st_mode))
 
     def resolve_regular(self, path):
-        parent = path.parent
+        parent, name = os.path.split(path)
         if parent not in self.parents:
-            for ancestor in (parent, *parent.parents):
+            parent_path = Path(parent)
+            for ancestor in (parent_path, *parent_path.parents):
                 if ancestor not in self.ancestors:
                     self.ancestors[ancestor] = self.ancestor_identity(ancestor)
-            self.parents[parent] = parent.resolve()
-        return str(self.parents[parent] / path.name)
+            self.parents[parent] = str(parent_path.resolve())
+        return os.path.join(self.parents[parent], name)
 
     def unchanged(self):
         try:
             return (all(self.ancestor_identity(path) == value for path, value in self.ancestors.items())
-                    and all(path.resolve() == value for path, value in self.parents.items()))
+                    and all(str(Path(path).resolve()) == value for path, value in self.parents.items()))
         except FileNotFoundError:
             return False
 
 
 def _signature(path, paths=None):
-    path = Path(path)
+    path = os.fspath(path)
+    if not path or path.endswith(('/', '/.')) or '/./' in path:
+        path = str(Path(path))
     try:
-        link, target = path.lstat(), path.stat()
+        link, target = os.lstat(path), os.stat(path)
     except FileNotFoundError:
         return None
     resolved = (paths.resolve_regular(path) if paths is not None and not stat.S_ISLNK(link.st_mode)
-                and path.name not in ('', '.', '..') else str(path.resolve()))
+                and os.path.basename(path) not in ('', '.', '..') else str(Path(path).resolve()))
     return _stat_fields(link), _stat_fields(target), resolved
 
 
@@ -190,7 +194,7 @@ class VerifiedInputs:
         self.counts = Counter()
         self.seconds = Counter()
 
-    def memo(self, kind, key, loader, *, compact=False):
+    def memo(self, kind, key, loader, *, compact=False, within_capture=False):
         phase = _PHASE.get()
         if phase is None:
             return _freeze(loader()) if compact else loader()
@@ -201,7 +205,19 @@ class VerifiedInputs:
             value, size, dependencies = entries[identity]
             with measure('inputs.cache_witness'):
                 counter('cache.witness_checks', len(dependencies))
-                valid = _unchanged(dependencies)
+                capture = _DEPENDENCIES.get()
+                # A definition-directory lookup can recur thousands of times
+                # inside one independent verifier. If this exact read set is
+                # already witnessed by that enclosing loader, it will check
+                # every dependency before publishing its result. Like reading()
+                # above, reuse within that same capture needs no extra stat pass.
+                # Never use this for cancellation or across independent loads.
+                captured = (within_capture and bool(dependencies) and capture is not None
+                            and all(path in capture and capture[path] == value
+                                    for path, value in dependencies.items()))
+                valid = captured or _unchanged(dependencies)
+                if captured:
+                    counter('cache.' + kind + '.within_capture_hits')
             if not valid:
                 self._remove(entries, identity, compact)
                 self.counts[kind + '.invalidations'] += 1
@@ -338,9 +354,10 @@ def memo(root, kind, key, loader):
     return loader() if context is None else context.memo(kind, key, loader)
 
 
-def compact_memo(root, kind, key, loader):
+def compact_memo(root, kind, key, loader, *, within_capture=False):
     context = current(root)
-    return _freeze(loader()) if context is None else context.memo(kind, key, loader, compact=True)
+    return _freeze(loader()) if context is None else context.memo(
+        kind, key, loader, compact=True, within_capture=within_capture)
 
 
 def record_memo(root, kind, key, loader):

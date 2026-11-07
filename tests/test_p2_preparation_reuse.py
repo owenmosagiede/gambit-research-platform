@@ -16,6 +16,33 @@ import test_verified_inputs as fixtures
 
 
 class WitnessPathTests(unittest.TestCase):
+    def test_same_capture_directory_reuse_rejects_mid_read_change_at_publication(self):
+        from data import verified_inputs as v
+        with TemporaryDirectory() as folder:
+            root=Path(folder);directory=root/'definitions';directory.mkdir()
+            (directory/'a').write_text('a')
+            plan={'plan_id':'isolated','periods':{'P2':{'end_exclusive':'2023-01-01'}}}
+            def inventory():
+                v.probe(directory)
+                return {p.name:True for p in directory.iterdir()}
+            def names():
+                return v.compact_memo(root,'definition_directory_membership',{},inventory,within_capture=True)
+            def changed_read():
+                self.assertEqual(set(names()),{'a'})
+                (directory/'b').write_text('b')
+                # Same-read evidence is provisional until its enclosing loader
+                # validates the full captured read set. It cannot be published.
+                self.assertEqual(set(names()),{'a'})
+                return {'incorrect_if_published':True}
+            with v.execution_inputs(root,'code') as cache,v.phase_inputs(root,plan,'P2'):
+                with self.assertRaises(v.ChangedInput):v.memo(root,'outer',{},changed_read)
+                self.assertFalse(any(k[1]=='outer' for k in cache.entries))
+                self.assertEqual(set(names()),{'a','b'})
+                self.assertEqual(cache.counts['definition_directory_membership.loads'],2)
+                (directory/'c').write_text('c')
+                # A new independent load checks witnesses even with reuse enabled.
+                self.assertEqual(set(v.memo(root,'new_outer',{},lambda:dict(names()))),{'a','b','c'})
+
     def test_pass_matches_individual_signatures_and_detects_changed_files(self):
         from data import verified_inputs as v
         with TemporaryDirectory() as folder:
@@ -23,8 +50,14 @@ class WitnessPathTests(unittest.TestCase):
             paths=[root/'data'/str(n) for n in range(5)]
             for path in paths:path.write_bytes(b'good')
             (root/'alias').symlink_to(root/'data',target_is_directory=True)
-            paths += [root/'alias/0',root/'alias',root/'missing',root/'data']
-            expected={str(p):v._signature(p) for p in paths}
+            paths += [root/'alias/0',root/'alias',root/'missing',root/'data',str(root/'alias')+'/',
+                      str(root/'data')+'/./0',str(root/'data')+'//0',str(root/'data')+'/0/.']
+            def independent(p):
+                p=Path(p)
+                try:return v._stat_fields(p.lstat()),v._stat_fields(p.stat()),str(p.resolve())
+                except FileNotFoundError:return None
+            expected={str(p):independent(p) for p in paths}
+            self.assertEqual({str(p):v._signature(p) for p in paths},expected)
             shared=v._WitnessPaths()
             self.assertEqual({str(p):v._signature(p,shared) for p in paths},expected)
             self.assertTrue(shared.unchanged());self.assertTrue(v._unchanged(expected))
