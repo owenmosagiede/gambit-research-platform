@@ -188,6 +188,7 @@ class FeatureStore:
         return data
 
     def verify_closure(self, records):
+        from data.verified_inputs import verified_read
         seen=set()
         def visit(value):
             if isinstance(value,dict):
@@ -203,7 +204,10 @@ class FeatureStore:
                 for child in value.values():visit(child)
             elif isinstance(value,list):
                 for child in value:visit(child)
-        for record in records:visit(record)
+        # Accept the complete closure only after rechecking its exact read set.
+        # Publication happens in the caller after this context has succeeded.
+        with verified_read(self.root):
+            for record in records:visit(record)
 
     def resolve_operand(self, record_or_ref):
         record=self.resolve(record_or_ref) if set(record_or_ref)=={'id','version','content_sha256'} else record_or_ref

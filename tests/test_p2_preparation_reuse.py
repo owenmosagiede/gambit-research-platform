@@ -177,6 +177,61 @@ class PackedCaptureTests(unittest.TestCase):
     def phase(self, root):
         return phase_inputs(root,{'plan_id':'isolated','periods':{'P2':{'end_exclusive':'2025-01-01'}}},'P2')
 
+    def test_closure_batches_reads_and_rechecks_each_independent_closure(self):
+        from data.feature_store import FeatureStore
+        from data import verified_inputs as v
+        f,reader,refs=self.fixture();store=FeatureStore(f.root)
+        with execution_inputs(f.root,'code') as cache,self.phase(f.root):
+            with patch.object(v,'_unchanged',wraps=v._unchanged) as checked:
+                store.verify_closure(refs)
+                first=checked.call_count
+                self.assertGreater(first,0)
+                self.assertGreater(cache.counts['definition_directory_membership.hits'],0)
+                self.assertTrue(store._resolved_capture)
+                self.assertFalse(any(store._resolved_capture.values()))
+                store.verify_closure(refs)
+                self.assertGreater(checked.call_count,first)
+            self.assertIsNone(v.dependency_capture())
+
+    def test_closure_mutation_rejected_before_publication_and_nested_witnesses_propagate(self):
+        from data.feature_store import FeatureStore
+        from data import lineage_packs as packs, verified_inputs as v
+        for nested in (False,True):
+            with self.subTest(nested=nested):
+                f,reader,refs=self.fixture();store=FeatureStore(f.root)
+                catalog=json.loads(next(f.root.glob(packs.CATALOG+'/*.json')).read_bytes())
+                member=catalog['payload'];h=member['blob_sha256']
+                path=f.root/f"storage/payloads/sha256/{h[:2]}/{h}.bin"
+                original=store.resolve;mutated=False
+                def resolve(binding):
+                    nonlocal mutated
+                    value=original(binding)
+                    if binding==refs[-1] and not mutated:
+                        mutated=True;stamp=path.stat();raw=path.read_bytes()
+                        path.write_bytes(bytes([raw[0]^1])+raw[1:])
+                        os.utime(path,ns=(stamp.st_atime_ns,stamp.st_mtime_ns))
+                    return value
+                with execution_inputs(f.root,'code') as cache,self.phase(f.root):
+                    with patch.object(store,'resolve',resolve),self.assertRaises(v.ChangedInput):
+                        if nested:v.memo(f.root,'outer',{},lambda:store.verify_closure(refs))
+                        else:store.verify_closure(refs)
+                    self.assertIsNone(v.dependency_capture())
+                    self.assertFalse(any(k[1]=='outer' for k in cache.entries))
+
+    def test_successful_closure_propagates_witnesses_to_enclosing_verifier(self):
+        from data.feature_store import FeatureStore
+        from data import lineage_packs as packs, verified_inputs as v
+        f,reader,refs=self.fixture();store=FeatureStore(f.root)
+        path=f.root/packs.INDEX
+        def changed_after_closure():
+            store.verify_closure(refs)
+            self.assertIn(str(path.resolve()),v.dependency_capture())
+            raw=path.read_bytes();path.write_bytes(bytes([raw[0]^1])+raw[1:])
+            return 'must not publish'
+        with execution_inputs(f.root,'code') as cache,self.phase(f.root):
+            with self.assertRaises(v.ChangedInput):v.memo(f.root,'outer',{},changed_after_closure)
+            self.assertFalse(any(k[1]=='outer' for k in cache.entries))
+
     def test_same_read_reuses_verified_pack_but_independent_reads_check_again(self):
         from data import lineage_packs as packs
         f,reader,refs=self.fixture()

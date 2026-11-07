@@ -30,6 +30,14 @@ every witness before publishing a cached result; a directory changed during that
 read rejects publication. Independent loads still check the directories afresh.
 Cancellation/event checks never use this same-read shortcut.
 
+Feature publication checks its complete reference closure inside one fresh
+read-only capture. Every file and directory in that closure is checked again
+before the call returns and before the caller can publish a manifest. The capture
+retains no result between closures. If nested inside another verifier, its full
+read set propagates outward and is checked again there. This lets repeated
+lookups share evidence within a closure without treating an earlier closure as
+permanently verified.
+
 Packed row-lineage reads also reuse the already checked locator and bounded
 pack within one enclosing verification read. The first lookup captures the
 index, catalog generation, exact pack catalog and payload. The enclosing verifier

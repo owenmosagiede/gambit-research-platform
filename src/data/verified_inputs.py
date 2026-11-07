@@ -349,6 +349,37 @@ def phase_active(root):
     return current(root) is not None and _PHASE.get() is not None
 
 
+@contextmanager
+def verified_read(root):
+    """Validate a complete read-only closure before its caller can publish.
+
+    This retains no result or verification claim. A fresh capture checks every
+    dependency at the end of each closure, and propagates them to an enclosing
+    verifier if present. Repeated lookups within this one read can share their
+    evidence; another closure, phase or standalone read cannot inherit it.
+    """
+    if not phase_active(root):
+        yield
+        return
+    dependencies = {}
+    token = _DEPENDENCIES.set(dependencies)
+    try:
+        try:
+            yield
+        finally:
+            _DEPENDENCIES.reset(token)
+        with measure('inputs.cache_witness'):
+            counter('cache.witness_checks', len(dependencies))
+            if not _unchanged(dependencies):
+                raise ChangedInput('Verified closure changed before acceptance')
+        for path, signature in dependencies.items():
+            _remember(path, signature)
+    finally:
+        # Readers may retain this capture's identity, but never its ended read
+        # set. Propagation above copies witnesses into the enclosing capture.
+        dependencies.clear()
+
+
 def memo(root, kind, key, loader):
     context = current(root)
     return loader() if context is None else context.memo(kind, key, loader)
