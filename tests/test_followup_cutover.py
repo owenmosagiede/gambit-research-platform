@@ -13,6 +13,7 @@ from research.contracts import digest,HORIZONS
 from runtime.experiment_identity import scientific_key
 from research.inputs import _plan_id
 import test_research_inputs as fixtures
+from tempfile import TemporaryDirectory
 
 
 class FollowupBindingTests(unittest.TestCase):
@@ -84,6 +85,50 @@ class FollowupBindingTests(unittest.TestCase):
             if case=='preservation':changed['preserve_original_results']=False
             with self.subTest(case=case),self.assertRaises(Exception):
                 binding_view(self.fixture.root,json.dumps(changed).encode(),self.parent_raw)
+
+
+class FollowupCaptureTests(unittest.TestCase):
+    def test_real_envelopes_and_history_reach_complete_binding_checks_read_only(self):
+        import program_cutover as cutover
+        from research.contracts import canonical
+        from runtime.research_jobs import ResearchJobs
+        from test_program_intake_compatibility import binding_fixture
+        parent,row,packet,catalog,targets=binding_fixture()
+        class CompleteAdapter:
+            def resolve_plan(self,root,intent,profile):
+                plan=deepcopy(packet['frozen_plan']);plan['intent']=deepcopy(intent)
+                plan['plan_id']=_plan_id(plan);return plan
+        with TemporaryDirectory() as folder:
+            root=Path(folder);(root/'config').mkdir()
+            (root/'config/research_execution.json').write_bytes(canonical(packet['research_spec']))
+            jobs=ResearchJobs(root,adapter=CompleteAdapter())
+            jobs.submit(dict(row['intent'],request_id=row['request_id']))
+            original=jobs._submission(row['request_id'])
+            # A synthetic terminal event isolates capture, not the numerical kernel.
+            jobs._update(row['request_id'],status='succeeded',stage='complete')
+            child_id='00000000-0000-0000-0000-000000000002'
+            jobs.submit(dict(row['intent'],expected_direction='NEGATIVE',request_id=child_id))
+            child=jobs._submission(child_id)
+            parent['global_pins'].update(implementation_digest=digest(original['implementation']),
+                                        implementation_fingerprint=original['implementation']['fingerprint'])
+            parent_raw=canonical(parent)
+            followup={'classification':'exploratory_post_selection_negative_direction_followup',
+                'parent_manifest_sha256':sha256(parent_raw).hexdigest(),'expected_direction':'NEGATIVE',
+                'horizons':list(HORIZONS),'preserve_original_results':True,'executor_digest':digest(child['implementation']),
+                'entries':[{'request_id':child_id,'parent_request_id':row['request_id'],
+                    'parent_record_sha256':original['record_sha256'],'intent':child['intent'],
+                    'expected_scientific_identity':scientific_key(child)}]}
+            raw=canonical(followup);before={p:p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            with patch.object(cutover,'frozen_metadata',return_value=(catalog,targets)):
+                result=cutover.capture(root,raw,parent_manifest_bytes=parent_raw)
+                self.assertEqual(result['manifest_sha256'],sha256(raw).hexdigest())
+                self.assertEqual(result['cohort'][0]['submission_sha256'],child['record_sha256'])
+                self.assertEqual(result['states'][child_id]['status'],'queued')
+                self.assertEqual(before,{p:p.read_bytes() for p in root.rglob('*') if p.is_file()})
+                with self.assertRaisesRegex(RuntimeError,'parent manifest'):cutover.capture(root,raw)
+                jobs._update(row['request_id'],status='queued')
+                with self.assertRaisesRegex(RuntimeError,'parent research'):
+                    cutover.capture(root,raw,parent_manifest_bytes=parent_raw)
 
 
 if __name__=='__main__':unittest.main()
