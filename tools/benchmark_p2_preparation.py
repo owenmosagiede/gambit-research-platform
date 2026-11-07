@@ -186,6 +186,7 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--case',choices=('diff63','volscale5'),default='diff63')
     parser.add_argument('--repeats',type=int,choices=(1,2),default=2)
+    parser.add_argument('--stored-first',action='store_true',help='Check stored-input regressions before fresh cases; all gates still apply')
     parser.add_argument('--child',choices=('build','run','seed-stored'))
     parser.add_argument('--source',type=Path);parser.add_argument('--fixture',type=Path)
     args=parser.parse_args()
@@ -207,13 +208,16 @@ def main():
                 '--output',str(output),'--case',args.case],env=env,check=True)
         child('build',sources['baseline'],seed,args.output/'fixture.json')
         comparisons=[]
-        for state in ('fresh','stored'):
-            if state=='stored':child('seed-stored',sources['baseline'],seed,args.output/'seed-stored.json.gz')
+        for state in (('stored','fresh') if args.stored_first else ('fresh','stored')):
+            state_seed=seed
+            if state=='stored':
+                state_seed=tmp/'stored-seed';bench.copy_store(seed,state_seed)
+                child('seed-stored',sources['baseline'],state_seed,args.output/'seed-stored.json.gz')
             for repeat in range(args.repeats):
                 reports={}
                 for name in (('baseline','candidate') if repeat%2==0 else ('candidate','baseline')):
                     with tempfile.TemporaryDirectory(dir=tmp,prefix='run-') as folder:
-                        root=Path(folder)/'store';bench.copy_store(seed,root)
+                        root=Path(folder)/'store';bench.copy_store(state_seed,root)
                         output=args.output/f'{state}-{repeat}-{name}.json.gz'
                         child('run',sources[name],root,output);reports[name]=prep.read(output)
                 row=compare(reports['baseline'],reports['candidate']);row.update(state=state,repeat=repeat)

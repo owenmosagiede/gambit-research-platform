@@ -65,6 +65,7 @@ class _WitnessPaths:
     def __init__(self):
         self.parents = {}
         self.ancestors = {}
+        self.literal_parents = set()
 
     @staticmethod
     def ancestor_identity(path):
@@ -81,13 +82,26 @@ class _WitnessPaths:
             for ancestor in (parent_path, *parent_path.parents):
                 if ancestor not in self.ancestors:
                     self.ancestors[ancestor] = self.ancestor_identity(ancestor)
-            self.parents[parent] = str(parent_path.resolve())
+            # Absolute ordinary directory paths already have their resolved
+            # spelling once every ancestor is known to be a real directory.
+            # Repeating realpath for hundreds of sibling event directories
+            # needlessly traverses the same ancestors. Recheck all identities
+            # below before accepting this pass; symlinks and dot-dot paths
+            # retain the independent resolver, including its final recheck.
+            ordinary = (parent_path.is_absolute() and not str(parent_path).startswith('//')
+                        and '..' not in parent_path.parts
+                        and all(stat.S_ISDIR(self.ancestors[p][2])
+                                for p in (parent_path, *parent_path.parents)))
+            self.parents[parent] = str(parent_path) if ordinary else str(parent_path.resolve())
+            if ordinary:
+                self.literal_parents.add(parent)
         return os.path.join(self.parents[parent], name)
 
     def unchanged(self):
         try:
             return (all(self.ancestor_identity(path) == value for path, value in self.ancestors.items())
-                    and all(str(Path(path).resolve()) == value for path, value in self.parents.items()))
+                    and all(path in self.literal_parents or str(Path(path).resolve()) == value
+                            for path, value in self.parents.items()))
         except FileNotFoundError:
             return False
 
@@ -391,7 +405,7 @@ def compact_memo(root, kind, key, loader, *, within_capture=False):
         kind, key, loader, compact=True, within_capture=within_capture)
 
 
-def record_memo(root, kind, key, loader):
+def record_memo(root, kind, key, loader, *, within_capture=False):
     """Retain small verified JSON records without bulk-payload eviction.
 
     Canonical bytes are immutable and charged to the existing compact/total
@@ -400,7 +414,8 @@ def record_memo(root, kind, key, loader):
     """
     if current(root) is None or _PHASE.get() is None:
         return loader()
-    data = compact_memo(root, kind, key, lambda: canonical_bytes(loader()))
+    data = compact_memo(root, kind, key, lambda: canonical_bytes(loader()),
+                        within_capture=within_capture)
     return json.loads(data)
 
 

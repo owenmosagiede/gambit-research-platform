@@ -97,3 +97,14 @@ review the inert compatibility proposal, and apply the exact official archive.
 Verify research records, queue order and real website data before resuming the
 next existing queued request. Rollback restores code only and must never replace
 newer research with an older snapshot.
+
+Witness checks retain separate lstat/stat calls for every file. Within one check,
+absolute paths whose ancestors are all ordinary directories use their already
+known spelling instead of resolving each sibling directory repeatedly. All
+ancestor identities are checked again before acceptance. Symlinks, relative
+paths and dot-dot paths retain full resolution and its final recheck.
+
+Small immutable Feature definitions can reuse witnesses already captured by the
+same enclosing verifier, which rechecks the full read set before publication.
+Returned records remain private copies. Independent reads still check witnesses;
+operational event and cancellation reads do not enable this shortcut.

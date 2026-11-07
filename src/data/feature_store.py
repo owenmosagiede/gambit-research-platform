@@ -101,7 +101,10 @@ class FeatureStore:
         # not shared across horizons once the materialization itself is verified.
         if str(binding.get('id', '')).startswith(('LINEAGE_', 'PIT_OPERAND_', 'MATERIALIZATION_')):
             return self._resolve_record(binding)
-        return record_memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding))
+        # Repeated small definitions within one verifier share its complete
+        # checked read set. A different read still validates every witness.
+        return record_memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding),
+                           within_capture=True)
 
     def _resolve_record(self, binding):
         from data.verified_inputs import current, dependency_capture, probe, probe_definition, compact_memo, phase_active

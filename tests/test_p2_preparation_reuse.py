@@ -66,6 +66,44 @@ class WitnessPathTests(unittest.TestCase):
             self.assertFalse(v._unchanged(expected))
             paths[0].unlink();self.assertFalse(v._unchanged(expected))
 
+    def test_record_reuse_is_private_and_mid_read_mutation_rejects_publication(self):
+        from data import verified_inputs as v
+        from data.alfred_onboarding import stable_read, strict_json
+        with TemporaryDirectory() as folder:
+            root=Path(folder);path=root/'record.json';path.write_bytes(b'{"value":[1]}')
+            plan={'plan_id':'isolated','periods':{'P2':{'end_exclusive':'2023-01-01'}}}
+            def read():
+                return v.record_memo(root,'feature_record',{},lambda:strict_json(stable_read(path)),within_capture=True)
+            def changed():
+                first=read();first['value'].append(2)
+                self.assertEqual(read(),{'value':[1]})
+                path.write_bytes(b'{"value":[3]}')
+                self.assertEqual(read(),{'value':[1]})
+                return read()
+            with v.execution_inputs(root,'code') as cache,v.phase_inputs(root,plan,'P2'):
+                with self.assertRaises(v.ChangedInput):v.memo(root,'outer',{},changed)
+                self.assertFalse(any(k[1]=='outer' for k in cache.entries))
+                self.assertEqual(read(),{'value':[3]})
+                self.assertGreater(cache.counts['feature_record.hits'],0)
+
+    def test_plain_directory_fast_path_still_checks_every_file_and_ancestor(self):
+        from data import verified_inputs as v
+        with TemporaryDirectory() as folder:
+            root=Path(folder).resolve();directory=root/'data';directory.mkdir()
+            path=directory/'value';path.write_bytes(b'good')
+            expected={str(path):v._signature(path)}
+            with patch.object(Path,'resolve',side_effect=AssertionError('redundant realpath')):
+                self.assertTrue(v._unchanged(expected))
+            original=v._signature
+            def swap(p,paths=None):
+                result=original(p,paths)
+                directory.rename(root/'original')
+                directory.symlink_to(root/'original',target_is_directory=True)
+                return result
+            # The regular-file inode and bytes are identical through the new
+            # symlink. The ancestor recheck must still reject the pass.
+            with patch.object(v,'_signature',swap):self.assertFalse(v._unchanged(expected))
+
     def test_parent_symlink_change_during_pass_is_rejected_even_if_restored(self):
         from data import verified_inputs as v
         for restore in (False,True):
