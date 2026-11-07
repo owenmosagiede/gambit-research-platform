@@ -174,8 +174,21 @@ class PackedLineage:
         self.packs = OrderedDict()
         self.locators = OrderedDict()
         self.index_signature = None
+        self._find_capture = None
 
     def _find(self, binding, *, rebuild_missing):
+        from data.verified_inputs import dependency_capture
+        capture = dependency_capture()
+        key = _key(binding)
+        # A full enclosing verifier checks its complete read set before any
+        # result is published. Repeated rows from its already witnessed index
+        # need no additional filesystem traversal within that same read only.
+        if capture is not None and self._find_capture is capture:
+            found = self.locators.get(key[:2])
+            if found is not None:
+                if found[0] != key[2]:
+                    raise _error('requested reference conflicts with stored identity')
+                return found[1]
         store = self.store
         if not store.path(CATALOG).exists():
             from data.verified_inputs import probe
@@ -187,7 +200,6 @@ class PackedLineage:
                 with reading(parent, scientific=False):
                     pass
             return None
-        key = _key(binding)
         index = store.path(INDEX)
         for attempt in range(2):
             try:
@@ -213,6 +225,7 @@ class PackedLineage:
                 if found:
                     if found[0] != key[2]:
                         raise _error('requested reference conflicts with stored identity')
+                    self._find_capture = capture
                     return found[1]
                 if not rebuild_missing or attempt:
                     return None
@@ -224,9 +237,21 @@ class PackedLineage:
         return None
 
     def resolve(self, binding, *, rebuild_missing=True):
+        from data.verified_inputs import dependency_capture
+        capture = dependency_capture()
         pack_id = self._find(binding, rebuild_missing=rebuild_missing)
         if pack_id is None:
             return None
+        cached = self.packs.get(pack_id)
+        if capture is not None and cached and cached[3] is capture:
+            # Every byte in this bounded pack was validated on its first read.
+            # Its catalog, payload and locator witnesses remain part of the
+            # enclosing verifier; mutation rejects that verifier's publication.
+            row = cached[2].get(_key(binding))
+            if row is None:
+                raise _error('locator does not resolve requested record')
+            self.packs.move_to_end(pack_id)
+            return deepcopy(row)
         catalog_path = self.store.path(f'{CATALOG}/{pack_id}.json')
         with reading(catalog_path):
             catalog_signature = _signature(catalog_path)
@@ -237,7 +262,7 @@ class PackedLineage:
             with reading(path):
                 signature = (catalog_signature, _signature(path))
                 records = cached[2] if cached and cached[0] == signature else _records(self.store, pack_id, catalog)
-                self.packs[pack_id] = (signature, catalog, records)
+                self.packs[pack_id] = (signature, catalog, records, capture)
                 while len(self.packs) > 2:
                     self.packs.popitem(last=False)
         if _key(binding)[:2] not in self.locators:

@@ -8,6 +8,7 @@ from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 import sys
+import json
 
 from data.alfred_onboarding import stable_read, strict_json
 from data.feature_store import FeatureStore, PublicationError, materialization_path, _publish_entry
@@ -264,7 +265,12 @@ def read_fx_materialization(root, identifier, *, research=False):
         # Source operand trees are available through fresh inspection, not copied
         # into every cached research window. Full verification has already run.
         return {key: value for key, value in item.items() if key != 'operands'}
-    return memo(root, 'fx_materialization', {'id': identifier}, verify)
+    # Canonical bytes keep the complete verified result in the ordinary cache
+    # without a second copy of its large dependency set in the compact tier.
+    # If evicted, run the independent verifier again. Compact capacity remains
+    # available for shared prices, lookups and target endpoints across horizons.
+    return json.loads(memo(root, 'fx_materialization', {'id': identifier},
+                           lambda: canonical_bytes(verify())))
 
 
 def _read_fx_materialization(root, identifier):

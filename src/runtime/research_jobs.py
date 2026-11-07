@@ -175,8 +175,15 @@ class ResearchJobs:
         return record
     def _event_snapshot(self):
         """Read history once for a multi-job view; each chain is still verified."""
+        from data.verified_inputs import probe
         groups={}
         directory=inside(self.root,'storage/catalog/attempts')
+        # Witness every listing level, including an absent events directory.
+        # A newly appended event/attempt invalidates execution-local reuse.
+        probe(directory)
+        for attempt in directory.iterdir() if directory.exists() else ():
+            if attempt.is_dir():
+                probe(attempt); probe(attempt/'events')
         for p in directory.glob('*/events/RESEVENT_*.json'):
             try:
                 event=read_json(p)
@@ -191,6 +198,10 @@ class ResearchJobs:
         return groups
     def _events(self,rid,snapshot=None):
         with measure('events.replay'):
+            if snapshot is None:
+                from data.verified_inputs import record_memo
+                return record_memo(self.root,'event_history',{'request_id':rid},
+                                   lambda:self._events_read(rid))
             return self._events_read(rid,snapshot)
     def _events_read(self,rid,snapshot=None):
         snapshot=self._event_snapshot() if snapshot is None else snapshot

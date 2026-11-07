@@ -79,4 +79,53 @@ class PreparationProofTests(unittest.TestCase):
             with self.subTest(case=case),self.assertRaises(ValueError):bench.compare(before,after)
 
 
+class P2PreparationProofTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec=importlib.util.spec_from_file_location('p2_preparation_proof',bench.ROOT/'tools/benchmark_p2_preparation.py')
+        cls.p2=importlib.util.module_from_spec(spec);spec.loader.exec_module(cls.p2)
+
+    def fixture(self,code,*,stored=False):
+        source=evidence(code);result={}
+        for phase in ('P1','P2'):
+            item=source['phases'][phase]
+            prepared={'phase':phase,'members':[{'instrument_id':'fixture',
+                'materializations':[bench.proof.reference(item['verified']['manifest'])]}]}
+            prepared['prepared_id']='PREPARED_'+bench.proof.digest(prepared)
+            result[phase]=dict(source,phases={} if stored else {'0':item},
+                prepared=prepared,loaded=[{'lineage':{'prepared_id':prepared['prepared_id']},
+                    'feature_materialization':item['verified']['manifest']['id'],'target':'same'}],
+                decisions=[{'decision':'same'}],dimensions={'phase':phase},admitted_horizons=[1,7],
+                source_verification_mocked=False,cache_high_water_bytes=1024,
+                preparation_performance={'wall_seconds':100 if code=='old' else 60},
+                performance={'wall_seconds':120 if code=='old' else 80},source_admission_boundary='synthetic')
+        return result
+
+    def test_p2_proves_earlier_p1_dependencies_before_mapping_library_entry(self):
+        self.assertTrue(self.p2.compare(self.fixture('old'),self.fixture('new'))['passed'])
+        changed=self.fixture('new')
+        changed['P2']['phases']['0']['entry']['feature_materializations'].append(
+            {'id':'unknown','version':'1.0.0','content_sha256':'f'*64})
+        with self.assertRaises(ValueError):self.p2.compare(self.fixture('old'),changed)
+
+    def test_stored_inputs_are_exact_and_performance_gate_cannot_move_work(self):
+        before=self.fixture('old',stored=True);after=deepcopy(before)
+        for phase in after:
+            after[phase]['preparation_performance']['wall_seconds']=60
+            after[phase]['performance']['wall_seconds']=80
+        self.assertTrue(self.p2.compare(before,after)['passed'])
+        for case in ('prep','total','P1'):
+            changed=deepcopy(after)
+            if case=='prep':changed['P2']['preparation_performance']['wall_seconds']=71
+            if case=='total':changed['P2']['performance']['wall_seconds']=121
+            if case=='P1':changed['P1']['performance']['wall_seconds']=133
+            with self.subTest(case=case):self.assertFalse(self.p2.compare(before,changed)['passed'])
+        for field in ('loaded','decisions','prepared','admitted_horizons','memory','mocked'):
+            changed=deepcopy(after)
+            if field=='memory':changed['P2']['cache_high_water_bytes']=128*1024*1024+1
+            elif field=='mocked':changed['P2']['source_verification_mocked']=True
+            else:changed['P2'][field]='changed'
+            with self.subTest(field=field),self.assertRaises(ValueError):self.p2.compare(before,changed)
+
+
 if __name__=='__main__':unittest.main()

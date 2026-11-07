@@ -22,6 +22,8 @@ from copy import deepcopy
 from datetime import date, timedelta
 import sys
 import json
+import os
+import stat
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
@@ -48,16 +50,94 @@ class ChangedInput(ValueError):
     pass
 
 
-def _signature(path):
-    path = Path(path)
+def _stat_fields(value):
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
+            value.st_mtime_ns, value.st_ctime_ns)
+
+
+class _WitnessPaths:
+    """Share path traversal only within one complete witness validation.
+
+    Every file still gets both lstat and stat. Shared parent resolutions are
+    rechecked, together with every lexical ancestor's identity, before accepting
+    the pass. Nothing here survives a validation pass or excuses a file check.
+    """
+    def __init__(self):
+        self.parents = {}
+        self.ancestors = {}
+        self.literal_parents = set()
+
+    @staticmethod
+    def ancestor_identity(path):
+        value = path.lstat()
+        # A directory's unrelated children may legitimately change. Only its
+        # path identity matters here; symlink replacement also checks ctime.
+        return (_stat_fields(value) if stat.S_ISLNK(value.st_mode)
+                else (value.st_dev, value.st_ino, value.st_mode))
+
+    def resolve_regular(self, path):
+        parent, name = os.path.split(path)
+        if name in ('', '.', '..'):
+            return str(Path(path).resolve())
+        resolved_parent = self.parents.get(parent)
+        if resolved_parent is None:
+            parent_path = Path(parent)
+            ancestors = (parent_path, *parent_path.parents)
+            for ancestor in ancestors:
+                if ancestor not in self.ancestors:
+                    self.ancestors[ancestor] = self.ancestor_identity(ancestor)
+            # Absolute ordinary directory paths already have their resolved
+            # spelling once every ancestor is known to be a real directory.
+            # Repeating realpath for hundreds of sibling event directories
+            # needlessly traverses the same ancestors. Recheck all identities
+            # below before accepting this pass; symlinks and dot-dot paths
+            # retain the independent resolver, including its final recheck.
+            ordinary = (parent_path.is_absolute() and not str(parent_path).startswith('//')
+                        and '..' not in parent_path.parts
+                        and all(stat.S_ISDIR(self.ancestors[p][2])
+                                for p in ancestors))
+            resolved_parent = str(parent_path) if ordinary else str(parent_path.resolve())
+            self.parents[parent] = resolved_parent
+            if ordinary:
+                self.literal_parents.add(parent)
+        # Preserve canonical spelling without rebuilding an identical string.
+        # Relative, redundant-separator and symlink parents still use the
+        # independently resolved spelling. All final witness checks remain.
+        # split() strips repeated separators immediately before the basename.
+        # Only reuse the input when exactly one separator remains there.
+        if parent == resolved_parent and len(path) == len(parent) + len(name) + 1:
+            return path
+        return os.path.join(resolved_parent, name)
+
+    def unchanged(self):
+        try:
+            return (all(self.ancestor_identity(path) == value for path, value in self.ancestors.items())
+                    and all(path in self.literal_parents or str(Path(path).resolve()) == value
+                            for path, value in self.parents.items()))
+        except FileNotFoundError:
+            return False
+
+
+def _signature(path, paths=None):
+    path = os.fspath(path)
+    if not path or path.endswith(('/', '/.')) or '/./' in path:
+        path = str(Path(path))
     try:
-        link, target = path.lstat(), path.stat()
+        link, target = os.lstat(path), os.stat(path)
     except FileNotFoundError:
         return None
-    def fields(value):
-        return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
-                value.st_mtime_ns, value.st_ctime_ns)
-    return fields(link), fields(target), str(path.resolve())
+    resolved = (paths.resolve_regular(path) if paths is not None and not stat.S_ISLNK(link.st_mode)
+                else str(Path(path).resolve()))
+    return _stat_fields(link), _stat_fields(target), resolved
+
+
+def _unchanged(dependencies):
+    paths = _WitnessPaths()
+    try:
+        return (all(_signature(path, paths) == signature for path, signature in dependencies.items())
+                and paths.unchanged())
+    except FileNotFoundError:
+        return False
 
 
 def _remember(path, signature):
@@ -140,7 +220,7 @@ class VerifiedInputs:
         self.counts = Counter()
         self.seconds = Counter()
 
-    def memo(self, kind, key, loader, *, compact=False):
+    def memo(self, kind, key, loader, *, compact=False, within_capture=False):
         phase = _PHASE.get()
         if phase is None:
             return _freeze(loader()) if compact else loader()
@@ -151,7 +231,19 @@ class VerifiedInputs:
             value, size, dependencies = entries[identity]
             with measure('inputs.cache_witness'):
                 counter('cache.witness_checks', len(dependencies))
-                valid = all(_signature(path) == signature for path, signature in dependencies.items())
+                capture = _DEPENDENCIES.get()
+                # A definition-directory lookup can recur thousands of times
+                # inside one independent verifier. If this exact read set is
+                # already witnessed by that enclosing loader, it will check
+                # every dependency before publishing its result. Like reading()
+                # above, reuse within that same capture needs no extra stat pass.
+                # Never use this for cancellation or across independent loads.
+                captured = (within_capture and bool(dependencies) and capture is not None
+                            and all(path in capture and capture[path] == value
+                                    for path, value in dependencies.items()))
+                valid = captured or _unchanged(dependencies)
+                if captured:
+                    counter('cache.' + kind + '.within_capture_hits')
             if not valid:
                 self._remove(entries, identity, compact)
                 self.counts[kind + '.invalidations'] += 1
@@ -178,7 +270,7 @@ class VerifiedInputs:
             _DEPENDENCIES.reset(token)
         with measure('inputs.cache_witness'):
             counter('cache.witness_checks', len(dependencies))
-            if not all(_signature(path) == signature for path, signature in dependencies.items()):
+            if not _unchanged(dependencies):
                 raise ChangedInput('Verified input changed before cache publication')
         for path, signature in dependencies.items():
             _remember(path, signature)
@@ -279,14 +371,64 @@ def current(root):
     return value if value is not None and value.root == str(Path(root).resolve()) else None
 
 
+def phase_active(root):
+    return current(root) is not None and _PHASE.get() is not None
+
+
+@contextmanager
+def verified_read(root):
+    """Validate a complete read-only closure before its caller can publish.
+
+    This retains no result or verification claim. A fresh capture checks every
+    dependency at the end of each closure, and propagates them to an enclosing
+    verifier if present. Repeated lookups within this one read can share their
+    evidence; another closure, phase or standalone read cannot inherit it.
+    """
+    if not phase_active(root):
+        yield
+        return
+    dependencies = {}
+    token = _DEPENDENCIES.set(dependencies)
+    try:
+        try:
+            yield
+        finally:
+            _DEPENDENCIES.reset(token)
+        with measure('inputs.cache_witness'):
+            counter('cache.witness_checks', len(dependencies))
+            if not _unchanged(dependencies):
+                raise ChangedInput('Verified closure changed before acceptance')
+        for path, signature in dependencies.items():
+            _remember(path, signature)
+    finally:
+        # Readers may retain this capture's identity, but never its ended read
+        # set. Propagation above copies witnesses into the enclosing capture.
+        dependencies.clear()
+
+
 def memo(root, kind, key, loader):
     context = current(root)
     return loader() if context is None else context.memo(kind, key, loader)
 
 
-def compact_memo(root, kind, key, loader):
+def compact_memo(root, kind, key, loader, *, within_capture=False):
     context = current(root)
-    return _freeze(loader()) if context is None else context.memo(kind, key, loader, compact=True)
+    return _freeze(loader()) if context is None else context.memo(
+        kind, key, loader, compact=True, within_capture=within_capture)
+
+
+def record_memo(root, kind, key, loader, *, within_capture=False):
+    """Retain small verified JSON records without bulk-payload eviction.
+
+    Canonical bytes are immutable and charged to the existing compact/total
+    budgets. Decode a private value on every read; all ordinary dependency and
+    phase checks still apply. Standalone readers keep their ordinary verifier.
+    """
+    if current(root) is None or _PHASE.get() is None:
+        return loader()
+    data = compact_memo(root, kind, key, lambda: canonical_bytes(loader()),
+                        within_capture=within_capture)
+    return json.loads(data)
 
 
 def phase_end(root, fallback):

@@ -351,10 +351,28 @@ class ReadModelTests(unittest.TestCase):
         with self.assertRaises(Unavailable):page(self.output,'queue')
 
     def test_read_model_does_not_change_execution_fingerprint(self):
-        import hashlib,subprocess
+        import hashlib
+        from runtime import research_jobs
         repo=Path(__file__).resolve().parents[1]
-        # Source copies used by release checks have no git; compare against the
-        # checked-in baseline digest of the four executor trees instead.
+        # Check the current executor inventory, not one historical release's
+        # fingerprint: an approved executor correction must change its identity.
         values={p.relative_to(repo/'src').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ('research','runtime','data','contracts') for p in sorted((repo/'src'/folder).rglob('*.py'))}
         from research.contracts import digest
-        self.assertEqual(digest(values),'da5400efd1086e7139b39d78aac6a256f471b48a66ad5ba41e34c08fcbe6d6c4')
+        actual=research_jobs.implementation()
+        self.assertEqual(actual['files'],values)
+        self.assertEqual(actual['fingerprint'],digest(values))
+        # Exercise the real inventory function against an isolated source tree.
+        # Serving changes are excluded; input preparation remains identity-bound.
+        source=self.base/'code'/'src'
+        for folder in ('research','runtime','data','contracts','read_model','api'):
+            path=source/folder/'sample.py';path.parent.mkdir(parents=True)
+            path.write_text('# original '+folder+'\n')
+        with patch.object(research_jobs,'__file__',str(source/'runtime'/'sample.py')):
+            before=research_jobs.implementation()
+            for folder in ('read_model','api'):
+                (source/folder/'sample.py').write_text('# serving update\n')
+                self.assertEqual(research_jobs.implementation(),before)
+            (source/'data'/'sample.py').write_text('# input preparation update\n')
+            after=research_jobs.implementation()
+            self.assertNotEqual(after['fingerprint'],before['fingerprint'])
+            self.assertNotEqual(after['files']['data/sample.py'],before['files']['data/sample.py'])

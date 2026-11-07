@@ -94,13 +94,14 @@ def authority_inventory(root):
     return result
 
 
-def capture(root, manifest_bytes, *, predecessor_approval=None):
+def capture(root, manifest_bytes, *, predecessor_approval=None, parent_manifest_bytes=None):
     """Read immutable envelopes/events; never repair projections or publish."""
     from runtime.research_jobs import ResearchJobs, ACTIVE
     from runtime.experiment_identity import IdentityIndex, scientific_key
     from runtime.program_intake_compatibility import validate_entry_binding
     root = Path(root)
-    manifest = json.loads(manifest_bytes)
+    from followup_manifest import binding_view
+    manifest = binding_view(root, manifest_bytes, parent_manifest_bytes)
     entries = manifest['entries']
     ids = [r['request_id'] for r in entries]
     if len(ids) != len(set(ids)):
@@ -322,7 +323,8 @@ def frozen_metadata(root, manifest):
 class Machine(release.Machine):
     def snapshot(self, manifest_bytes):
         return capture(self.root, manifest_bytes,
-                       predecessor_approval=getattr(self, 'predecessor_approval', None))
+                       predecessor_approval=getattr(self, 'predecessor_approval', None),
+                       parent_manifest_bytes=getattr(self, 'parent_manifest_bytes', None))
 
     def publish_approval(self, approval):
         # The release runs as root; the existing worker runs as gambit. Keep
@@ -447,7 +449,9 @@ def _proposal_bundle(machine, manifest_bytes, release_manifest, files, *, operat
             raise RuntimeError('Predecessor does not authorize the installed program executor')
         old = prior_proposal['from_implementation']
     machine.predecessor_approval = predecessor_approval
-    pins = json.loads(manifest_bytes)['global_pins']
+    from followup_manifest import binding_view
+    pins = binding_view(machine.root, manifest_bytes,
+                        getattr(machine, 'parent_manifest_bytes', None))['global_pins']
     if (pins['implementation_digest'] != digest(old)
             or pins['implementation_fingerprint'] != old['fingerprint']):
         raise RuntimeError('Installed source does not match the original frozen executor')
@@ -510,6 +514,10 @@ def review(machine, manifest_bytes, release_manifest, files, **evidence):
             'checks_sha256': proposal['evidence']['tests_sha256'],
             'equivalence_sha256': proposal['evidence']['equivalence_sha256'],
             'approval_created': False, 'code_installed': False}
+        parent_bytes = getattr(machine, 'parent_manifest_bytes', None)
+        if parent_bytes is not None:
+            release.atomic(folder/'parent-manifest.json', parent_bytes, mode=0o600)
+            result['parent_manifest_sha256'] = sha(parent_bytes)
         release.atomic(folder/'receipt.json', canonical(result), mode=0o600)
         print('Review package saved: '+str(folder), file=sys.stderr, flush=True)
         return result
@@ -539,7 +547,9 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
             raise RuntimeError('An overlapping execution approval already exists; explicit reconciliation required')
     if sha(manifest_bytes) != proposal['manifest_sha256'] or archive_sha256 != proposal['target_archive_sha256']:
         raise RuntimeError('Approved manifest or release archive differs')
-    pins = json.loads(manifest_bytes)['global_pins']
+    from followup_manifest import binding_view
+    pins = binding_view(machine.root, manifest_bytes,
+                        getattr(machine, 'parent_manifest_bytes', None))['global_pins']
     if (pins['implementation_digest'] != digest(proposal['from_implementation'])
             or pins['implementation_fingerprint'] != proposal['from_implementation']['fingerprint']):
         raise RuntimeError('Frozen manifest implementation differs from approval')
@@ -702,6 +712,8 @@ def main():
     parser.add_argument('action', choices=('snapshot', 'propose', 'review', 'plan', 'apply', 'recover'))
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--manifest', type=Path, required=True)
+    parser.add_argument('--parent-manifest', type=Path,
+                        help='Exact parent bytes pinned by an accepted negative follow-up manifest')
     parser.add_argument('--state', type=Path, default=release.STATE)
     parser.add_argument('--backup', type=Path, default=release.BACKUP)
     parser.add_argument('--approval', type=Path)
@@ -718,6 +730,7 @@ def main():
                         help='Exact original retirement archive when installed source is a later release')
     parser.add_argument('--plan-sha256'); parser.add_argument('--release-id')
     args = parser.parse_args(); machine = Machine(args.root, args.state, args.backup)
+    machine.parent_manifest_bytes = args.parent_manifest.read_bytes() if args.parent_manifest else None
     retirement = None
     retirement_paths = {'plan': args.retirement_plan, 'status': args.retirement_status,
                         'receipt': args.retirement_receipt}

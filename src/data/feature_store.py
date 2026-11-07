@@ -96,15 +96,18 @@ class FeatureStore:
 
     @measure('catalog.feature_resolution')
     def resolve(self, binding):
-        from data.verified_inputs import memo
+        from data.verified_inputs import record_memo
         # Window-specific causal lineage can dwarf the useful input cache and is
         # not shared across horizons once the materialization itself is verified.
         if str(binding.get('id', '')).startswith(('LINEAGE_', 'PIT_OPERAND_', 'MATERIALIZATION_')):
             return self._resolve_record(binding)
-        return memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding))
+        # Repeated small definitions within one verifier share its complete
+        # checked read set. A different read still validates every witness.
+        return record_memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding),
+                           within_capture=True)
 
     def _resolve_record(self, binding):
-        from data.verified_inputs import current, dependency_capture, probe, probe_definition
+        from data.verified_inputs import current, dependency_capture, probe, probe_definition, compact_memo, phase_active
         normalize_reference(binding)
         key=(binding['id'],binding['version'],binding['content_sha256'])
         capture=dependency_capture()
@@ -114,7 +117,20 @@ class FeatureStore:
         identifier,version=binding['id'],binding['version']
         relative=None
         matches=[]
-        for folder in ('feature_recipes','features','datasets','source_views','transformations','policies','providers','scopes'):
+        folders=('feature_recipes','features','datasets','source_views','transformations','policies','providers','scopes')
+        def inventory():
+            result={}
+            for folder in folders:
+                path=self.path('definitions/'+folder);probe(path)
+                result[folder]={p.name:True for p in path.iterdir()} if path.exists() else {}
+            return result
+        # Exact directory membership proves the many negative catalog lookups.
+        # A newly added identifier invalidates this bounded, phase-local index.
+        # Existing identifiers still take the ordinary version/file checks.
+        names=(compact_memo(self.root,'definition_directory_membership',{},inventory,within_capture=True)
+               if phase_active(self.root) else None)
+        for folder in folders:
+            if names is not None and identifier not in names[folder]:continue
             candidate=f'definitions/{folder}/{identifier}/{version}.json'
             candidate_path=self.path(candidate)
             probe_definition(candidate_path)
@@ -133,13 +149,20 @@ class FeatureStore:
         loose = self.path(relative)
         probe(loose)
         packed = self._packed_lineage.resolve(binding, rebuild_missing=not loose.exists()) if identifier.startswith('LINEAGE_') else None
-        record = strict_json(stable_read(loose)) if loose.exists() else packed
+        loose_present = loose.exists()
+        record = strict_json(stable_read(loose)) if loose_present else packed
         if record is None:
             raise FileNotFoundError(loose)
         if packed is not None and record != packed:
             raise PublicationError('Conflicting loose and packed lineage')
-        self._validate(record)
-        if reference(record)!=binding or record_path(record)!=relative:raise PublicationError('Immutable reference or path mismatch')
+        # PackedLineage has already validated every row's schema, canonical
+        # bytes and exact reference before returning a private copy. Repeating
+        # that identical row validation here adds no evidence. Loose records
+        # still need their own validation, even when an equal pack also exists.
+        if packed is None or loose_present:
+            self._validate(record)
+            if reference(record)!=binding:raise PublicationError('Immutable reference or path mismatch')
+        if record_path(record)!=relative:raise PublicationError('Immutable reference or path mismatch')
         # Materializations contain every row-lineage reference. Catalog scans
         # must not retain the entire observation population in this store.
         # Exact numerical reuse is bounded separately by verified_inputs.
@@ -168,6 +191,7 @@ class FeatureStore:
         return data
 
     def verify_closure(self, records):
+        from data.verified_inputs import verified_read
         seen=set()
         def visit(value):
             if isinstance(value,dict):
@@ -183,7 +207,10 @@ class FeatureStore:
                 for child in value.values():visit(child)
             elif isinstance(value,list):
                 for child in value:visit(child)
-        for record in records:visit(record)
+        # Accept the complete closure only after rechecking its exact read set.
+        # Publication happens in the caller after this context has succeeded.
+        with verified_read(self.root):
+            for record in records:visit(record)
 
     def resolve_operand(self, record_or_ref):
         record=self.resolve(record_or_ref) if set(record_or_ref)=={'id','version','content_sha256'} else record_or_ref
