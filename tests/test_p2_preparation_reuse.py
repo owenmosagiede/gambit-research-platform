@@ -188,7 +188,9 @@ class PackedCaptureTests(unittest.TestCase):
                 self.assertGreater(first,0)
                 self.assertGreater(cache.counts['definition_directory_membership.hits'],0)
                 self.assertTrue(store._resolved_capture)
-                self.assertFalse(any(store._resolved_capture.values()))
+                for binding in refs:
+                    key=tuple(binding[name] for name in ('id','version','content_sha256'))
+                    self.assertFalse(store._resolved_capture[key])
                 store.verify_closure(refs)
                 self.assertGreater(checked.call_count,first)
             self.assertIsNone(v.dependency_capture())
