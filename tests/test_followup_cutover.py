@@ -12,12 +12,12 @@ from followup_manifest import binding_view
 from research.contracts import digest,HORIZONS
 from runtime.experiment_identity import scientific_key
 from research.inputs import _plan_id
-from test_research_inputs import ResearchInputsTests
+import test_research_inputs as fixtures
 
 
 class FollowupBindingTests(unittest.TestCase):
     def setUp(self):
-        self.fixture=ResearchInputsTests(methodName='runTest');self.fixture.setUp()
+        self.fixture=fixtures.ResearchInputsTests(methodName='runTest');self.fixture.setUp()
         self.addCleanup(self.fixture.tearDown)
         plan=self.fixture.plan()
         self.original={'record_sha256':'parent-envelope','intent':plan['intent'],

@@ -104,7 +104,7 @@ class FeatureStore:
         return record_memo(self.root, 'feature_record', binding, lambda: self._resolve_record(binding))
 
     def _resolve_record(self, binding):
-        from data.verified_inputs import current, dependency_capture, probe, probe_definition
+        from data.verified_inputs import current, dependency_capture, probe, probe_definition, compact_memo, phase_active
         normalize_reference(binding)
         key=(binding['id'],binding['version'],binding['content_sha256'])
         capture=dependency_capture()
@@ -114,7 +114,20 @@ class FeatureStore:
         identifier,version=binding['id'],binding['version']
         relative=None
         matches=[]
-        for folder in ('feature_recipes','features','datasets','source_views','transformations','policies','providers','scopes'):
+        folders=('feature_recipes','features','datasets','source_views','transformations','policies','providers','scopes')
+        def inventory():
+            result={}
+            for folder in folders:
+                path=self.path('definitions/'+folder);probe(path)
+                result[folder]={p.name:True for p in path.iterdir()} if path.exists() else {}
+            return result
+        # Exact directory membership proves the many negative catalog lookups.
+        # A newly added identifier invalidates this bounded, phase-local index.
+        # Existing identifiers still take the ordinary version/file checks.
+        names=(compact_memo(self.root,'definition_directory_membership',{},inventory)
+               if phase_active(self.root) else None)
+        for folder in folders:
+            if names is not None and identifier not in names[folder]:continue
             candidate=f'definitions/{folder}/{identifier}/{version}.json'
             candidate_path=self.path(candidate)
             probe_definition(candidate_path)

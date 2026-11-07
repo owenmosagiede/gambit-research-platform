@@ -13,6 +13,18 @@ ordinary full replay then checks the chain. This deliberately does not trust a
 mutable job projection or assume that an unchanged directory means unchanged
 file contents. Cache pressure may fall back to full replay.
 
+Witness validation resolves a shared parent path once per validation pass while
+still checking every file with both `lstat` and `stat`. It rechecks every shared
+parent resolution and ancestor identity before accepting the pass. Replacing a
+symlink, including changing it back during the pass, rejects reuse. This temporary
+path traversal state never survives a validation pass.
+
+An exact, bounded index of the eight definition directories avoids repeating
+negative file lookups for every lineage record. Directory identities witness
+membership, so a newly added identifier invalidates the index. Existing identifiers
+still use the ordinary version lookup, full record validation and ambiguity checks.
+Standalone readers retain their existing lookup path.
+
 A verified FX Feature can retain a compact SHA-256 proof after its observation
 buffer is evicted. That proof comes only from the full existing independent
 source, arithmetic and lineage verifier and retains its entire read-set witnesses.

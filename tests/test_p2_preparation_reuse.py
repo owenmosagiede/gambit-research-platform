@@ -15,8 +15,65 @@ from runtime.research_jobs import ResearchJobs
 import test_verified_inputs as fixtures
 
 
+class WitnessPathTests(unittest.TestCase):
+    def test_pass_matches_individual_signatures_and_detects_changed_files(self):
+        from data import verified_inputs as v
+        with TemporaryDirectory() as folder:
+            root=Path(folder); (root/'data').mkdir()
+            paths=[root/'data'/str(n) for n in range(5)]
+            for path in paths:path.write_bytes(b'good')
+            (root/'alias').symlink_to(root/'data',target_is_directory=True)
+            paths += [root/'alias/0',root/'alias',root/'missing',root/'data']
+            expected={str(p):v._signature(p) for p in paths}
+            shared=v._WitnessPaths()
+            self.assertEqual({str(p):v._signature(p,shared) for p in paths},expected)
+            self.assertTrue(shared.unchanged());self.assertTrue(v._unchanged(expected))
+            stamp=paths[0].stat();paths[0].write_bytes(b'evil')
+            os.utime(paths[0],ns=(stamp.st_atime_ns,stamp.st_mtime_ns))
+            self.assertFalse(v._unchanged(expected))
+            paths[0].unlink();self.assertFalse(v._unchanged(expected))
+
+    def test_parent_symlink_change_during_pass_is_rejected_even_if_restored(self):
+        from data import verified_inputs as v
+        for restore in (False,True):
+            with self.subTest(restore=restore),TemporaryDirectory() as folder:
+                root=Path(folder);(root/'a').mkdir();(root/'b').mkdir()
+                (root/'a/value').write_bytes(b'good');os.link(root/'a/value',root/'b/value')
+                link=root/'alias';link.symlink_to(root/'a',target_is_directory=True)
+                path=link/'value';expected={str(path):v._signature(path)};original=v._signature
+                def swap(p,paths=None):
+                    result=original(p,paths)
+                    link.unlink();link.symlink_to(root/'b',target_is_directory=True)
+                    if restore:
+                        link.unlink();link.symlink_to(root/'a',target_is_directory=True)
+                    return result
+                with patch.object(v,'_signature',swap):self.assertFalse(v._unchanged(expected))
+
+
 class FeatureProofTests(unittest.TestCase):
     setUp = fixtures.VerifiedPreparationTests.setUp
+
+    def test_definition_membership_reuse_detects_new_alias_and_version(self):
+        from data.feature_store import FeatureStore
+        from data.transformations.identity import reference
+        plan=self.f.plan();prepared=inputs.prepare_phase(self.root,plan,'P1')
+        binding=prepared['members'][0]['materializations'][0]
+        item=fx.read_fx_materialization(self.root,binding['id'])
+        lineage=item['manifest']['lineage'][0]
+        record=FeatureStore(self.root).resolve(lineage)
+        alias=self.root/'definitions/features'/lineage['id']/(lineage['version']+'.json')
+        for existing_folder in (False,True):
+            with self.subTest(existing_folder=existing_folder):
+                if existing_folder:alias.parent.mkdir(parents=True,exist_ok=True)
+                with execution_inputs(self.root,'code') as cache,phase_inputs(self.root,plan,'P1'):
+                    store=FeatureStore(self.root)
+                    self.assertEqual(store.resolve(lineage),record)
+                    self.assertEqual(store.resolve(lineage),record)
+                    self.assertEqual(cache.counts['definition_directory_membership.loads'],1)
+                    alias.parent.mkdir(parents=True,exist_ok=True);alias.write_bytes(canonical(record))
+                    with self.assertRaises(ValueError):FeatureStore(self.root).resolve(lineage)
+                alias.unlink()
+
     def test_compact_proof_outlives_observations_but_not_changed_source(self):
         plan = self.f.plan()
         prepared = inputs.prepare_phase(self.root, plan, 'P1')
@@ -40,6 +97,23 @@ class FeatureProofTests(unittest.TestCase):
                     fx.read_fx_materialization(self.root, binding['id'], research=True)
                 self.assertEqual(verify.call_count, 2)
                 self.assertLessEqual(cache.bytes, cache.max_bytes)
+
+    def test_reload_cannot_substitute_values_after_full_verification(self):
+        from data.feature_store import FeatureStore
+        plan=self.f.plan();prepared=inputs.prepare_phase(self.root,plan,'P1')
+        binding=prepared['members'][0]['materializations'][0]
+        with execution_inputs(self.root,'code') as cache,phase_inputs(self.root,plan,'P1'):
+            fx.read_fx_materialization(self.root,binding['id'],research=True)
+            for identity in list(cache.entries):cache._remove(cache.entries,identity,False)
+            original=FeatureStore.payload
+            def changed(store,member):
+                raw=original(store,member)
+                if member.get('role')=='fx_feature_observations':
+                    rows=[json.loads(line) for line in raw.splitlines()];rows[0]['value']='999'
+                    return b''.join(canonical(row)+b'\n' for row in rows)
+                return raw
+            with patch.object(FeatureStore,'payload',changed),self.assertRaisesRegex(ValueError,'Reloaded Feature differs'):
+                fx.read_fx_materialization(self.root,binding['id'],research=True)
 
     def test_proof_eviction_phase_change_and_standalone_repeat_full_verifier(self):
         plan = self.f.plan()

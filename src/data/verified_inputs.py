@@ -22,6 +22,7 @@ from copy import deepcopy
 from datetime import date, timedelta
 import sys
 import json
+import stat
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
@@ -48,16 +49,65 @@ class ChangedInput(ValueError):
     pass
 
 
-def _signature(path):
+def _stat_fields(value):
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
+            value.st_mtime_ns, value.st_ctime_ns)
+
+
+class _WitnessPaths:
+    """Share path traversal only within one complete witness validation.
+
+    Every file still gets both lstat and stat. Shared parent resolutions are
+    rechecked, together with every lexical ancestor's identity, before accepting
+    the pass. Nothing here survives a validation pass or excuses a file check.
+    """
+    def __init__(self):
+        self.parents = {}
+        self.ancestors = {}
+
+    @staticmethod
+    def ancestor_identity(path):
+        value = path.lstat()
+        # A directory's unrelated children may legitimately change. Only its
+        # path identity matters here; symlink replacement also checks ctime.
+        return (_stat_fields(value) if stat.S_ISLNK(value.st_mode)
+                else (value.st_dev, value.st_ino, value.st_mode))
+
+    def resolve_regular(self, path):
+        parent = path.parent
+        if parent not in self.parents:
+            for ancestor in (parent, *parent.parents):
+                if ancestor not in self.ancestors:
+                    self.ancestors[ancestor] = self.ancestor_identity(ancestor)
+            self.parents[parent] = parent.resolve()
+        return str(self.parents[parent] / path.name)
+
+    def unchanged(self):
+        try:
+            return (all(self.ancestor_identity(path) == value for path, value in self.ancestors.items())
+                    and all(path.resolve() == value for path, value in self.parents.items()))
+        except FileNotFoundError:
+            return False
+
+
+def _signature(path, paths=None):
     path = Path(path)
     try:
         link, target = path.lstat(), path.stat()
     except FileNotFoundError:
         return None
-    def fields(value):
-        return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
-                value.st_mtime_ns, value.st_ctime_ns)
-    return fields(link), fields(target), str(path.resolve())
+    resolved = (paths.resolve_regular(path) if paths is not None and not stat.S_ISLNK(link.st_mode)
+                and path.name not in ('', '.', '..') else str(path.resolve()))
+    return _stat_fields(link), _stat_fields(target), resolved
+
+
+def _unchanged(dependencies):
+    paths = _WitnessPaths()
+    try:
+        return (all(_signature(path, paths) == signature for path, signature in dependencies.items())
+                and paths.unchanged())
+    except FileNotFoundError:
+        return False
 
 
 def _remember(path, signature):
@@ -151,7 +201,7 @@ class VerifiedInputs:
             value, size, dependencies = entries[identity]
             with measure('inputs.cache_witness'):
                 counter('cache.witness_checks', len(dependencies))
-                valid = all(_signature(path) == signature for path, signature in dependencies.items())
+                valid = _unchanged(dependencies)
             if not valid:
                 self._remove(entries, identity, compact)
                 self.counts[kind + '.invalidations'] += 1
@@ -178,7 +228,7 @@ class VerifiedInputs:
             _DEPENDENCIES.reset(token)
         with measure('inputs.cache_witness'):
             counter('cache.witness_checks', len(dependencies))
-            if not all(_signature(path) == signature for path, signature in dependencies.items()):
+            if not _unchanged(dependencies):
                 raise ChangedInput('Verified input changed before cache publication')
         for path, signature in dependencies.items():
             _remember(path, signature)
@@ -277,6 +327,10 @@ def phase_inputs(root, plan, phase):
 def current(root):
     value = _CURRENT.get()
     return value if value is not None and value.root == str(Path(root).resolve()) else None
+
+
+def phase_active(root):
+    return current(root) is not None and _PHASE.get() is not None
 
 
 def memo(root, kind, key, loader):

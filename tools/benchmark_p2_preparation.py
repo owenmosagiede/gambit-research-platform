@@ -104,6 +104,8 @@ def run(source, root, output, *, seed_stored=False):
                 source_admission_boundary=fixture['source_admission'],admitted_horizons=list(admitted))
             print(source.name, phase, 'measured', round(measurement.report()['wall_seconds'],2),
                   'preparation',round(preparation['wall_seconds'],2),'admitted',admitted,flush=True)
+            print('Measured work',json.dumps({name:measurement.report()['timings'].get(name) for name in
+                  ('events.replay','inputs.cache_witness','feature.verify','catalog.feature_resolution')}),flush=True)
             # Independent replay and complete provenance capture are not timed.
             store = FeatureStore(root)
             code_paths = {str(p.relative_to(source)).replace('/','_'):p for top in ('src','specs')
@@ -152,7 +154,15 @@ def compare(before,after):
         proof.require(old['source_verification_mocked'] is False and new['source_verification_mocked'] is False,
                       'full source verification required')
         if old['phases']:
-            comparison=prep.compare(old,new)
+            # P2 library entries also reference the P1 publications made by
+            # this same experiment. Prove that complete closure before mapping
+            # any entry; never discard an earlier dependency to make it match.
+            closure = ('P1',) if phase == 'P1' else ('P1','P2')
+            reports=[]
+            for source,current in ((before,old),(after,new)):
+                publications=[item for stage in closure for item in source[stage]['phases'].values()]
+                reports.append(dict(current,phases={str(i):item for i,item in enumerate(publications)}))
+            comparison=prep.compare(*reports)
         else:
             for field in ('fixture','prepared','loaded','decisions','dimensions','admitted_horizons'):
                 proof.require(old[field]==new[field],'stored '+phase+' '+field+' changed')
@@ -213,6 +223,8 @@ def main():
                     'source_trees':{n:bench.tree_identity(p) for n,p in sources.items()},'production_data_used':False,
                     'source_verification_mocked':False},indent=2)+'\n')
                 print('Comparison',json.dumps(row),flush=True)
+                if not row['passed']:
+                    raise RuntimeError('Offline performance gate failed; retained evidence, no further repeats')
 
 
 if __name__=='__main__':main()
