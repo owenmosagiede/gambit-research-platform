@@ -77,9 +77,13 @@ class _WitnessPaths:
 
     def resolve_regular(self, path):
         parent, name = os.path.split(path)
-        if parent not in self.parents:
+        if name in ('', '.', '..'):
+            return str(Path(path).resolve())
+        resolved_parent = self.parents.get(parent)
+        if resolved_parent is None:
             parent_path = Path(parent)
-            for ancestor in (parent_path, *parent_path.parents):
+            ancestors = (parent_path, *parent_path.parents)
+            for ancestor in ancestors:
                 if ancestor not in self.ancestors:
                     self.ancestors[ancestor] = self.ancestor_identity(ancestor)
             # Absolute ordinary directory paths already have their resolved
@@ -91,11 +95,15 @@ class _WitnessPaths:
             ordinary = (parent_path.is_absolute() and not str(parent_path).startswith('//')
                         and '..' not in parent_path.parts
                         and all(stat.S_ISDIR(self.ancestors[p][2])
-                                for p in (parent_path, *parent_path.parents)))
-            self.parents[parent] = str(parent_path) if ordinary else str(parent_path.resolve())
+                                for p in ancestors))
+            resolved_parent = str(parent_path) if ordinary else str(parent_path.resolve())
+            self.parents[parent] = resolved_parent
             if ordinary:
                 self.literal_parents.add(parent)
-        return os.path.join(self.parents[parent], name)
+        # Preserve canonical spelling without rebuilding an identical string.
+        # Relative, redundant-separator and symlink parents still use the
+        # independently resolved spelling. All final witness checks remain.
+        return path if parent == resolved_parent else os.path.join(resolved_parent, name)
 
     def unchanged(self):
         try:
@@ -115,7 +123,7 @@ def _signature(path, paths=None):
     except FileNotFoundError:
         return None
     resolved = (paths.resolve_regular(path) if paths is not None and not stat.S_ISLNK(link.st_mode)
-                and os.path.basename(path) not in ('', '.', '..') else str(Path(path).resolve()))
+                else str(Path(path).resolve()))
     return _stat_fields(link), _stat_fields(target), resolved
 
 

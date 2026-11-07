@@ -51,7 +51,10 @@ class WitnessPathTests(unittest.TestCase):
             for path in paths:path.write_bytes(b'good')
             (root/'alias').symlink_to(root/'data',target_is_directory=True)
             paths += [root/'alias/0',root/'alias',root/'missing',root/'data',str(root/'alias')+'/',
-                      str(root/'data')+'/./0',str(root/'data')+'//0',str(root/'data')+'/0/.']
+                      str(root/'data')+'/./0',str(root/'data')+'//0',str(root/'data')+'/0/.',
+                      str(root)+'//data/0',str(root)+'/data/../data/0',
+                      str(root)+'/data/..',str(root)+'/data/.',os.path.relpath(root/'data/0'),
+                      '.', '..']
             def independent(p):
                 p=Path(p)
                 try:return v._stat_fields(p.lstat()),v._stat_fields(p.stat()),str(p.resolve())
