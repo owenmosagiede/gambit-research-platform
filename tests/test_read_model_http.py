@@ -40,3 +40,10 @@ class ReadModelHTTPTests(unittest.TestCase):
         route.write(b'{}')
         self.assertIn(route.response[0],(404,405))
         self.assertFalse((self.root/'storage').exists())
+
+    def test_activity_is_bounded_optional_and_read_only(self):
+        code,value=self.read('/api/read-model/v1/activity')
+        self.assertEqual(code,200);self.assertEqual(value['worker']['state'],'unknown')
+        self.assertEqual(self.read('/api/read-model/v1/activity?scan=1')[0],400)
+        self.assertEqual(self.read('/api/read-model/v1/evidence/TRIAL_'+'a'*64+'?role=aligned_sample')[0],400)
+        self.assertFalse((self.root/'storage').exists())

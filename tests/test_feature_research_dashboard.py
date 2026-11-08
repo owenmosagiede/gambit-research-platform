@@ -132,7 +132,7 @@ fetch:async(url,opts)=>{requests.push({url,method:opts.method});if(input.hold?.i
 const flush=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};
 const snapshots=[];const text=n=>[n.textContent,...n.children.map(text)].join(' ');
 const visible=n=>n.tag==='details' ? n.children.filter(c=>c.tag==='summary').map(visible).join(' ') : [n.textContent,...n.children.map(visible)].join(' ');
-function snap(){snapshots.push({text:text(host),primaryText:visible(host),selectOptions:all(host,n=>n.tag==='option').map(n=>n.textContent),requests:[...requests],buttons:all(host,n=>n.tag==='button').map(n=>({label:n.textContent,disabled:n.disabled,pressed:n.attributes['aria-pressed']})),svgs:all(host,n=>n.tag==='svg').length});}
+function snap(){snapshots.push({text:text(host),primaryText:visible(host),selectOptions:all(host,n=>n.tag==='option').map(n=>n.textContent),requests:[...requests],buttons:all(host,n=>n.tag==='button').map(n=>({label:n.textContent,disabled:n.disabled,pressed:n.attributes['aria-pressed']})),svgs:all(host,n=>n.tag==='svg'&&!String(n.attributes.class||'').includes('signed-bar')).length});}
 (async()=>{vm.runInNewContext(fs.readFileSync(input.script,'utf8'),ctx);window.SignalResearch.mount(host,input.entry);await flush();snap();
 for(const step of input.steps){if(step.action==='button'){const b=find(host,n=>n.tag==='button'&&n.textContent===step.label);if(!b)throw Error('Missing button '+step.label);if(!b.disabled)b.listeners.click();}
 else if(step.action==='context'){const s=find(host,n=>n.tag==='select'&&n.attributes['aria-label']==='Scope · hypothesis');s.value=all(s,n=>n.tag==='option')[step.index].value;s.listeners.change();}

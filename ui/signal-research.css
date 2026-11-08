@@ -102,3 +102,31 @@
   .research-controls { gap: 16px; }
   .research-comparison > .research-values { flex-wrap: wrap; }
 }
+
+/* Dedicated read views retain the established cards and evidence typography. */
+.read-model-recipes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.read-model-recipes > .queue-heading { grid-column:1 / -1; }
+.read-model-recipes .signal-card { border:1px solid var(--g-border); border-radius:var(--g-radius); padding:24px; background:var(--g-surface); }
+.read-model-recipes h3 { margin:8px 0 22px; font-size:20px; }
+.recipe-counts { display:flex; gap:32px; margin-bottom:20px; }
+.recipe-counts > div { display:flex; flex-direction:column; gap:6px; }
+.recipe-counts strong { font-size:28px; font-variant-numeric:tabular-nums; }
+.recipe-counts span { font-size:12px; color:var(--g-muted); }
+.read-model-records { display:flex; flex-direction:column; gap:16px; }
+.read-model-records .ledger-card { background:var(--g-surface); padding:20px; border:1px solid var(--g-border); border-radius:var(--g-radius); }
+.read-model-records summary { cursor:pointer; }
+.read-model-records summary > strong { display:block; font-size:18px; margin-bottom:8px; }
+.read-model-records summary > span { display:block; color:var(--g-muted); margin-block:5px; font-size:13px; }
+.read-model-records .research-table { width:100%; border-collapse:collapse; margin-block:20px; }
+.read-model-records .research-table th,.read-model-records .research-table td { padding:12px; border-bottom:1px solid var(--g-border); text-align:left; }
+.live-activity { border-left:4px solid var(--g-link); }
+.live-activity h4 { font-size:21px; margin:14px 0 8px; }
+.definition-panel pre,.research-provenance pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:360px; overflow:auto; }
+.signed-bar { display:block; width:100%; height:16px; color:var(--g-muted); }
+.signed-bar.bar-positive { color:var(--g-link); }.signed-bar.bar-negative { color:var(--g-error); }
+@media(max-width:760px) { .read-model-recipes { grid-template-columns:1fr; } .recipe-counts { gap:18px; } }
+
+.feature-research .research-button[aria-pressed="true"] { background:var(--g-ink); color:var(--g-surface); }
+
+.read-model-activity-top { margin-top:0; padding-top:0; border-top:0; margin-bottom:48px; }
+.research-controls .research-button[aria-pressed="true"] { background:var(--g-ink); color:var(--g-surface); }

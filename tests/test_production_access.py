@@ -64,7 +64,7 @@ class ProductionAccessTests(unittest.TestCase):
         return self.client.post(path, data=json.dumps(data), content_type='application/json',
             HTTP_ORIGIN='http://testserver', **({'HTTP_X_CSRFTOKEN': token} if token else {}), **headers)
     def test_all_private_assets_and_routes_require_owner(self):
-        routes = ['/api/read-model/v1/recipes', '/api/read-model/v1/ledger', '/api/read-model/v1/queue', '/api/batches', '/api/batches/10000000-0000-4000-8000-000000000002', '/app/', '/session.js', '/api/experiments', '/api/research-readiness',
+        routes = ['/api/read-model/v1/activity', '/api/read-model/v1/evidence/TRIAL_'+'a'*64, '/api/read-model/v1/recipes', '/api/read-model/v1/ledger', '/api/read-model/v1/queue', '/api/batches', '/api/batches/10000000-0000-4000-8000-000000000002', '/app/', '/session.js', '/api/experiments', '/api/research-readiness',
             '/api/feature-library', '/api/signal-library-summaries', '/api/pit-library',
             '/api/scope-library', '/api/target-library', '/api/trial-evidence/TRIAL_'+'a'*64,
             '/api/feature-research/FEATURE_RECIPE_'+'a'*64, '/api/research-results/FEATURE_RECIPE_'+'a'*64]
@@ -112,6 +112,7 @@ class ProductionAccessTests(unittest.TestCase):
                     response=self.client.get('/api/read-model/v1/'+endpoint)
                     self.assertEqual(response.status_code,200)
                     self.assertEqual(response.json()['total'],0)
+                self.assertEqual(self.client.get('/api/read-model/v1/activity').json()['worker']['state'],'unknown')
                 self.assertIn(b'name="gambit-read-model" content="enabled"',self.client.get('/app/').content)
         self.assertFalse((self.root/'storage').exists())
 

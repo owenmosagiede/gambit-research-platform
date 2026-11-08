@@ -102,6 +102,11 @@ class SeparateServicesTests(unittest.TestCase):
         r = intent(mode='TS')
         self.assertEqual(self.request('POST', '/api/experiments', r)[0], 202)
         self.wait(lambda: (self.root / 'entered').exists())
+        from api.live_activity import observe
+        active=self.wait(lambda: observe(self.root).get('active'))
+        self.assertEqual(active['request_id'],r['request_id'])
+        for _ in range(3):
+            self.assertEqual(observe(self.root)['active']['request_id'],r['request_id'])
         self.assertNotEqual(worker.pid, web.pid)
         web.terminate(); web.join(3)
         self.assertTrue(worker.is_alive())

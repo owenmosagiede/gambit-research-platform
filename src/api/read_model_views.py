@@ -20,7 +20,15 @@ def serve(route, target, directory, *, head=False):
         if any(len(v)!=1 for v in values.values()): raise query.InvalidQuery('Duplicate query parameter')
         values = {k:v[0] for k,v in values.items() if v[0]}
         endpoint = target.path[len(PREFIX):]
-        if endpoint in ('ledger','queue','recipes'):
+        if endpoint == 'activity':
+            if values: raise query.InvalidQuery('Activity accepts no query')
+            from api.live_activity import observe
+            label='activity'; value=observe(route.root)
+        elif match := re.fullmatch(r'evidence/(TRIAL_[0-9a-f]{64})', endpoint):
+            if set(values)-{'generation'}: raise query.InvalidQuery('Unsupported evidence query')
+            from read_model.chart_evidence import read_evidence
+            label='evidence'; value=read_evidence(directory, match[1], values.get('generation'))
+        elif endpoint in ('ledger','queue','recipes'):
             label = endpoint; value=query.page(directory,endpoint,values)
         elif match := re.fullmatch(r'recipes/(FEATURE_(?:RECIPE_)?[0-9a-f]{64})/branches',endpoint):
             label='branches'; value=query.page(directory,'branches',values,recipe=match[1])

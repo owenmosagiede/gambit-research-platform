@@ -27,7 +27,7 @@ SUITES = [
     'test_research_http', 'test_experiment_views', 'test_experiment_labels', 'test_separate_services', 'test_production_access',
     'test_production_http', 'test_production_session_js', 'test_queue_ui',
     'test_signal_recipe_ui', 'test_library_pages_ui', 'test_research_ui', 'test_research_startup',
-    'test_read_model', 'test_read_model_branches', 'test_read_model_http', 'test_read_model_ui',
+    'test_read_model', 'test_read_model_branches', 'test_read_model_http', 'test_read_model_ui', 'test_chart_evidence', 'test_live_activity',
     'test_catalog_cache', 'test_catalog_reads', 'test_signal_recipe_summaries',
     'test_signal_library_api', 'test_feature_library_api',
     'test_reusable_feature_recipes', 'test_feature_research_dashboard',

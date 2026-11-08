@@ -172,6 +172,12 @@ class Extractor:
             **{k: body[k] for k in ('scope', 'mode', 'horizon', 'target_family', 'expected_direction')},
             'p1_status': admissions[0]['body']['decision'],
             'p2_status': validations[0]['body']['decision'] if validations else 'not_run'}
+        try:
+            from api.research_labels import scope_label
+            scope_ref = row['scope'].get('reference', row['scope'])
+            row['scope_label'] = scope_label(FeatureStore(self.root).resolve(scope_ref))
+        except (ValueError, KeyError, OSError):
+            row['scope_label'] = row['scope'].get('id', row['scope'].get('reference', {}).get('id', 'Saved scope'))
         stages = {t['body']['stage']: t for t in trials}; p1 = stages['P1']; p2 = stages.get('P2')
         row['research_stage_pass'] = False
         if row['p2_status'] == 'VALIDATED':
