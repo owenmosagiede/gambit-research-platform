@@ -1,4 +1,4 @@
-"""Bounded SELECT-only website queries. No research imports or source reads."""
+"""Bounded SELECT-only website queries. No research execution or source reads."""
 import base64
 from contextlib import contextmanager
 import hashlib
@@ -167,4 +167,7 @@ def detail(directory, kind, identity, generation=None):
         if record is None: raise LookupError('No verified projected record')
         value = {'schema_version':'read_model_v1', 'record':json.loads(record[0]), 'freshness':freshness(manifest),
                  'numerical_evidence':'not_loaded; this endpoint returns stored metadata only'}
+        if kind != 'experiment':
+            from research.contracts import ref
+            value['authority'] = ref(value['record'])
     return value

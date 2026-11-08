@@ -52,6 +52,7 @@ class ServiceResearchJobs(ObservedResearchJobs):
         self._drain_lock = threading.Lock()
         self._draining = False
         self._executing = False
+        self._active_request = None
         super().__init__(root, **kwargs)
 
     def drain(self):
@@ -66,14 +67,21 @@ class ServiceResearchJobs(ObservedResearchJobs):
             if self._draining:
                 return
             self._executing = True
+            self._active_request = rid
         try:
             return super()._run(rid)
         finally:
             with self._drain_lock:
                 self._executing = False
+                self._active_request = None
                 if self._draining:
                     self.stop_event.set()
                     self.wake.set()
+
+    def activity(self):
+        # Operational identity only; no scientific bindings or event mutations.
+        with self._drain_lock:
+            return {"request_id": self._active_request}
 
     def health(self):
         value = super().health()
@@ -100,6 +108,7 @@ def run_service(root, *, jobs_factory=ServiceResearchJobs, heartbeat_interval=1)
             install_bytes(root / HEARTBEAT, canonical({
                 'workspace': str(root), 'pid': os.getpid(), 'session_id': jobs.session_id,
                 'monotonic_ns': time.monotonic_ns(), 'health': jobs.health(),
+                'activity': jobs.activity() if hasattr(jobs, 'activity') else None,
             }) + b'\n', mutable=True)
         try:
             for sig in (signal.SIGTERM, signal.SIGINT):

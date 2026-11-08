@@ -1,0 +1,33 @@
+# REVIEWED EXAMPLE ONLY. Never installed by normal code deployment.
+# A separate account needs READ permission for referenced trial artifacts and
+# payloads, and WRITE permission only for the disposable serving/charts folder.
+[Unit]
+Description=Gambit saved chart evidence projector
+After=local-fs.target
+
+[Service]
+Type=simple
+User=gambit-chart-reader
+Group=gambit-readers
+WorkingDirectory=/srv/gambit/research_platform
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/gambit/venv/bin/python -B tools/project_chart_evidence.py --root /srv/gambit/research_platform --output /var/lib/gambit-read-model --max-trials 4 --seconds 30 --watch-seconds 60
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/srv/gambit/research_platform /var/lib/gambit-read-model
+ReadWritePaths=/var/lib/gambit-read-model/charts
+InaccessiblePaths=/srv/gambit/research_platform/storage/catalog/lineage
+RestrictAddressFamilies=AF_UNIX
+CPUQuota=10%
+MemoryMax=128M
+Nice=19
+IOSchedulingClass=idle
+TasksMax=16
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -2,7 +2,6 @@
 
 // Read-only presentation of exact saved relationships. No preparation or Submit calls.
 (() => {
-  if (document.querySelector?.('meta[name="gambit-read-model"]')?.content === "enabled") return;
   const node = (tag, text, cls) => {
     const element = document.createElement(tag);
     if (text !== undefined) element.textContent = text;
@@ -50,8 +49,10 @@
   function bar(parent, label, value, max, caption, color) {
     const b = node("div", undefined, "research-bar");
     const heading = node("div"); heading.append(node("span", label), node("strong", format(value, 3, true), `ink-${color}`));
-    const meter = node("progress"); meter.max = max || 1; meter.value = numeric(value) ? Math.abs(Number(value)) : 0;
-    meter.className = `bar-${color}`; meter.setAttribute("aria-label", `${label}: ${format(value, 3, true)}`);
+    const meter = svg("svg", {viewBox:"0 0 200 12",role:"img","aria-label":`${label}: ${format(value,3,true)}; zero at centre`,class:`signed-bar bar-${color}`});
+    const width=numeric(value) ? 98*Math.abs(Number(value))/(max||1) : 0;
+    meter.append(svg("line",{x1:100,x2:100,y1:0,y2:12,stroke:"currentColor"}));
+    if(numeric(value))meter.append(svg("rect",{x:Number(value)<0 ? 100-width : 100,y:3,width,height:6,fill:"currentColor"}));
     b.append(heading, meter, note(caption)); parent.append(b);
   }
   function checklist(evidence, stage) {
@@ -102,12 +103,12 @@
     graphic.append(svg("text", {x:64,y:268,class:"chart-label"},isCS ? chart.points[0].date : format(xmin)),
       svg("text", {x:714,y:268,"text-anchor":"end",class:"chart-label"},isCS ? chart.points[chart.points.length-1].date : format(xmax)),
       svg("text", {x:390,y:290,"text-anchor":"middle",class:"chart-label"},isCS ? "Date · cumulative sum of raw rank IC" : "Feature value"));
-    p.append(graphic, note(isCS ? "Uses every stored usable date. Shading follows saved chronological blocks. This is not an investment return curve." :
-      `${integer(chart.display_count)} of ${integer(chart.total_count)} usable observations shown${chart.display_count < chart.total_count ? " (evenly spaced sample)" : ""}. The line uses the saved full-sample regression.`));
+    p.append(graphic, note(isCS ? `Every usable IC contributes to the cumulative sum. ${integer(chart.display_count)} of ${integer(chart.total_count)} points displayed${chart.display_count < chart.total_count ? " (deterministic thinning)" : ""}. Shading follows saved blocks. This is not an investment return curve.` :
+      `${integer(chart.display_count)} of ${integer(chart.total_count)} usable observations shown${chart.display_count < chart.total_count ? " (deterministic display sample)" : ""}. The line uses the saved full-sample regression.`));
     return p;
   }
 
-  function mount(host, entry) {
+  function mount(host, entry, source = null) {
     cancelCurrent();
     const controller = new AbortController(); let alive = true, version = 0, relationships = [], issues = [], selectedContext = null, horizon = 1, stage = "P1", branch = 0;
     const cache = new Map();
@@ -117,7 +118,7 @@
     async function request(url) {
       const child = new AbortController(), abort = () => child.abort();
       controller.signal.addEventListener("abort", abort, {once:true});
-      const timer = window.setTimeout(abort, 30000);
+      const timer = window.setTimeout(abort, 5000);
       try {
         const response = await fetch(url, {method:"GET",mode:"same-origin",credentials:"same-origin",cache:"no-store",signal:child.signal});
         if (!response.ok) throw new Error("Unavailable"); return await response.json();
@@ -172,12 +173,12 @@
       const candidates=family.filter(r=>r.horizon===horizon);branch=Math.min(branch,candidates.length-1);const relationship=candidates[branch];
       const result=relationship.results.find(r=>r.stage===stage);
       const controls=node("div",undefined,"research-controls");
-      controls.append(selector("Scope · hypothesis",contexts.map(([key,r])=>[key,`${r.scope_label || r.scope.id} · ${fullMode(r.mode)} · ${words(r.expected_direction)} · ${targetName(r.target_family)} · Spec v${r.results[0]?.research_spec?.version || "—"}`]),selectedContext,value=>{selectedContext=value;branch=0;render();}));
+      if(!source) controls.append(selector("Scope · hypothesis",contexts.map(([key,r])=>[key,`${r.scope_label || r.scope.id} · ${fullMode(r.mode)} · ${words(r.expected_direction)} · ${targetName(r.target_family)} · Spec v${r.results[0]?.research_spec?.version || "—"}`]),selectedContext,value=>{selectedContext=value;branch=0;render();}));
       const horizons=node("div",undefined,"research-control");horizons.append(node("span","Forecast horizon · scheduled weekdays","research-label"));const hbuttons=node("div",undefined,"research-segments");
       for(const value of [1,7,21,63,252]) {const b=button(String(value),()=>{horizon=value;branch=0;render();});b.disabled=!family.some(r=>r.horizon===value);b.setAttribute("aria-pressed",String(horizon===value));b.title=b.disabled ? "No saved research for this horizon" : `${value}-day forecast horizon (scheduled weekdays)`;hbuttons.append(b);}horizons.append(hbuttons);
       const periods=node("div",undefined,"research-control");periods.append(node("span","Research period","research-label"));const pbuttons=node("div",undefined,"research-segments");
-      for(const [value,label] of [["P1","P1 Discovery"],["P2","P2 Validation"]]) {const b=button(label,()=>{stage=value;render();});b.setAttribute("aria-pressed",String(stage===value));pbuttons.append(b);}periods.append(pbuttons);controls.append(horizons,periods);root.append(controls);
-      if(candidates.length>1) root.append(selector("Saved research result",candidates.map((r,i)=>[String(i),`Saved result ${i + 1} · ${r.results[0]?.period.start_inclusive || "—"} – ${r.results[0]?.period.end_exclusive || "—"}`]),String(branch),v=>{branch=Number(v);render();}));
+      for(const [value,label] of [["P1","P1 Discovery"],["P2","P2 Validation"]]) {const b=button(label,()=>{stage=value;render();});b.setAttribute("aria-pressed",String(stage===value));pbuttons.append(b);}periods.append(pbuttons);if(!source)controls.append(horizons);controls.append(periods);root.append(controls);
+      if(candidates.length>1) root.append(selector("Saved research result",candidates.map((r,i)=>[String(i),`Saved result ${i + 1} · ${r.results[0]?.period?.start_inclusive || "—"} – ${r.results[0]?.period?.end_exclusive || "—"}`]),String(branch),v=>{branch=Number(v);render();}));
       const badges=node("div",undefined,"research-context");
       badges.append(node("span",`P1 ${status(relationship.p1_status)}`,`research-badge ${tone(relationship.p1_status)}`),node("span",`P2 ${status(relationship.p2_status)}`,`research-badge ${tone(relationship.p2_status)}`),
         note(`${fullMode(relationship.mode)} · ${targetName(relationship.target_family)} · ${horizon}-day forecast horizon · Expected relationship: ${words(relationship.expected_direction)}`));root.append(badges);
@@ -190,8 +191,8 @@
         if(validation?.reason_codes?.length) empty.append(note(validation.reason_codes.map(words).join(" · ")));
         empty.append(jsonDetails("Authoritative relationship and decisions",relationship));root.append(empty);return;
       }
-      root.append(note(`${stage} · ${result.period.start_inclusive} – ${result.period.end_exclusive} (end exclusive) · Research Spec v${result.research_spec.version}`,"research-period"));
-      const m=result.metrics,s=result.sample,e=result.evidence||{},isCS=relationship.mode==="CS",isP2=stage==="P2";
+      root.append(note(`${stage} · ${result.period?.start_inclusive || "Not recorded"} – ${result.period?.end_exclusive || "Not recorded"} (end exclusive) · Research Spec v${result.research_spec?.version || "—"} · Execution: ${status(result.execution_status)}`,"research-period"));
+      const m=result.metrics||{},s=result.sample||{},e=result.evidence||{},isCS=relationship.mode==="CS",isP2=stage==="P2";
       const required=Object.values(e).filter(row=>row.status!=="diagnostic"),passes=required.filter(row=>row.status==="pass").length;
       const headlines=node("div",undefined,"research-headlines");
       headlines.append(metric(isCS ? `${isP2 ? "Validation " : ""}mean rank IC` : `${isP2 ? "Validation " : ""}predictive coefficient β`,format(m.primary_effect,3,true),
@@ -225,13 +226,14 @@
       kv(sample,[["Usable dates",integer(s.usable_date_count)],["Instrument-date rows",integer(s.usable_pair_count)],["Incomplete dates",integer(Array.isArray(s.incomplete_dates)?s.incomplete_dates.length:s.incomplete_dates)],["Exclusions",integer(s.excluded_pair_count)]]);
       const scheduled=note("Missing scheduled periods: verifying…");sample.append(scheduled);
       const rowsHost=node("div"),actions=node("div",undefined,"research-actions");
-      for(const [role,label] of [["aligned_sample","Aligned observations"],["observation_exclusions","Excluded observations"],...(isCS ? [["cross_sectional_ic_history","IC history"]] : [])]) actions.append(button(label,()=>evidenceTable(rowsHost,result,role)));
+      for(const [role,label] of (source ? [] : [["aligned_sample","Aligned observations"],["observation_exclusions","Excluded observations"],...(isCS ? [["cross_sectional_ic_history","IC history"]] : [])])) actions.append(button(label,()=>evidenceTable(rowsHost,result,role)));
+      if(source) sample.append(note("Charts are prepared separately from saved evidence. Numerical observation downloads are not loaded by these pages."));
       sample.append(actions,rowsHost,jsonDetails("Sample coverage & members",s),jsonDetails("Exact trial, relationship & lineage references",{recipe,relationship:relationship.relationship,scope:relationship.scope,projection:relationship.projection,trial:result.authority,research_spec:result.research_spec,period:result.period,artifacts:result.artifact_manifests,validations:relationship.validations}));root.append(sample);
       root.append(note(isP2 ? "Outcomes apply only to this Scope, Target, horizon, hypothesis and saved result. Unavailable values are shown as —, never zero." : "P1 applies no multiple-testing adjustment and stores no p-value. Unavailable values are shown as —, never zero.","research-footnote"));
       async function loadEvidence() {
         try {
           let data=cache.get(result.authority.id);
-          if(!data) {data=await request(`/api/trial-evidence/${result.authority.id}`);if(!exact(data.authority,result.authority)||!data.chart||!data.artifacts)throw new Error("Evidence mismatch");cache.set(result.authority.id,data);}
+          if(!data) {data=source ? await source.evidence(result.authority,controller.signal) : await request(`/api/trial-evidence/${result.authority.id}`);if(!exact(data.authority,result.authority)||!data.chart||!data.artifacts)throw new Error("Evidence mismatch");cache.set(result.authority.id,data);}
           if(!alive||token!==version)return;
           const a=data.artifacts,blocks=isP2 ? a.blocks||[] : a.stability?.subperiods||[], effects=panel("Effect by block");
           const values=blocks.map(b=>isP2 ? b.oriented_effect : b.primary_statistic),max=Math.max(...values.map(v=>Math.abs(Number(v)||0)),0);
@@ -240,8 +242,10 @@
             bar(effects,`Block ${i+1}`,values[i],max,`${b.start||"—"} – ${b.end||"—"} · ${integer(b.observation_count)} rows · ${isP2 ? "oriented effect" : "raw effect"} · ${numeric(values[i]) ? match ? isP2 ? "matches hypothesis" : "matches full-sample sign" : isP2 ? "does not match hypothesis" : "differs from full-sample sign" : "unavailable"}`,numeric(values[i]) ? match ? "positive" : "negative" : "neutral");
           }
           if(!blocks.length)effects.append(note("Block evidence was not recorded."));
-          chartRow.replaceChildren(plot(data.chart,result,blocks),effects);
-          if(!isP2 && a.stability?.subperiods) {
+          const chartPanel=plot(data.chart,result,blocks);
+          if(source)chartPanel.append(note(`Chart evidence verified ${data.verified_at || "at an unavailable time"}. Referenced chart roles only.`));
+          chartRow.replaceChildren(chartPanel,effects);
+          if(!isP2 && a.stability?.subperiods && numeric(a.stability.same_sign_subperiod_count)) {
             const value=headlines.children[2].querySelector(".metric-value");
             if(value)value.textContent=`${integer(a.stability.same_sign_subperiod_count)} / ${integer(a.stability.subperiods.length)}`;
           }
@@ -264,7 +268,7 @@
     async function load() {
       root.replaceChildren(note("Verifying saved research for this Feature…"));
       try {
-        const data=await request(`/api/feature-research/${recipe.id}`);
+        const data=source ? await source.load(controller.signal) : await request(`/api/feature-research/${recipe.id}`);
         if(!alive)return;
         if(data.recipe_id!==recipe.id||!Array.isArray(data.relationships)||data.relationships.some(r=>!r.scope||!["TS","CS"].includes(r.mode)||!Array.isArray(r.results)))throw new Error("Invalid research");
         if(data.issues !== undefined && (!Array.isArray(data.issues) || data.issues.some(issue=>!issue || typeof issue.code!=="string" || typeof issue.message!=="string")))throw new Error("Invalid research issues");
