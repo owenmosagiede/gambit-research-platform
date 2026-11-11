@@ -346,12 +346,12 @@ def execution_inputs(root, implementation, **kwargs):
 
 
 @contextmanager
-def phase_inputs(root, plan, phase):
+def phase_inputs(root, plan, phase, *, period=None):
     context = current(root)
     if context is None:
         yield
         return
-    period = plan['periods'][phase]
+    period = plan['periods'][phase] if period is None else period
     # plan_id is verified by the caller before entering this namespace.
     key = digest({'plan': plan['plan_id'], 'phase': phase,
                   'period': period, 'implementation': context.implementation})

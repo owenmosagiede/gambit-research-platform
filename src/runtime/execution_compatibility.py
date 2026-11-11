@@ -375,12 +375,13 @@ def verify_committed_closure(store, approval, submission, plan):
     """
     from research.contracts import HORIZONS, scientific
     from research.performance import measure, counter
+    from research.schedule import period_for
     row = row_for(approval, submission['request_id'], canonical=True)
     pins = {r['id']: r for r in row['committed_trials']}
     claimed = {r['id']: r for r in _claimed_trials(store, approval, submission)}
     profile = submission['research_spec']
     contexts = {}
-    for horizon in HORIZONS:
+    for horizon in plan.get('horizons', HORIZONS):
         relation = {'recipe': plan['recipe'], 'scope': plan['scope'], 'mode': plan['mode'],
             'target_family': 'price_return', 'horizon': horizon, 'horizon_unit': 'scheduled_weekdays',
             'members': [m['instrument_id'] for m in plan['members']],
@@ -400,7 +401,7 @@ def verify_committed_closure(store, approval, submission, plan):
             phase = key.get('stage')
             if not context or phase not in ('P1', 'P2'):
                 continue
-            if key.get('period') != plan['periods'][phase] or not all(key.get(k) == scientific(v) for k,v in context.items()):
+            if key.get('period') != period_for(plan, phase, key['horizon']) or not all(key.get(k) == scientific(v) for k,v in context.items()):
                 continue
             impl = store.resolve('implementation', key['implementation'])
             if approval['proposal']['schema'] == SUCCESSOR_SCHEMA and trial['id'] in pins:
@@ -422,6 +423,8 @@ def committed_trial(store, approval, submission, plan, phase, horizon, relations
     """Reuse only exact approved authority; never synthesize a historical key."""
     if approval is None:
         return None
+    from research.schedule import period_for
+    period = period_for(plan, phase, horizon)
     row = row_for(approval, submission['request_id'], canonical=True)
     found = []
     candidates = [(r, approval['proposal']['from_implementation']) for r in row['committed_trials']]
@@ -434,7 +437,7 @@ def committed_trial(store, approval, submission, plan, phase, horizon, relations
         profile = submission['research_spec']
         expected = {'relationship': ref(relationship), 'stage': phase, 'horizon': horizon,
             'research_spec': {'id': profile['id'], 'version': profile['version'], 'content_sha256': digest(profile)},
-            'period': plan['periods'][phase],
+            'period': period,
             'targets': [{'instrument': m['instrument_id'], 'binding': m['targets'][str(horizon)]} for m in plan['members']],
             'discovery_trial': discovery_trial, 'discovery_effect': discovery_effect}
         from research.contracts import scientific
@@ -443,7 +446,7 @@ def committed_trial(store, approval, submission, plan, phase, horizon, relations
         historical = binding in row['committed_trials']
         _require(historical_executor_matches(approval, trial, old_impl) if historical else
                  old_impl['body'] == expected_implementation, 'committed trial executor differs')
-        _require(key['prepared']['phase'] == phase and key['prepared']['period'] == plan['periods'][phase] and
+        _require(key['prepared']['phase'] == phase and key['prepared']['period'] == period and
                  [m['instrument_id'] for m in key['prepared']['members']] ==
                  [m['instrument_id'] for m in plan['members']], 'committed prepared membership differs')
         for artifact in trial['body']['artifact_manifests']:

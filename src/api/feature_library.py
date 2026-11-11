@@ -102,7 +102,8 @@ def _legacy_resolution(root, identifier, version, scope_id, scope_version):
         except (ValueError,KeyError,TypeError,OSError):issues.append({'code':'UNAVAILABLE_SOURCE_MATERIALIZATION'})
     compatible=False;policy=None
     try:
-        profile=external_features.load_profile(root)
+        from research.schedule import apply_schedule, load_schedule
+        profile=apply_schedule(external_features.load_profile(root),load_schedule(root),price_time_series=False)
         intent={'feature':{'id':identifier,'version':version},
                 'scope':{'id':scope_id,'version':scope_version},
                 'target_family':'price_return','expected_direction':'POSITIVE'}

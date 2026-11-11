@@ -83,6 +83,8 @@ def profile_blockers(profile):
                 if profile.get('kernel',{}).get('kernel_policy')!='scheduled_weekday_hac_v2':raise ValueError()
             elif not iso_date(p['start_inclusive'])<end:raise ValueError()
         if periods['P1']['end_exclusive']!='2022-01-01' or periods['P2']['start_inclusive']!='2022-01-01':raise ValueError()
+        from research.schedule import validate_profile_schedule
+        validate_profile_schedule(profile)
     except (KeyError,TypeError,ValueError,AttributeError):block('RESEARCH_PERIODS_UNRESOLVED','Freeze valid discovery and validation periods around the retained 2022-01-01 boundary.')
     if profile.get('availability_mode')!='retrospective_date_label':block('ALIGNMENT_UNSUPPORTED','This adapter requires an explicit retrospective date-label policy.')
     kernel=profile.get('kernel',{})
@@ -117,8 +119,14 @@ def load_profile(root):
     return configured
 
 def readiness(root):
-    profile=load_profile(root); blockers=profile_blockers(profile)
+    profile=load_profile(root)
+    from research.schedule import load_schedule, apply_schedule
+    schedule=load_schedule(root)
+    profile=apply_schedule(profile,schedule,price_time_series=True)
+    blockers=profile_blockers(profile)
+    horizons=list(schedule['horizons'] if schedule else HORIZONS)
     return {'implementation_installed':True,'execution_enabled':not blockers,'blockers':blockers,
-        'method_summary':'Individual instrument: TS. Universe: CS only. Five horizons: 1, 7, 21, 63, 252 scheduled weekdays.',
+        'method_summary':'Individual instrument: TS. Universe: CS only. Horizons: '+', '.join(map(str,horizons))+' scheduled weekdays.',
+        'horizons':horizons,
         'research_spec':None if profile is None else {'id':profile.get('id'),'version':profile.get('version'),'content_sha256':digest(profile)},
         'production_research_launched_by_installation':False}
