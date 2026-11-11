@@ -73,11 +73,13 @@
         : compatible && resolution?.application?.contract?.kind === 'per_instrument_input' && resolvedScope?.kind === 'instrument' && exact(readiness?.research_spec)
           ? `Research Spec: ${readiness.research_spec.id} · ${readiness.research_spec.version} (selected and frozen by the service)`
           : 'Research Spec is selected and frozen by the service for the chosen inputs; it is not a request field.';
+    const horizons = Array.isArray(readiness?.horizons) ? readiness.horizons.join(', ') : '';
+    const horizonNote = horizons ? ` Forecast horizons: ${horizons} scheduled weekdays.` : '';
     $('research-method-summary').textContent = resolvedScope?.kind === 'universe' && text(resolvedScope.reference_currency)
-      ? `CS: ${resolvedScope.member_count} currencies against ${resolvedScope.reference_currency}. Feature and Target use the same oriented price. Five horizons: 1, 7, 21, 63 and 252 scheduled weekdays.`
+      ? `CS: ${resolvedScope.member_count} currencies against ${resolvedScope.reference_currency}. Feature and Target use the same oriented price.` + horizonNote
       : resolvedScope?.kind === 'instrument'
-        ? `TS: ${resolvedScope.display_name || scope.id}, using its registered quotation. Five horizons: 1, 7, 21, 63 and 252 scheduled weekdays.`
-        : 'Individual instrument: TS. Currency universe: CS with a common quote/funding reference. P1 evaluates five horizons; admitted candidates proceed to P2.';
+        ? `TS: ${resolvedScope.display_name || scope.id}, using its registered quotation.` + horizonNote
+        : 'Individual instrument: TS. Currency universe: CS with a common quote/funding reference. Admitted candidates proceed to P2.' + horizonNote;
   }
   function rows(node, values) {
     node.replaceChildren(...values.map(value => { const item = document.createElement('li'); item.textContent = value.message; return item; }));

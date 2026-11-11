@@ -25,6 +25,7 @@ from data.transformations.contracts import normalize_time
 from data.transformations.identity import canonical_bytes, digest, reference
 from research.contracts import KERNEL_POLICIES
 from research.performance import measure, counter
+from research.schedule import period_for, resolved_periods
 
 HORIZONS = (1, 7, 21, 63, 252)
 APPROVALS = ('clock_compatibility', 'retrospective_alignment', 'validation_exposure', 'missing_evidence')
@@ -113,10 +114,9 @@ def _validate_plan(plan):
             raise InputsBlocked('Frozen external application contract differs')
     if not plan['members'] or plan['structural_common_start']!=max(member['structural_source_start'] for member in plan['members']):
         raise InputsBlocked('Frozen research structural start differs from member source coverage')
-    expected_periods=deepcopy(plan['profile']['periods'])
-    if expected_periods['P1']['start_inclusive'] is None and plan['profile'].get('discovery_start_rule')=='scope_structural_start_v1':
-        expected_periods['P1']['start_inclusive']=max(member['structural_source_start'] for member in plan['members'])
-    if plan['periods'] != expected_periods or plan['horizons'] != list(HORIZONS):
+    expected = resolved_periods(plan['profile'], plan['structural_common_start'])
+    fields = ('periods', 'horizons', 'horizon_periods', 'excluded_horizons')
+    if any(plan.get(field) != expected.get(field) for field in fields):
         raise InputsBlocked('Frozen research plan periods or horizons differ')
     if plan['knowledge_cutoff'] != plan['profile']['target_selection']['knowledge_cutoff']:
         raise InputsBlocked('Frozen research cutoff differs')
@@ -129,18 +129,18 @@ def _phase(plan, phase, admission=None, horizon=None):
     _validate_plan(plan)
     if phase not in ('P1', 'P2'):
         raise InputsBlocked('Unknown research phase')
-    if horizon is not None and (type(horizon) is not int or horizon not in HORIZONS):
-        raise InputsBlocked('Research must use one of the five frozen horizons')
+    if horizon is not None and (type(horizon) is not int or horizon not in plan['horizons']):
+        raise InputsBlocked('Research must use one of the frozen plan horizons')
     if phase == 'P2':
         if (not isinstance(admission, dict) or admission.get('plan_id') != plan['plan_id']
                 or admission.get('direction') != plan['intent']['expected_direction']):
             raise InputsBlocked('P2 requires admission bound to this plan and its frozen direction')
         admitted = admission.get('admitted_horizons')
         if (not isinstance(admitted, list) or not admitted or len(admitted) != len(set(admitted))
-                or any(type(h) is not int or h not in HORIZONS for h in admitted)
+                or any(type(h) is not int or h not in plan['horizons'] for h in admitted)
                 or (horizon is not None and horizon not in admitted)):
             raise InputsBlocked('P2 horizon has not been admitted by P1')
-    return plan['periods'][phase]
+    return period_for(plan, phase, horizon)
 
 
 def _feature_metadata(store, feature, snapshot, batch, cutoff):
@@ -324,14 +324,13 @@ def resolve_plan(root, intent, profile):
     frozen_scope = {key: deepcopy(scope[key]) for key in ('id', 'version', 'kind', 'reference', 'membership_snapshot', 'members')}
     if oriented:
         frozen_scope.update({k:deepcopy(scope[k]) for k in ('research_basis','reference_currency','price_catalog')})
-    periods=deepcopy(profile['periods'])
-    if periods['P1']['start_inclusive'] is None and profile.get('discovery_start_rule')=='scope_structural_start_v1':
-        periods['P1']['start_inclusive']=max(starts)
-        if periods['P1']['start_inclusive']>=periods['P1']['end_exclusive']:
-            raise InputsBlocked('The selected Scope has no structural history in the approved discovery period')
+    schedule = resolved_periods(profile, max(starts))
+    discovery = schedule['periods']['P1']
+    if discovery['start_inclusive'] >= discovery['end_exclusive']:
+        raise InputsBlocked('The selected Scope has no structural history in the approved discovery period')
     plan = {'schema_version': '1.0.0', 'intent': deepcopy(intent), 'profile': profile,
         'recipe': reference(recipe), 'scope': frozen_scope, 'mode': application['mode'], 'feature_application': application,
-        'horizons': list(HORIZONS), 'periods': periods, 'knowledge_cutoff': cutoff,
+        **schedule, 'knowledge_cutoff': cutoff,
         'batch_policy': batch, 'structural_common_start': max(starts), 'members': members,
         'availability_mode': 'retrospective_date_label', 'historical_replay_certified': False, 'live_certified': False}
     if external_source:
@@ -383,16 +382,15 @@ def _check_output(item, member, plan, period):
         raise InputsBlocked('Feature contains another instrument')
 
 
-def prepare_phase(root, plan, phase, progress=None, cancelled=None, admission=None):
+def prepare_phase(root, plan, phase, progress=None, cancelled=None, admission=None, *, horizon=None):
     from data.verified_inputs import phase_inputs
-    _phase(plan, phase, admission)  # admission/boundaries before any cache access
-    with phase_inputs(root, plan, phase), measure('feature.preparation'):
-        return _prepare_phase(root, plan, phase, progress, cancelled, admission)
+    period = _phase(plan, phase, admission, horizon)
+    with phase_inputs(root, plan, phase, period=period), measure('feature.preparation'):
+        return _prepare_phase(root, plan, phase, progress, cancelled, period)
 
 
-def _prepare_phase(root, plan, phase, progress=None, cancelled=None, admission=None):
+def _prepare_phase(root, plan, phase, progress, cancelled, period):
     """Prepare only this phase's selected recipe; validation requires admission."""
-    period = _phase(plan, phase, admission)
     if plan.get('application_class') == 'external_stored_feature_to_individual_ts':
         from research.external_features import prepare
         return prepare(root, plan, phase, period, cancelled)
@@ -564,8 +562,8 @@ def _load_target_verified(root, member, plan, period, horizon):
 
 def load_phase(root, plan, prepared, phase, horizon, admission=None):
     from data.verified_inputs import phase_inputs
-    _phase(plan, phase, admission, horizon)
-    with phase_inputs(root, plan, phase), measure('inputs.loading'):
+    period = _phase(plan, phase, admission, horizon)
+    with phase_inputs(root, plan, phase, period=period), measure('inputs.loading'):
         return _load_phase(root, plan, prepared, phase, horizon, admission)
 
 

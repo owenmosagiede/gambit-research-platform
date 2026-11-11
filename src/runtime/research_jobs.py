@@ -9,6 +9,7 @@ from datetime import datetime,timezone
 import hashlib, json, threading, uuid, logging
 from research.contracts import (normalize_submission,request_id,canonical,digest,ref,
     profile_blockers,load_profile,ResearchError,ResearchConflict,ResearchBlocked,HORIZONS)
+from research.schedule import period_for
 from research.store import ResearchStore,inside,install_bytes,read_json,lock
 from research.performance import measure, counter, profiling
 
@@ -317,10 +318,11 @@ class ResearchJobs:
         install_bytes(self._submission_path(rid),canonical(original)+b'\n')
         job=self._read_job(rid)
         if job is not None:return job
+        horizons=original.get('frozen_plan',{}).get('horizons',HORIZONS)
         job={'request_id':rid,'attempt_id':str(uuid.uuid4()),'status':'queued','stage':'recorded',
             'message':'Request recorded. Waiting for the research worker.', 'blockers':[],
-            'progress':{'completed':0,'total':5},
-            'horizons':[{'horizon':h,'p1_status':'pending','p2_status':'pending'} for h in HORIZONS],
+            'progress':{'completed':0,'total':len(horizons)},
+            'horizons':[{'horizon':h,'p1_status':'pending','p2_status':'pending'} for h in horizons],
             'results':[],'mode':None,'created_at':original['created_at'],
             'queued_at':original['created_at'],'cancel_requested':False}
         return self._save(job)
@@ -529,13 +531,14 @@ class ResearchJobs:
             job=self._read_job(rid)
             for row in job['horizons']:
                 if row['horizon']==h:row.update(changes)
-            job['progress']={'completed':sum(r['p1_status'] not in ('pending','running') and r['p2_status'] not in ('pending','running') for r in job['horizons']),'total':5}
+            job['progress']={'completed':sum(r['p1_status'] not in ('pending','running') and r['p2_status'] not in ('pending','running') for r in job['horizons']),'total':len(job['horizons'])}
             self._save(job)
     def _trial(self,plan,prepared,phase,horizon,relationship,inputs,profile,impl,*,discovery_effect=None,discovery_trial=None,execution_context=None):
         with measure('inputs.hashing'):
             input_digest=digest({'rows':inputs['rows'],'lineage':inputs.get('lineage',[])})
+        period=period_for(plan,phase,horizon)
         key={'relationship':ref(relationship),'stage':phase,'horizon':horizon,'research_spec':{'id':profile['id'],'version':profile['version'],'content_sha256':digest(profile)},
-            'period':plan['periods'][phase],'prepared':{k:prepared[k] for k in ('phase','period','members')},
+            'period':period,'prepared':{k:prepared[k] for k in ('phase','period','members')},
             'targets':[{ 'instrument':m['instrument_id'],'binding':m['targets'][str(horizon)]} for m in plan['members']],
             'implementation':ref(impl),'input_digest':input_digest,
             'discovery_trial':discovery_trial,'discovery_effect':discovery_effect}
@@ -549,10 +552,10 @@ class ResearchJobs:
         with measure('inputs.hashing'):
             sample_digest=digest(inputs)
         with measure('research.publication'):
-            exp=self.store.put('exposure',{'trial_key':digest(key)}, {'stage':phase,'period':plan['periods'][phase],
+            exp=self.store.put('exposure',{'trial_key':digest(key)}, {'stage':phase,'period':period,
                 'classification':profile['exposure_classification'],'sample_digest':sample_digest,'relationship':ref(relationship)})
         kp=dict(profile['kernel'],structural_common_start=plan.get('structural_common_start'),
-            window_start=plan['periods'][phase]['start_inclusive'],window_end_exclusive=plan['periods'][phase]['end_exclusive'])
+            window_start=period['start_inclusive'],window_end_exclusive=period['end_exclusive'])
         kwargs={'mode':plan['mode'],'horizon':horizon,'members':[m['instrument_id'] for m in plan['members']],
             'expected_direction':plan['intent']['expected_direction'],'profile':kp}
         if phase=='P2':kwargs['discovery_effect']=discovery_effect
@@ -574,7 +577,7 @@ class ResearchJobs:
     def _record_access(self,rid,plan,phase,horizon):
         with lock(self.root,'research-writer'):job=self._read_job(rid)
         self.store.put('exposure',{'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon},
-            {'event':'sample_access_started','plan_id':plan['plan_id'],'period':plan['periods'][phase],
+            {'event':'sample_access_started','plan_id':plan['plan_id'],'period':period_for(plan,phase,horizon),
              'classification':plan['profile']['exposure_classification'],
              'description':'Access intent recorded before loading; interruption means exposure is possible, not certified untouched.'})
     def _run(self,rid):
@@ -623,11 +626,21 @@ class ResearchJobs:
                 record_execution(self.root,execution_approval,submission,actual,previous['attempt_id'])
             self._update(rid,mode=plan['mode'],plan=ref(planrecord),status='preparing',stage='P1 preparation',message='Preparing only required discovery Feature coverage.')
             def progress(*args,**kwargs):self._check(rid)
-            prepared=None
+            horizons=plan.get('horizons',HORIZONS)
+            prepared_periods={}
+            def prepare(phase,horizon,admission=None):
+                period=period_for(plan,phase,horizon)
+                key=(phase,period['start_inclusive'],period['end_exclusive'])
+                if key not in prepared_periods:
+                    options={'progress':progress,'cancelled':lambda:self._cancelled(rid)}
+                    if admission is not None:options['admission']=admission
+                    if period!=plan['periods'][phase]:options['horizon']=horizon
+                    prepared_periods[key]=adapter.prepare_phase(self.root,plan,phase,**options)
+                return prepared_periods[key]
             if execution_approval is None:
-                prepared=adapter.prepare_phase(self.root,plan,'P1',progress=progress,cancelled=lambda:self._cancelled(rid))
+                prepare('P1',horizons[0])
             self._check(rid);pending=[];links=[]
-            for horizon in HORIZONS:
+            for horizon in horizons:
                 self._check(rid);self._update(rid,status='p1',stage='P1',message=f'P1 {plan["mode"]}: {horizon} scheduled weekdays.')
                 self._horizon(rid,horizon,p1_status='running')
                 relation={'recipe':plan['recipe'],'scope':plan['scope'],'mode':plan['mode'],'target_family':'price_return','horizon':horizon,
@@ -639,8 +652,7 @@ class ResearchJobs:
                 relationship=self.store.put('relationship',relation,relation)
                 p1=committed_trial(self.store,execution_approval,submission,plan,'P1',horizon,relationship)
                 if p1 is None:
-                    if prepared is None:
-                        prepared=adapter.prepare_phase(self.root,plan,'P1',progress=progress,cancelled=lambda:self._cancelled(rid))
+                    prepared=prepare('P1',horizon)
                     self._record_access(rid,plan,'P1',horizon)
                     data=adapter.load_phase(self.root,plan,prepared,'P1',horizon)
                     self._check(rid)
@@ -658,12 +670,12 @@ class ResearchJobs:
                     if effect is not None and float(effect)*direction<=0:
                         validation=self.store.put('validation',{'discovery':ref(p1),'precheck':'direction','profile':digest(profile)},
                             {'relationship':ref(relationship),'decision':'FAILED','reason_codes':['DISCOVERY_EFFECT_CONTRADICTS_EXPECTED_DIRECTION'],
-                             'discovery_trial':ref(p1),'evaluation_trial':None,'period':plan['periods']['P2'],'research_spec':ref(profile)})
+                             'discovery_trial':ref(p1),'evaluation_trial':None,'period':period_for(plan,'P2',horizon),'research_spec':ref(profile)})
                         links[-1]=ref(self._link(relationship,p1,admission,validation=validation));self._horizon(rid,horizon,p2_status='FAILED')
                     elif effect is None:
                         validation=self.store.put('validation',{'discovery':ref(p1),'precheck':'missing_effect','profile':digest(profile)},
                             {'relationship':ref(relationship),'decision':'UNRESOLVED','reason_codes':['DISCOVERY_EFFECT_UNAVAILABLE'],
-                             'discovery_trial':ref(p1),'evaluation_trial':None,'period':plan['periods']['P2'],'research_spec':ref(profile)})
+                             'discovery_trial':ref(p1),'evaluation_trial':None,'period':period_for(plan,'P2',horizon),'research_spec':ref(profile)})
                         links[-1]=ref(self._link(relationship,p1,admission,validation=validation))
                         self._horizon(rid,horizon,p2_status='UNRESOLVED')
                     else:pending.append((horizon,relationship,p1,admission,effect))
@@ -672,17 +684,15 @@ class ResearchJobs:
                 self._check(rid)
                 token={'plan_id':plan['plan_id'],'direction':plan['intent']['expected_direction'],'admitted_horizons':[p[0] for p in pending]}
                 self._update(rid,status='preparing',stage='P2 preparation',message='Preparing the frozen validation interval for admitted candidates only.')
-                prepared2=None
                 if execution_approval is None:
-                    prepared2=adapter.prepare_phase(self.root,plan,'P2',progress=progress,cancelled=lambda:self._cancelled(rid),admission=token)
+                    prepare('P2',pending[0][0],token)
                 for horizon,relationship,p1,admission,effect in pending:
                     self._check(rid);self._update(rid,status='p2',stage='P2',message=f'P2 {plan["mode"]}: {horizon} scheduled weekdays.')
                     self._horizon(rid,horizon,p2_status='running')
                     p2=committed_trial(self.store,execution_approval,submission,plan,'P2',horizon,relationship,
                         discovery_effect=effect,discovery_trial=ref(p1))
                     if p2 is None:
-                        if prepared2 is None:
-                            prepared2=adapter.prepare_phase(self.root,plan,'P2',progress=progress,cancelled=lambda:self._cancelled(rid),admission=token)
+                        prepared2=prepare('P2',horizon,token)
                         self._record_access(rid,plan,'P2',horizon)
                         data=adapter.load_phase(self.root,plan,prepared2,'P2',horizon,admission=token)
                         self._check(rid)

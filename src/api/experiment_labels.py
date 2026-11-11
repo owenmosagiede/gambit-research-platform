@@ -43,12 +43,15 @@ def with_experiment_labels(root, jobs, value):
             direction = {'POSITIVE': 'Positive hypothesis', 'NEGATIVE': 'Negative hypothesis'}[intent['expected_direction']]
             mode_name = 'Cross-sectional' if mode == 'CS' else 'Time-series'
             members_name = ('currencies' if frozen_scope.get('reference_currency') else 'instruments') if mode == 'CS' else 'instrument'
+            target_label = 'Forward price return · five forecast horizons'
+            if plan.get('profile', {}).get('research_schedule'):
+                target_label = 'Forward price return · ' + ', '.join(f'{h}D' for h in plan['horizons'])
             item['presentation'] = {
                 'state': 'verified',
                 'feature_label': feature_name, 'scope_label': scope_name,
                 'title': f'{feature_name} · {scope_name}',
                 'subtitle': f'{mode_name} · {len(members)} {members_name} · {direction}',
-                'target_label': 'Forward price return · five forecast horizons',
+                'target_label': target_label,
                 'schedule_note': 'Lookbacks and forecast horizons use scheduled weekdays.',
                 'feature_reference': deepcopy(recipe_ref), 'scope_reference': deepcopy(scope_ref),
                 'membership_snapshot': deepcopy(frozen_scope['membership_snapshot']),

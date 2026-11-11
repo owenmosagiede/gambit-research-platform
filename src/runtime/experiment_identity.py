@@ -51,9 +51,12 @@ def scientific_key(packet):
 def freeze(jobs, intent, impl):
     from research import inputs, external_features, feature_applications
     from research.contracts import load_profile, profile_blockers, ResearchBlocked
+    from research.schedule import load_schedule, apply_schedule
     from data.fx_currency_migration import check_intake
     check_intake(jobs.root,intent)
     profile = load_profile(jobs.root)
+    schedule = load_schedule(jobs.root)
+    price_time_series = False
     if jobs.adapter is None:
         _, capability = feature_applications.binding_for(jobs.root, intent['feature'])
         if capability['kind'] == feature_applications.SINGLE_SERIES:
@@ -61,6 +64,11 @@ def freeze(jobs, intent, impl):
         elif capability['kind'] == feature_applications.CURRENCY_QUOTE:
             from data.fx_currency_release import load_profile as currency_profile
             profile=currency_profile(jobs.root)
+        elif schedule and capability['kind'] == feature_applications.PER_MEMBER:
+            from data.scopes import resolve_scope
+            scope = resolve_scope(jobs.root, intent['scope']['id'], intent['scope']['version'])
+            price_time_series = scope['kind'] == 'instrument'
+    profile = apply_schedule(profile, schedule, price_time_series=price_time_series)
     blockers = profile_blockers(profile)
     if blockers:
         raise ResearchBlocked(blockers)
