@@ -32,6 +32,17 @@ CATALOG_KIND = 'fx_feature_recipe_registration'
 FULL_CONFIGURATION_PROFILE = 'fx_all.1.0.0'
 MOMENTUM_CONFIGURATION_PROFILE = 'fx_momentum.1.0.0'
 MOMENTUM_CATALOG_PROFILE = 'fx_momentum_feature_recipes.1.0.0'
+VOLATILITY_CONFIGURATION_PROFILE = 'fx_volatility.1.0.0'
+VOLATILITY_CATALOG_PROFILE = 'fx_volatility_feature_recipes.1.0.0'
+PAIR_CATALOG_PROFILES = {
+    'fx_feature_recipes.1.0.0': FULL_CONFIGURATION_PROFILE,
+    MOMENTUM_CATALOG_PROFILE: MOMENTUM_CONFIGURATION_PROFILE,
+    VOLATILITY_CATALOG_PROFILE: VOLATILITY_CONFIGURATION_PROFILE,
+}
+CONFIGURATION_COUNTS = {FULL_CONFIGURATION_PROFILE: 180,
+                        MOMENTUM_CONFIGURATION_PROFILE: 53,
+                        VOLATILITY_CONFIGURATION_PROFILE: 42}
+VOLATILITY_OPERATORS = frozenset((*LOG_BASIS, 'TR_BASE_vol_diff_sd'))
 # The named profile pins the previously approved 53 daily configurations. It is
 # not a user-provided filter and cannot silently grow with a registry change.
 MOMENTUM_AXES = {
@@ -50,12 +61,12 @@ MOMENTUM_AXES = {
 def configuration_profile(body):
     profile = body.get('configuration_profile', FULL_CONFIGURATION_PROFILE)
     catalog_profile = body.get('profile')
-    if catalog_profile in ('fx_feature_recipes.1.0.0', MOMENTUM_CATALOG_PROFILE):
-        expected = MOMENTUM_CONFIGURATION_PROFILE if catalog_profile == MOMENTUM_CATALOG_PROFILE else FULL_CONFIGURATION_PROFILE
+    if catalog_profile in PAIR_CATALOG_PROFILES:
+        expected = PAIR_CATALOG_PROFILES[catalog_profile]
         if 'configuration_profile' in body and profile != expected:
             raise PublicationError('Conflicting fixed FX configuration profiles')
         profile = expected
-    if profile not in (FULL_CONFIGURATION_PROFILE, MOMENTUM_CONFIGURATION_PROFILE):
+    if profile not in CONFIGURATION_COUNTS:
         raise PublicationError('Unknown fixed FX configuration profile')
     return profile
 
@@ -153,6 +164,13 @@ def configurations(registry, profile=FULL_CONFIGURATION_PROFILE):
     if len({item['id'] for item in result})!=len(result):raise PublicationError('Duplicate FX recipe configuration')
     if profile == FULL_CONFIGURATION_PROFILE:
         return result
+    if profile == VOLATILITY_CONFIGURATION_PROFILE:
+        selected = [v for v in result if v['operator']['id'] in VOLATILITY_OPERATORS]
+        if (len(selected) != CONFIGURATION_COUNTS[profile]
+                or {v['operator']['id'] for v in selected} != VOLATILITY_OPERATORS
+                or any(v['operator']['version'] != '2.0.0' for v in selected)):
+            raise PublicationError('The fixed volatility profile differs from the approved grid')
+        return selected
     if profile != MOMENTUM_CONFIGURATION_PROFILE:
         raise PublicationError('Unknown fixed FX configuration profile')
     from itertools import product
@@ -304,7 +322,7 @@ def _catalog_bindings(root):
         if body.get('kind')!=CATALOG_KIND:continue
         store._validate(record)
         if path.name!=record['id']+'.json':raise PublicationError('FX recipe catalog path mismatch')
-        if body['profile'] not in ('fx_feature_recipes.1.0.0',MOMENTUM_CATALOG_PROFILE):raise PublicationError('Unknown FX recipe catalog profile')
+        if body['profile'] not in PAIR_CATALOG_PROFILES:raise PublicationError('Unknown FX recipe catalog profile')
         if registry is None:
             registry=Registry(root)
             config=strict_json(stable_read(store.path('config/fx_retrospective_completion.json')))

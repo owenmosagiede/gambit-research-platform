@@ -13,7 +13,9 @@ from data.alfred_onboarding import stable_read, strict_json
 from data.feature_store import FeatureStore, PublicationError, record_path
 from data.fx_feature_recipes import (_catalog_bindings, configurations, get_fx_policy,
     LOG_FIRST, LOG_BASIS, CATALOG_KIND, FULL_CONFIGURATION_PROFILE,
-    MOMENTUM_CONFIGURATION_PROFILE, MOMENTUM_CATALOG_PROFILE, configuration_profile)
+    MOMENTUM_CONFIGURATION_PROFILE, MOMENTUM_CATALOG_PROFILE, VOLATILITY_CONFIGURATION_PROFILE,
+    VOLATILITY_CATALOG_PROFILE, PAIR_CATALOG_PROFILES, CONFIGURATION_COUNTS, configuration_profile,
+    build_fx_feature)
 from data.fx_pipeline import _universe
 from data.targets.fx import _price_snapshot
 from data.transformations.registry import Registry
@@ -25,6 +27,12 @@ from data.reusable_feature_contracts import (INPUT_CONTRACT, RECIPE_KIND, REGIST
 
 RECIPE_ID=re.compile(r'FEATURE_RECIPE_[0-9a-f]{64}\Z',re.ASCII)
 REGISTRATION_ROOT='storage/catalog/feature_recipes'
+REGISTRATION_BY_PROFILE = {
+    FULL_CONFIGURATION_PROFILE: 'reusable_fx_feature_recipes.1.0.0',
+    MOMENTUM_CONFIGURATION_PROFILE: 'reusable_fx_momentum_recipes.1.0.0',
+    VOLATILITY_CONFIGURATION_PROFILE: 'reusable_fx_volatility_recipes.1.0.0',
+}
+PROFILE_BY_REGISTRATION = {name: profile for profile, name in REGISTRATION_BY_PROFILE.items()}
 
 
 class ReusableRecipeNotFound(PublicationError):
@@ -34,7 +42,7 @@ class ReusableRecipeNotFound(PublicationError):
 def _context(root, profile=FULL_CONFIGURATION_PROFILE):
     registry=Registry(root);policy=get_fx_policy(root)
     variants=configurations(registry,profile)
-    if len(variants)!=(53 if profile==MOMENTUM_CONFIGURATION_PROFILE else 180):raise PublicationError('Fixed FX configuration profile is incomplete')
+    if len(variants)!=CONFIGURATION_COUNTS[profile]:raise PublicationError('Fixed FX configuration profile is incomplete')
     return registry,policy,{item['id']:item for item in variants}
 
 
@@ -131,8 +139,8 @@ def _legacy_context(root):
 def _registration(definitions,bindings,catalogs,profile=FULL_CONFIGURATION_PROFILE):
     counts=Counter(item['configuration_id'] for item in bindings.values())
     if set(counts)!=set(definitions) or set(counts.values())!={43}:raise PublicationError('Every reusable recipe requires43legacy source bindings')
-    if profile not in (FULL_CONFIGURATION_PROFILE,MOMENTUM_CONFIGURATION_PROFILE):raise PublicationError('Unknown fixed FX configuration profile')
-    body={'kind':'reusable_fx_feature_recipe_registration','profile':('reusable_fx_momentum_recipes.1.0.0' if profile==MOMENTUM_CONFIGURATION_PROFILE else 'reusable_fx_feature_recipes.1.0.0'),
+    if profile not in REGISTRATION_BY_PROFILE:raise PublicationError('Unknown fixed FX configuration profile')
+    body={'kind':'reusable_fx_feature_recipe_registration','profile':REGISTRATION_BY_PROFILE[profile],
           'legacy_catalogs':sorted(catalogs,key=lambda ref:ref['id']),
           'recipes':[{'configuration_id':key,'feature_recipe':reference(definitions[key]),'legacy_binding_count':counts[key]} for key in sorted(definitions)],
           'recipe_count':len(definitions),'legacy_binding_count':len(bindings),'instrument_count':43,'observation_action':'none'}
@@ -177,13 +185,22 @@ def _pinned_read_context(root):
     store=FeatureStore(root)
     paths=sorted(catalog_glob(store.path(REGISTRATION_ROOT), '*/manifest.json'))
     if not paths:raise ReusableRecipeNotFound('Reusable FX recipes have not been registered')
-    profiles={strict_json(stable_read(path))['body']['profile'] for path in paths}
-    if len(profiles)!=1:raise PublicationError('Conflicting completed FX configuration profiles')
-    registration_profile=next(iter(profiles))
-    profile=(MOMENTUM_CONFIGURATION_PROFILE if registration_profile=='reusable_fx_momentum_recipes.1.0.0' else FULL_CONFIGURATION_PROFILE)
-    registry,policy,variants=_context(root,profile)
-    count=len(variants);binding_count=count*43
-    definitions={key:_definition(registry,policy,item) for key,item in variants.items()}
+    completions = []
+    for candidate_path in paths:
+        relative = candidate_path.relative_to(store.root).as_posix()
+        completion = strict_json(stable_read(store.path(relative)))
+        store._validate(completion)
+        if completion['record_type'] != REGISTRATION_KIND or record_path(completion) != relative:
+            raise PublicationError('Reusable registration path or kind differs')
+        completions.append(completion)
+    profiles = {PROFILE_BY_REGISTRATION[record['body']['profile']] for record in completions}
+    if len(profiles) > 1 and profiles != {MOMENTUM_CONFIGURATION_PROFILE, VOLATILITY_CONFIGURATION_PROFILE}:
+        raise PublicationError('Conflicting completed FX configuration profiles')
+    registry, policy = Registry(root), get_fx_policy(root)
+    variants_by_profile = {profile: {v['id']: v for v in configurations(registry, profile)}
+                           for profile in sorted(profiles)}
+    definitions_by_profile = {profile: {key: _definition(registry, policy, value) for key, value in variants.items()}
+                              for profile, variants in variants_by_profile.items()}
     rules={item['name']:item['value']['value'] for item in policy['body']['parameters']}
     approval=rules.get('source_alignment_approval');retrospective=rules.get('source_retrospective_policy')
     if approval is None or retrospective is None:raise PublicationError('Stored recipe policy lacks pinned source approval references')
@@ -194,16 +211,15 @@ def _pinned_read_context(root):
             'unknown_availability':'preserve_null','source_selection':'pinned_original_capture'}:
         raise PublicationError('Stored recipe retrospective source policy differs')
     bindings={};sources={}
-    for candidate_path in paths:
-        path=store.path(str(candidate_path.relative_to(store.root)))
-        completion=strict_json(stable_read(path));store._validate(completion)
-        if completion['record_type']!=REGISTRATION_KIND or record_path(completion)!=str(path.relative_to(store.root)):
-            raise PublicationError('Reusable registration path or kind differs')
+    for completion in completions:
+        profile = PROFILE_BY_REGISTRATION[completion['body']['profile']]
+        variants, definitions = variants_by_profile[profile], definitions_by_profile[profile]
+        count, binding_count = len(variants), len(variants) * 43
         local_bindings={};local_catalogs=completion['body']['legacy_catalogs']
         for catalog_ref in local_catalogs:
             catalog=store.resolve(catalog_ref);body=catalog['body']
             if (catalog['record_type']!='onboarding_evidence' or body.get('kind')!=CATALOG_KIND
-                    or body.get('profile') not in ('fx_feature_recipes.1.0.0',MOMENTUM_CATALOG_PROFILE) or configuration_profile(body)!=profile or body.get('evaluation_policy')!=reference(policy)):
+                    or body.get('profile') not in PAIR_CATALOG_PROFILES or configuration_profile(body)!=profile or body.get('evaluation_policy')!=reference(policy)):
                 raise PublicationError('Pinned legacy recipe catalog differs from the reusable policy')
             actual={item['id']:item for item in body['configurations']}
             if actual!=variants or len(actual)!=len(body['configurations']) or body['configuration_count']!=count:
@@ -227,12 +243,14 @@ def _pinned_read_context(root):
                 if previous!=binding:raise PublicationError('Conflicting pinned legacy Feature binding')
             if (symbols!=set(_universe()) or body['instrument_count']!=43 or body['binding_count']!=binding_count
                     or keys!={(identifier,symbol) for identifier in definitions for symbol in symbols}):
-                raise PublicationError('Pinned legacy catalog must contain180configurations across43instruments')
+                raise PublicationError('Pinned legacy catalog must cover its fixed grid across 43 instruments')
         expected=_registration(definitions,local_bindings,local_catalogs,profile)
         if reference(completion)!=reference(expected):raise PublicationError('Reusable mapping completion differs from its pinned legacy catalogs')
         for identifier,binding in local_bindings.items():
             if bindings.setdefault(identifier,binding)!=binding:raise PublicationError('Conflicting reusable completion bindings')
-    if len(bindings)!=binding_count:raise PublicationError('Reusable mapping has an unexpected historical binding count')
+    definitions = {key: value for group in definitions_by_profile.values() for key, value in group.items()}
+    if len(definitions) != sum(map(len, definitions_by_profile.values())) or len(bindings) != len(definitions) * 43:
+        raise PublicationError('Reusable mapping has an unexpected historical binding count')
     return store,registry,policy,definitions,bindings
 
 
@@ -392,3 +410,45 @@ def build_momentum_registration(root):
     return {'records':[catalog,registration],'registration':reference(registration),
         'recipes':[reference(r) for r in definitions.values()],
         'features':[b['feature'] for b in bindings.values()]}
+
+
+def build_volatility_registration(root):
+    """Build volatility metadata using the same pinned pair sources as momentum."""
+    from data.fx_records import make_record as catalog_record
+    from research.contracts import load_profile
+
+    store, registry, policy, _, _, current = _registered(root)
+    source_pins = load_profile(root)['target_selection']['source_snapshots']
+    sources = {}
+    for binding in current.values():
+        symbol = binding['instrument_id']
+        sources[symbol] = (binding['price_snapshot'], binding['source_view'])
+    if set(sources) != set(_universe()):
+        raise PublicationError('Volatility registration requires the exact registered pair universe')
+
+    variants = configurations(registry, VOLATILITY_CONFIGURATION_PROFILE)
+    definitions = {item['id']: _definition(registry, policy, item) for item in variants}
+    expected = {definition['id']: definition for definition in definitions.values()}
+    features, bindings = [], {}
+    for symbol, (source, source_view) in sorted(sources.items()):
+        snapshot = store.resolve(source_pins[symbol])['body']
+        if snapshot['instrument_id'] != symbol or snapshot['definition'] != source_view:
+            raise PublicationError('Volatility source view differs from the pinned pair research input')
+        instrument = {'instrument_id': symbol, 'price_snapshot': source}
+        for item in variants:
+            feature = build_fx_feature(root, instrument, item, registry=registry, evaluation_policy=policy, store=store)
+            if _project_legacy(store, feature, registry, policy, expected) != definitions[item['id']]:
+                raise PublicationError('Volatility pair Feature differs from its reusable recipe')
+            features.append(feature)
+            bindings[feature['id']] = {'configuration_id': item['id'], 'instrument_id': symbol,
+                                       'feature': reference(feature), 'price_snapshot': source,
+                                       'source_view': source_view}
+    catalog = catalog_record('onboarding_evidence', {'kind': CATALOG_KIND, 'profile': VOLATILITY_CATALOG_PROFILE,
+        'evaluation_policy': reference(policy), 'configurations': variants,
+        'bindings': sorted(bindings.values(), key=lambda row: (row['configuration_id'], row['instrument_id'])),
+        'configuration_count': len(variants), 'instrument_count': len(sources), 'binding_count': len(bindings),
+        'materialization_state': 'registered_only', 'research_state': 'not_executed'},
+        'Fixed volatility FX Feature configurations')
+    registration = _registration(definitions, bindings, [reference(catalog)], VOLATILITY_CONFIGURATION_PROFILE)
+    return {'features': features, 'recipes': list(definitions.values()),
+            'catalog': catalog, 'registration': registration}

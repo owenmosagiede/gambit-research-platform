@@ -264,6 +264,39 @@ class ReusableFeatureRecipeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'configurations differ'):
                 reusable.list_reusable_fx_recipes(self.root)
 
+    def test_volatility_adds_a_separate_grid_to_momentum(self):
+        from data.fx_feature_recipes import MOMENTUM_CONFIGURATION_PROFILE, configurations
+
+        pins = {instrument['instrument_id']: instrument['price_snapshot'] for instrument in self.instruments}
+        profile = {'target_selection': {'source_snapshots': pins}}
+        (self.root / 'config/research_execution.json').write_bytes(canonical_bytes(profile) + b'\n')
+        complete = (self.store, self.registry, self.policy, self.expected, self.definitions, self.bindings)
+        with patch.object(reusable, '_registered', return_value=complete):
+            momentum = reusable.build_momentum_registration(self.root)
+        for record in momentum['records']:
+            self.store.install_record(record)
+        for variant in configurations(self.registry, MOMENTUM_CONFIGURATION_PROFILE):
+            self.store.install_record(self.definitions[variant['id']])
+
+        before = inventory(self.root)
+        bundle = reusable.build_volatility_registration(self.root)
+        self.assertEqual(before, inventory(self.root))
+        self.assertEqual(len(bundle['recipes']), 42)
+        self.assertEqual(len(bundle['features']), 42 * 43)
+        self.assertFalse({r['id'] for r in momentum['recipes']} & {r['id'] for r in bundle['recipes']})
+        for record in [*bundle['features'], *bundle['recipes'], bundle['catalog'], bundle['registration']]:
+            self.store.install_record(record)
+
+        listed = reusable.list_reusable_fx_recipes(self.root)
+        self.assertEqual(len(listed), 95)
+        first_volatility = reference(bundle['recipes'][0])
+        self.assertEqual(len(reusable.legacy_bindings_for_recipe(self.root, first_volatility, verify_features=False)), 43)
+        first_momentum = momentum['recipes'][0]
+        self.assertEqual(reference(reusable.load_reusable_recipe(self.root, first_momentum['id'])), first_momentum)
+        after = inventory(self.root)
+        self.assertEqual({path: after[path] for path in before}, before)
+        self.assertFalse(any(path.startswith('storage/payloads/') for path in after.keys() - before.keys()))
+
     def test_unknown_and_invalid_reusable_recipe_ids_fail_closed(self):
         for identifier in ('FEATURE_x','../secret','FEATURE_RECIPE_'+'A'*64):
             with self.subTest(identifier=identifier),self.assertRaises(reusable.ReusableRecipeNotFound):

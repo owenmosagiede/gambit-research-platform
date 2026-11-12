@@ -8,6 +8,9 @@ from data.transformations.identity import canonical_bytes, digest, normalize_par
 SCHEMA_VERSION='0.7.0'
 RECIPE_KIND='feature_recipe_definition'
 REGISTRATION_KIND='feature_recipe_registration'
+REGISTRATION_PROFILES = frozenset(('reusable_fx_feature_recipes.1.0.0',
+                                   'reusable_fx_momentum_recipes.1.0.0',
+                                   'reusable_fx_volatility_recipes.1.0.0'))
 INPUT_CONTRACT={
     'asset_class':'fx','source_profile':'fx_price.1.0.0','source_kind':'fx_constructed_view',
     'measure':'close','value_semantics':'price','value_domain':'positive_or_controlled_null',
@@ -63,7 +66,7 @@ def validate_record(record):
     else:
         fields={'kind','profile','legacy_catalogs','recipes','recipe_count','legacy_binding_count','instrument_count','observation_action'}
         c.object_fields(body,fields,path='reusable registration body')
-        if body['kind']!='reusable_fx_feature_recipe_registration' or body['profile'] not in ('reusable_fx_feature_recipes.1.0.0','reusable_fx_momentum_recipes.1.0.0') or body['observation_action']!='none':
+        if body['kind']!='reusable_fx_feature_recipe_registration' or body['profile'] not in REGISTRATION_PROFILES or body['observation_action']!='none':
             raise c.ContractError('Unsupported reusable registration profile')
         if type(body['legacy_catalogs']) is not list or not body['legacy_catalogs']:raise c.ContractError('Registration requires prior catalog references')
         for ref in body['legacy_catalogs']:c.normalize_reference(ref)
