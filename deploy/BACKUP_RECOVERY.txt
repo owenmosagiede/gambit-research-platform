@@ -33,16 +33,19 @@ authentication database and Gambit configuration into a protected staging area.
 Queued submissions and historical results are preserved. Stale worker ownership
 and lock files are excluded. No research method or frozen job identity is changed.
 
-All copied bytes are checked against their source. SQLite integrity is checked
-on temporary database/WAL clones so verification cannot mutate the saved copy.
+All copied bytes are checked against their source before research resumes. The
+backup then hashes the staged files for the manifest and checks SQLite integrity
+on temporary database/WAL clones while research is running. These checks operate
+on the protected staging tree and cannot mutate the live data or the saved copy.
 Only services that were running before the backup are restarted, including on
 ordinary failure. ExecStopPost uses a durable journal to recover stopped services
 if the backup process dies. Root/admin changes must not be made during a backup.
 No new onboarding/other write services may be installed without adding them to
 this quiescence contract. The current deployed design has only web and worker.
 
-The application restarts BEFORE encrypted upload. Upload failure therefore does
-not leave research offline. The timer runs daily at 11:00 UTC with up to ten
+The application restarts before staged-copy sealing and encrypted upload. A
+sealing or upload failure leaves research running and records a failed backup.
+The timer runs daily at 11:00 UTC with up to ten
 minutes of jitter; missed schedules run after reboot. Retention keeps seven daily
 and four weekly production snapshots, filtered by tag and the stable backup path.
 Old acceptance fixtures are not affected by production retention. These are

@@ -220,7 +220,9 @@ def stage(sources, destination, services):
         for label, source in sources.items():
             if Path(label).name != label: raise RuntimeError('Unsafe backup label')
             copy_tree(source, destination / label)
-        return seal(destination)
+    # The protected staging tree contains the checked bytes from the drained
+    # services. Sealing and SQLite integrity checks read only that copy.
+    return seal(destination)
 
 
 def restic(*args):
