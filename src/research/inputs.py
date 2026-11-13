@@ -143,9 +143,50 @@ def _phase(plan, phase, admission=None, horizon=None):
     return period_for(plan, phase, horizon)
 
 
-def _feature_metadata(store, feature, snapshot, batch, cutoff):
+def feature_manifest_routes(root, previous=None):
+    """Read only changed catalog routing. The caller always rechecks selected manifests."""
+    import os
+    import stat
+
+    directory = TargetStore(root).path('storage/catalog/feature_store')
+    routes = {}
+    if not directory.exists():
+        return routes
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if entry.is_symlink():
+                raise InputsBlocked('Feature catalog requires ordinary paths for prefetch')
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            path = directory / entry.name / 'manifest.json'
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                raise InputsBlocked('Feature manifest requires an ordinary file for prefetch')
+            signature = (info.st_dev, info.st_ino, info.st_mode, info.st_size,
+                         info.st_mtime_ns, info.st_ctime_ns)
+            known = previous.get(path) if previous is not None else None
+            if known is not None and known[0] == signature:
+                definition = known[1]
+            else:
+                value = strict_json(stable_read(path))
+                after = path.lstat()
+                if (after.st_dev, after.st_ino, after.st_mode, after.st_size,
+                        after.st_mtime_ns, after.st_ctime_ns) != signature:
+                    raise InputsBlocked('Feature manifest changed during prefetch')
+                feature = value.get('definition')
+                definition = feature.get('id') if isinstance(feature, dict) else None
+            routes[path] = (signature, definition)
+    return routes
+
+
+def _feature_metadata(store, feature, snapshot, batch, cutoff, manifest_index=None):
     result = []
-    for path in sorted(store.path('storage/catalog/feature_store').glob('*/manifest.json')):
+    paths = (store.path('storage/catalog/feature_store').glob('*/manifest.json')
+             if manifest_index is None else manifest_index.get(feature['id'], ()))
+    for path in sorted(paths):
         value = strict_json(stable_read(path))
         if value.get('definition') != reference(feature):
             continue
@@ -212,7 +253,7 @@ def _structural_start(store, snapshot):
     return max(starts)
 
 
-def resolve_plan(root, intent, profile):
+def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     """Resolve metadata and immutable bindings, without any preparation or labels."""
     profile = _profile(profile)
     if set(intent) != {'feature', 'scope', 'target_family', 'expected_direction'}:
@@ -315,7 +356,7 @@ def resolve_plan(root, intent, profile):
             members.append({'instrument_id': symbol, 'feature': reference(feature),
                 'signal_id': feature['body']['signal_id'], 'price_snapshot': reference(snapshot),
                 'source_view': snapshot['body']['definition'], 'structural_source_start': start,
-                'feature_materializations': _feature_metadata(store, feature, snapshot, batch, cutoff),
+                'feature_materializations': _feature_metadata(store, feature, snapshot, batch, cutoff, feature_manifest_index),
                 'targets': _target_metadata(store, snapshot, batch, cutoff, selected.get(symbol, {}))})
         except (ValueError, KeyError, OSError, TypeError) as exc:
             blockers.append({'code': 'MEMBER_INPUTS_UNRESOLVED', 'instrument_id': symbol, 'message': str(exc)})

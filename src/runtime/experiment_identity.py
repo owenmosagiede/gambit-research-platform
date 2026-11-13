@@ -48,7 +48,7 @@ def scientific_key(packet):
     return digest({'intent': packet['intent'], 'research_spec': packet['research_spec'], 'plan': plan})
 
 
-def freeze(jobs, intent, impl):
+def freeze(jobs, intent, impl, *, feature_manifest_index=None):
     from research import inputs, external_features, feature_applications
     from research.contracts import load_profile, profile_blockers, ResearchBlocked
     from research.schedule import load_schedule, apply_schedule
@@ -72,7 +72,10 @@ def freeze(jobs, intent, impl):
     blockers = profile_blockers(profile)
     if blockers:
         raise ResearchBlocked(blockers)
-    plan = (jobs.adapter or inputs).resolve_plan(jobs.root, intent, profile)
+    if feature_manifest_index is None:
+        plan = (jobs.adapter or inputs).resolve_plan(jobs.root, intent, profile)
+    else:
+        plan = inputs.resolve_plan(jobs.root, intent, profile, feature_manifest_index=feature_manifest_index)
     return {'intent': deepcopy(intent), 'research_spec': profile, 'implementation': impl,
             'frozen_plan': plan,
             **({'feature_application': plan['feature_application']} if 'feature_application' in plan else {})}

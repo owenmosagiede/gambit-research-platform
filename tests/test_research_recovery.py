@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
 import unittest
+from unittest.mock import patch
 
 from research.contracts import canonical, digest, ref, ResearchError, ResearchConflict
 from research.store import ResearchStore, read_json
@@ -248,6 +249,53 @@ class ResearchRecoveryTests(unittest.TestCase):
         self.assertEqual(failure["results"], [])
         jobs.run_pending_once()
         self.assertEqual(self.adapter.resolve_calls, 1)
+
+    def test_routing_rechecks_unrelated_events_and_recovers_from_missing_projection(self):
+        from uuid import uuid4
+
+        jobs = ResearchJobs(self.root, adapter=self.adapter)
+        first, second = intent(), intent(str(uuid4()))
+        second['expected_direction'] = 'NEGATIVE'
+        jobs.submit(first)
+        jobs.submit(second)
+        rid = first['request_id']
+        expected = jobs._events_read(rid)
+        self.assertEqual(jobs._events(rid), expected)
+        with patch('runtime.event_history.read_json', wraps=read_json) as read:
+            self.assertEqual(jobs._events(rid), expected)
+            self.assertEqual(read.call_count, len(expected))
+        other = next(path for path in (self.root / 'storage/catalog/attempts').glob('*/events/RESEVENT_*.json')
+                     if read_json(path)['request_id'] == second['request_id'])
+        original = other.read_bytes()
+        other.write_bytes(b'{broken')
+        with self.assertRaisesRegex(ResearchError, 'Unreadable execution event'):
+            jobs._events(rid)
+        other.write_bytes(original)
+        jobs._job_path(rid).unlink()
+        self.assertEqual(jobs._read_job(rid)['status'], 'queued')
+        self.assertEqual(jobs._events(rid), expected)
+
+    def test_feature_manifest_prefetch_rechecks_additions_and_same_size_edits(self):
+        import os
+        from research.inputs import feature_manifest_routes
+
+        directory = self.root.resolve() / 'storage/catalog/feature_store'
+        first = directory / 'MATERIALIZATION_first/manifest.json'
+        first.parent.mkdir(parents=True)
+        first.write_bytes(canonical({'definition': {'id': 'FEATURE_A'}}))
+        before = feature_manifest_routes(self.root)
+        original = first.stat()
+        first.write_bytes(canonical({'definition': {'id': 'FEATURE_B'}}))
+        os.utime(first, ns=(original.st_atime_ns, original.st_mtime_ns))
+        second = directory / 'MATERIALIZATION_second/manifest.json'
+        second.parent.mkdir()
+        second.write_bytes(canonical({'definition': {'id': 'FEATURE_A'}}))
+        updated = feature_manifest_routes(self.root, before)
+        self.assertEqual({p: value[1] for p, value in updated.items()},
+                         {first: 'FEATURE_B', second: 'FEATURE_A'})
+        self.assertEqual(updated, feature_manifest_routes(self.root))
+        second.unlink()
+        self.assertEqual(set(feature_manifest_routes(self.root, updated)), {first})
 
 
 if __name__ == "__main__":
