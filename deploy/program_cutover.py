@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Separately approved code cutover preserving a fully accepted frozen queue.
+"""Separately approved code cutover preserving frozen research.
 
-Never stops or starts services. The operator first finishes intake and drains
-execution; ordinary release_server.py continues to reject queued research.
+Never stops or starts services. The operator first finishes intake or pins the
+paced TS checkpoint, then drains execution. The ordinary release remains idle-only.
 No approval is generated here. Recovery refuses changed research authority.
 """
 from contextlib import ExitStack
@@ -322,6 +322,12 @@ def frozen_metadata(root, manifest):
 
 class Machine(release.Machine):
     def snapshot(self, manifest_bytes):
+        if getattr(self, 'ts_momentum_paths', None):
+            from ts_momentum_cutover import capture
+            binding = json.loads(manifest_bytes)
+            return capture(self.root, binding, roster_path=self.ts_momentum_paths[0],
+                           checkpoint_path=self.ts_momentum_paths[1],
+                           installed=self.ts_momentum_source)
         return capture(self.root, manifest_bytes,
                        predecessor_approval=getattr(self, 'predecessor_approval', None),
                        parent_manifest_bytes=getattr(self, 'parent_manifest_bytes', None))
@@ -348,6 +354,10 @@ class Machine(release.Machine):
     def quiescent(self, manifest_sha256):
         if any(self.status(u) != 'inactive' for u in release.UNITS):
             raise RuntimeError('Web and all worker processes must be stopped after safe drain')
+        if getattr(self, 'ts_momentum_paths', None):
+            from ts_momentum_cutover import INTAKE_UNIT
+            if self.status(INTAKE_UNIT) != 'inactive':
+                raise RuntimeError('Paced TS momentum intake must be stopped at its checkpoint')
         # systemd inactive and the locks below fence workers; additionally rule
         # out the original standalone program intake process and descendants.
         proc = Path('/proc')
@@ -395,7 +405,28 @@ def check_retirement_evidence(retirement, equivalence_bytes, proposal=None):
 def code_plan(root, manifest, files, archive_sha256, retirement=None):
     if retirement is None:
         return release.plan(root, manifest, files)
-    return retirement.code_plan(root, manifest, files, archive_sha256)
+    result = retirement.code_plan(root, manifest, files, archive_sha256)
+    # These service examples were excluded from the approved TS source release.
+    # They remain review material and cannot become live writes during cutover.
+    absent_examples = {
+        'deploy/examples/gambit-read-projector.service': '3435e69e55a96525c5415a15bc9b705fa914e6d7d999fb1e08a5902d19f4fc62',
+        'deploy/examples/gambit-chart-projector.service': '4efdb98af676e37ad772f7b02a769c6bf93c2042aeb75c033a4177835fc251ee',
+    }
+    if retirement.source_manifest['commit'] != 'c034a80244873754c5ec337ad200819e400fbed9':
+        return result
+    exclusions = []
+    for name, expected in sorted(absent_examples.items()):
+        blocker = {'path': name, 'reason': retired_definitions.REGISTRY_BLOCKER}
+        original = retirement.source_files.get(name)
+        if (original is None or sha(original) != expected or files.get(name) != original
+                or release.safe_target(root, name).exists() or result['blockers'].count(blocker) != 1):
+            raise RuntimeError('Previously reviewed example exclusion differs: ' + name)
+        result['blockers'].remove(blocker)
+        exclusions.append({'path': name, 'sha256': expected})
+    result['preserved_example_absences'] = exclusions
+    result.pop('plan_sha256')
+    result['plan_sha256'] = sha(canonical(result))
+    return result
 
 
 def check_evidence(approval, release_manifest, checks_bytes, equivalence_bytes, retirement=None):
@@ -438,6 +469,7 @@ def _proposal_bundle(machine, manifest_bytes, release_manifest, files, *, operat
     if prior['changes'] or prior['blockers'] or future['blockers']:
         raise RuntimeError('Source archive or proposed code plan differs from the reviewed migration')
     installed = implementation_at(machine.root)
+    machine.ts_momentum_source = installed
     old = installed
     if predecessor_approval is not None:
         if compatibility.resolve(machine.root, ref(predecessor_approval)) != predecessor_approval:
@@ -553,6 +585,8 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
     if (pins['implementation_digest'] != digest(proposal['from_implementation'])
             or pins['implementation_fingerprint'] != proposal['from_implementation']['fingerprint']):
         raise RuntimeError('Frozen manifest implementation differs from approval')
+    source = compatibility.source_implementation(proposal)
+    machine.ts_momentum_source = source
     snapshot = machine.snapshot(manifest_bytes)
     if snapshot['cohort'] != proposal['cohort']:
         raise RuntimeError('Approved cohort or committed trial references changed; refresh proposal')
@@ -560,7 +594,6 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
             snapshot.get('predecessor_approval') != ref(proposal['predecessor_approval']) or
             snapshot.get('historical_trial_implementations') != proposal['historical_trial_implementations']):
         raise RuntimeError('Approved historical executor references changed; refresh proposal')
-    source = compatibility.source_implementation(proposal)
     if implementation_at(machine.root) != source:
         raise RuntimeError('Installed implementation differs from approval')
     expected = proposal['to_implementation']['files']
@@ -577,7 +610,9 @@ def make_plan(machine, manifest_bytes, release_manifest, files, approval, archiv
         'archive_sha256': archive_sha256, 'manifest_sha256': proposal['manifest_sha256'],
         'source_archive_sha256': proposal['source_archive_sha256'], 'operator_sha256': proposal['operator_sha256'],
         'code': code, 'snapshot': snapshot,
-        'restart_automatic': False, 'requires_complete_intake_and_safe_drain': True}
+        'restart_automatic': False, 'requires_complete_intake_and_safe_drain': not bool(getattr(machine, 'ts_momentum_paths', None))}
+    if getattr(machine, 'ts_momentum_paths', None):
+        result['requires_paced_checkpoint_and_safe_drain'] = True
     if proposal.get('predecessor_approval') is not None:
         result['predecessor_approval'] = ref(proposal['predecessor_approval'])
     if retirement is not None:
@@ -675,6 +710,14 @@ def recover(machine, manifest_bytes, release_id):
         machine.predecessor_approval = compatibility.resolve(machine.root, record['predecessor_approval'])
     if sha(manifest_bytes) != record['manifest_sha256']:
         raise RuntimeError('Recovery manifest differs')
+    if getattr(machine, 'ts_momentum_paths', None):
+        installed = implementation_at(machine.root)
+        pins = json.loads(manifest_bytes)['global_pins']
+        if digest(installed) == pins['implementation_digest']:
+            machine.ts_momentum_source = installed
+        else:
+            approved = compatibility.resolve(machine.root, record['approval'])
+            machine.ts_momentum_source = compatibility.source_implementation(approved['proposal'])
     with ExitStack() as guards:
         release.guard(guards, machine.state/'control.lock')
         release.guard(guards, machine.backup/'backup.lock')
@@ -709,9 +752,11 @@ def recover(machine, manifest_bytes, release_id):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('snapshot', 'propose', 'review', 'plan', 'apply', 'recover'))
+    parser.add_argument('action', choices=('bind-ts-checkpoint', 'snapshot', 'propose', 'review', 'plan', 'apply', 'recover'))
     parser.add_argument('--root', type=Path, required=True)
-    parser.add_argument('--manifest', type=Path, required=True)
+    parser.add_argument('--manifest', type=Path)
+    parser.add_argument('--ts-momentum-roster', type=Path)
+    parser.add_argument('--ts-momentum-checkpoint', type=Path)
     parser.add_argument('--parent-manifest', type=Path,
                         help='Exact parent bytes pinned by an accepted negative follow-up manifest')
     parser.add_argument('--state', type=Path, default=release.STATE)
@@ -730,6 +775,11 @@ def main():
                         help='Exact original retirement archive when installed source is a later release')
     parser.add_argument('--plan-sha256'); parser.add_argument('--release-id')
     args = parser.parse_args(); machine = Machine(args.root, args.state, args.backup)
+    if args.ts_momentum_roster or args.ts_momentum_checkpoint:
+        if not (args.ts_momentum_roster and args.ts_momentum_checkpoint) or args.parent_manifest or args.predecessor_approval:
+            parser.error('The TS momentum cutover needs its exact roster and checkpoint, with no parent or predecessor')
+        machine.ts_momentum_paths = (args.ts_momentum_roster, args.ts_momentum_checkpoint)
+        machine.ts_momentum_source = implementation_at(machine.root)
     machine.parent_manifest_bytes = args.parent_manifest.read_bytes() if args.parent_manifest else None
     retirement = None
     retirement_paths = {'plan': args.retirement_plan, 'status': args.retirement_status,
@@ -742,6 +792,19 @@ def main():
         retirement = retired_definitions.load_context(retirement_paths,
             args.source_archive, args.source_sha256, args.archive, args.sha256,
             retirement_archive=args.retirement_source_archive)
+    if getattr(machine, 'ts_momentum_paths', None):
+        live_roster = Path('/var/lib/gambit-ts-momentum/manifest.json')
+        live_checkpoint = Path('/var/lib/gambit-ts-momentum/checkpoint.json')
+        if machine.root == release.ROOT and machine.ts_momentum_paths != (live_roster, live_checkpoint):
+            parser.error('Production TS cutover must use the actual paced intake checkpoint')
+    if args.action == 'bind-ts-checkpoint':
+        if not getattr(machine, 'ts_momentum_paths', None):
+            parser.error('The TS checkpoint binding requires both live paths')
+        from ts_momentum_cutover import checkpoint_binding
+        print(json.dumps(checkpoint_binding(*machine.ts_momentum_paths, machine.ts_momentum_source), indent=2))
+        return
+    if not args.manifest:
+        parser.error('An exact frozen program manifest or TS checkpoint binding is required')
     raw = args.manifest.read_bytes()
     predecessor = None
     if args.predecessor_approval:
