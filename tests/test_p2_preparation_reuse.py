@@ -11,6 +11,7 @@ from data.verified_inputs import execution_inputs, phase_inputs, memo
 from data import fx_feature_store as fx
 from research import inputs
 from research.contracts import canonical, digest, ResearchError
+from research.store import read_json
 from runtime.research_jobs import ResearchJobs
 import test_verified_inputs as fixtures
 
@@ -337,15 +338,15 @@ class EventHistoryTests(unittest.TestCase):
         plan = {'plan_id':'isolated', 'periods':{p:{'end_exclusive':e} for p,e in
                 [('P1','2020-01-01'),('P2','2023-01-01')]}}
         with execution_inputs(fixture.root, 'code'), phase_inputs(fixture.root, plan, 'P2'):
-            with patch.object(jobs, '_event_snapshot', wraps=jobs._event_snapshot) as replay:
+            with patch('runtime.event_history.read_json', wraps=read_json) as replay:
                 first = jobs._events(rid)
                 self.assertEqual(jobs._events(rid), first)
-                self.assertEqual(replay.call_count, 1)
+                self.assertEqual(replay.call_count, 2)
                 # The ordinary writer appends a cancellation event. It must be
                 # visible immediately, without process cooperation or a TTL.
                 jobs.cancel(rid)
                 self.assertTrue(jobs._cancelled(rid))
-                self.assertEqual(replay.call_count, 2)
+                self.assertEqual(replay.call_count, 5)
                 event = first[0]
                 path = next((fixture.root/'storage/catalog/attempts').glob('*/events/RESEVENT_'+digest(event)+'.json'))
                 stamp = path.stat(); damaged = deepcopy(event); damaged['previous'] = 'tampered'

@@ -120,6 +120,26 @@ class ResearchInputsTests(unittest.TestCase):
         single = self.plan(); self.scope['kind'] = 'universe'; universe = self.plan()
         self.assertEqual(single['recipe'], universe['recipe']); self.assertEqual(universe['mode'], 'CS')
 
+    def test_submit_preserves_plan_with_prefetched_feature_inventory(self):
+        from uuid import uuid4
+        from runtime.research_jobs import ResearchJobs
+
+        (self.root / 'config/research_execution.json').write_text(json.dumps(self.profile))
+        with patch('data.fx_feature_store._price_snapshot', side_effect=self.price):
+            inputs.prepare_phase(self.root, self.plan(), 'P1')
+        expected = self.plan()
+        self.assertTrue(expected['members'][0]['feature_materializations'])
+        jobs = ResearchJobs(self.root)
+        self.addCleanup(jobs.close)
+        request = dict(self.intent, request_id=str(uuid4()))
+        # This short synthetic input fixture has no pre-2022 observations.
+        with (patch('research.contracts.profile_blockers', return_value=[]),
+              patch('research.inputs.feature_manifest_routes', wraps=inputs.feature_manifest_routes) as routes):
+            _, created = jobs.submit(request)
+        self.assertTrue(created)
+        self.assertEqual(routes.call_count, 2)
+        self.assertEqual(jobs._submission(request['request_id'])['frozen_plan'], expected)
+
     def test_missing_member_blocks_whole_frozen_resolution_with_reason(self):
         self.scope['kind'] = 'universe'; self.scope['members'].append('AUDUSD')
         with self.assertRaises(inputs.InputsBlocked) as error: self.plan()

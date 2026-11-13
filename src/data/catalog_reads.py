@@ -12,6 +12,10 @@ from pathlib import Path
 _CURRENT = ContextVar('ui_catalog_reads', default=None)
 
 
+def catalog_read_active():
+    return _CURRENT.get() is not None
+
+
 class CatalogChanged(ValueError):
     """The catalog changed while a projection was being constructed."""
 

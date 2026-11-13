@@ -12,6 +12,7 @@ from research.contracts import (normalize_submission,request_id,canonical,digest
 from research.schedule import period_for
 from research.store import ResearchStore,inside,install_bytes,read_json,lock
 from research.performance import measure, counter, profiling
+from runtime.event_history import EventHistory
 
 ACTIVE={'queued','resolving','preparing','p1','p2'}
 TERMINAL={'blocked','failed','cancelled','succeeded'}
@@ -32,6 +33,7 @@ def implementation():
 class ResearchJobs:
     def __init__(self,root,*,adapter=None,kernels=None,start_worker=False):
         self.root=Path(root).resolve();self.store=ResearchStore(root)
+        self.event_history = EventHistory(self.root / 'storage/catalog/attempts')
         self.adapter=adapter;self.kernels=kernels;self.stop_event=threading.Event();self.wake=threading.Event();self.thread=None
         self.supervisor=None;self.health_lock=threading.RLock()
         self.worker_state='stopped';self.worker_error=None;self.restarts=0
@@ -200,9 +202,12 @@ class ResearchJobs:
     def _events(self,rid,snapshot=None):
         with measure('events.replay'):
             if snapshot is None:
-                from data.verified_inputs import record_memo
-                return record_memo(self.root,'event_history',{'request_id':rid},
-                                   lambda:self._events_read(rid))
+                from data.catalog_reads import catalog_read_active
+                from data.verified_inputs import dependency_capture, record_memo
+                if catalog_read_active() or dependency_capture() is not None:
+                    return record_memo(self.root,'event_history',{'request_id':rid},
+                                       lambda:self._events_read(rid))
+                snapshot = self.event_history.snapshot(rid)
             return self._events_read(rid,snapshot)
     def _events_read(self,rid,snapshot=None):
         snapshot=self._event_snapshot() if snapshot is None else snapshot
@@ -220,7 +225,6 @@ class ResearchJobs:
         return events
     def _read_job(self,rid,snapshot=None):
         self._submission(rid)
-        p=self._job_path(rid)
         # Verify the projection's last event cheaply; recover/reconcile from the
         # append-only chain after a missing/partial projection or interrupted update.
         events=self._events(rid,snapshot)
@@ -298,11 +302,16 @@ class ResearchJobs:
             return {'code':'IMPLEMENTATION_CHANGED','message':
                 'This submission uses an older code version and cannot resume. Recovery needs a compatible execution release. Reconcile the release before retrying; the original record is preserved.'}
         return None
-    def _save(self,job):
-        rid=job['request_id'];events=self._events(rid);sequence=len(events)
+    def _save(self,job,*,verified_tail=None):
+        rid=job['request_id']
+        if verified_tail is None:
+            events=self._events(rid);sequence=len(events)
+            previous=digest(events[-1]) if events else None
+        else:
+            sequence, previous = verified_tail[0] + 1, verified_tail[1]
         body={k:v for k,v in job.items() if k not in ('sequence','event_sha256')};body['updated_at']=now()
         event={'schema_version':'0.8.0','request_id':rid,'sequence':sequence,
-               'previous':digest(events[-1]) if events else None,'job':body}
+               'previous':previous,'job':body}
         install_bytes(inside(self.root,'storage/catalog/attempts/'+body['attempt_id']+'/events/RESEVENT_'+digest(event)+'.json'),canonical(event)+b'\n')
         projection=dict(body,sequence=sequence,event_sha256=digest(event))
         install_bytes(self._job_path(rid),canonical(projection)+b'\n',mutable=True)
@@ -311,7 +320,12 @@ class ResearchJobs:
         with lock(self.root,'research-writer'):
             job=self._read_job(rid)
             if job is None:raise ResearchError('Unknown execution')
-            job.update(changes);return self._save(job)
+            job.update(changes)
+            return self._append(job)
+
+    def _append(self, job):
+        # The caller has just verified this tail under the same writer lock.
+        return self._save(job, verified_tail=(job['sequence'], job['event_sha256']))
     def _ensure_recorded(self, original):
         """Complete an interrupted publication without resolving new inputs."""
         rid=original['request_id']
@@ -325,7 +339,7 @@ class ResearchJobs:
             'horizons':[{'horizon':h,'p1_status':'pending','p2_status':'pending'} for h in horizons],
             'results':[],'mode':None,'created_at':original['created_at'],
             'queued_at':original['created_at'],'cancel_requested':False}
-        return self._save(job)
+        return self._save(job, verified_tail=(-1, None))
 
     def _received(self, journal, index):
         rid=journal['canonical_request_id']
@@ -354,14 +368,24 @@ class ResearchJobs:
         check_intake(self.root)
         from runtime.experiment_identity import IdentityIndex, freeze, scientific_key, save, release_reviews
         request=normalize_submission(value);rid=request.pop('request_id');intent=request
-        with lock(self.root,'research-writer'):
+        index=IdentityIndex(self)
+        path=self._submission_path(rid)
+        prefetched = None
+        if self.adapter is None and not (path.exists() or index.journal_path(rid).exists()):
+            from research.inputs import feature_manifest_routes
+            try:
+                with measure('intake.feature_manifest_prefetch'):
+                    prefetched = feature_manifest_routes(self.root)
+            except (AttributeError, OSError, TypeError, ValueError):
+                # A concurrent publication or an unreadable manifest takes the
+                # original path, which reports errors in their normal context.
+                pass
+        with lock(self.root,'research-writer'), measure('intake.writer_held'):
             check_intake(self.root)
-            index=IdentityIndex(self)
             journal=index.journal(rid)
             if journal:
                 if journal['intent']!=intent:raise ResearchConflict('This request ID already has different inputs')
                 return self._received(journal,index),False
-            path=self._submission_path(rid)
             incident=self._incident_path(path)
             if incident.exists():return self._incident_job(read_json(incident)),False
             if path.exists():
@@ -372,8 +396,23 @@ class ResearchJobs:
                     raise ResearchConflict('Historical inputs were not frozen; reconciliation required')
                 # Existing UUID retries retain their frozen legacy authority.
                 return self.public(self._ensure_recorded(original)),False
+            manifest_index = None
+            if prefetched is not None:
+                try:
+                    with measure('intake.feature_manifest_recheck'):
+                        routes = feature_manifest_routes(self.root, prefetched)
+                        manifest_index = {}
+                        for candidate, (_, owner) in routes.items():
+                            if isinstance(owner, str):
+                                manifest_index.setdefault(owner, []).append(candidate)
+                except (AttributeError, OSError, TypeError, ValueError):
+                    pass
             try:
-                packet=freeze(self,intent,implementation())
+                impl = implementation()
+                if manifest_index is None:
+                    packet=freeze(self,intent,impl)
+                else:
+                    packet=freeze(self,intent,impl,feature_manifest_index=manifest_index)
             except ResearchBlocked:raise
             except (ValueError,KeyError,TypeError,OSError) as exc:
                 raise ResearchBlocked(getattr(exc,'blockers',[{'code':'INPUT_METADATA_BLOCKED','message':str(exc)}])) from exc
@@ -424,7 +463,7 @@ class ResearchJobs:
             if job['status'] in ACTIVE:
                 job['cancel_requested']=True;job['message']='Cancellation requested; committed scientific evidence will be retained.'
                 if job['status']=='queued':job.update(status='cancelled',stage='cancelled')
-                job=self._save(job)
+                job=self._append(job)
         return self.public(job)
     def resume(self,rid):
         from data.fx_currency_migration import check_intake
@@ -438,7 +477,7 @@ class ResearchJobs:
             reason=self._resume_blocker(rid)
             if reason:raise ResearchConflict(reason['message'])
             job.update(attempt_id=str(uuid.uuid4()),status='queued',stage='recorded',queued_at=now(),cancel_requested=False,blockers=[],message='Resume recorded with the original frozen inputs and Research Spec.')
-            job=self._save(job)
+            job=self._append(job)
         self.wake.set();return self.public(job)
     def _cancelled(self,rid):
         with lock(self.root,'research-writer'):job=self._read_job(rid)
@@ -532,7 +571,7 @@ class ResearchJobs:
             for row in job['horizons']:
                 if row['horizon']==h:row.update(changes)
             job['progress']={'completed':sum(r['p1_status'] not in ('pending','running') and r['p2_status'] not in ('pending','running') for r in job['horizons']),'total':len(job['horizons'])}
-            self._save(job)
+            self._append(job)
     def _trial(self,plan,prepared,phase,horizon,relationship,inputs,profile,impl,*,discovery_effect=None,discovery_trial=None,execution_context=None):
         with measure('inputs.hashing'):
             input_digest=digest({'rows':inputs['rows'],'lineage':inputs.get('lineage',[])})
