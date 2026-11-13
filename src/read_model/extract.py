@@ -140,7 +140,9 @@ class Extractor:
 
     def try_unit(self, kind, identity, paths, loader):
         try: return self.unit(kind, identity, paths, loader)
-        except IntegrityFailure: raise
+        except (IntegrityFailure, TimeoutError):
+            # A build-wide deadline is not evidence that a record is unavailable.
+            raise
         except (ValueError, KeyError, TypeError, OSError, AttributeError):
             self.issue(kind, identity)
             return None
