@@ -630,12 +630,14 @@ class ResearchJobs:
         body={'relationship':ref(relationship),'trial_results':[ref(p1)]+([ref(p2)] if p2 else []),
             'admission_results':[ref(admission)],'validation_results':[ref(validation)] if validation else []}
         return self.store.put('link',body,body)
-    def _record_access(self,rid,plan,phase,horizon):
+    def _record_access(self,rid,plan,phase,horizon,*,direction_binding=None):
         with lock(self.root,'research-writer'):job=self._read_job(rid)
-        self.store.put('exposure',{'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon},
-            {'event':'sample_access_started','plan_id':plan['plan_id'],'period':period_for(plan,phase,horizon),
-             'classification':plan['profile']['exposure_classification'],
-             'description':'Access intent recorded before loading; interruption means exposure is possible, not certified untouched.'})
+        body = {'event':'sample_access_started','plan_id':plan['plan_id'],'period':period_for(plan,phase,horizon),
+                'classification':plan['profile']['exposure_classification'],
+                'description':'Access intent recorded before loading; interruption means exposure is possible, not certified untouched.'}
+        if direction_binding is not None:
+            body['direction_binding'] = direction_binding
+        self.store.put('exposure',{'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon},body)
     def _run(self,rid):
         from data.verified_inputs import execution_inputs
         # Lifetime is one frozen submission attempt, never the web session.
@@ -781,7 +783,7 @@ class ResearchJobs:
                             discovery_effect=effect,discovery_trial=ref(p1))
                     if p2 is None:
                         prepared2=prepare('P2',horizon,token)
-                        self._record_access(rid,plan,'P2',horizon)
+                        self._record_access(rid,plan,'P2',horizon,direction_binding=direction_binding)
                         data=adapter.load_phase(self.root,plan,prepared2,'P2',horizon,admission=token)
                         self._check(rid)
                         p2=self._trial(plan,prepared2,'P2',horizon,relationship,data,profile,impl,discovery_effect=effect,discovery_trial=ref(p1),

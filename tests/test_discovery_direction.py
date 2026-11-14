@@ -63,6 +63,10 @@ class DirectionTests(TestCase):
             if decisions:
                 self.assertEqual(decisions[0]['body']['direction_binding']['direction'], sign)
                 self.assertEqual(trials[1]['body']['expected_direction'], sign)
+                access = self.jobs.store.find('exposure', {
+                    'request_id': row['request_id'], 'attempt_id': job['attempt_id'],
+                    'phase': 'P2', 'horizon': relation['body']['horizon']})
+                self.assertEqual(access['body']['direction_binding'], decisions[0]['body']['direction_binding'])
                 self.assertEqual(trials[1]['scientific_key']['period'],
                                  period_for(self.jobs._submission(row['request_id'])['frozen_plan'],
                                             'P2', relation['body']['horizon']))
