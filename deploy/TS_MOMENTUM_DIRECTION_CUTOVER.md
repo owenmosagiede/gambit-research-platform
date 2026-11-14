@@ -25,8 +25,9 @@ related research used the validation history.
    P2-only counts and record the exact approved proposal hash before applying.
 3. Run `apply` with that hash. The code transaction verifies checksums and
    saves before-images. Queue replacement uses the existing research intake
-   and event journals with the worker stopped. Check the release receipt,
-   running services, and new queue. Confirm the first follow-up references
+   and event journals with the worker stopped. Restart the metadata projector
+   so it can verify the new evidence. Check the release receipt, running
+   services, and new queue. Confirm the first follow-up references
    the original P1 trial and has no P1 sample access.
 4. Before any queue change, a failed source installation restores its
    before-images. After source installation and queue mutation, recover

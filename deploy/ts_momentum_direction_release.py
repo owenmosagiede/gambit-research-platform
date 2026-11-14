@@ -180,10 +180,15 @@ def run_queue(machine, directory, proposal):
 def resume_services(machine):
     if sha256(retired_definitions.trusted_bytes(PACER)).hexdigest() != PACER_SHA256:
         raise RuntimeError('The existing paced intake operator differs from the reviewed version')
+    # The metadata watcher imports its verification code once. Preserve its
+    # unit and saved serving snapshots, then reload the new branch verifier.
+    subprocess.run(['systemctl', 'restart', 'gambit-read-projector.service'], check=True)
     for unit in reversed(release.UNITS):
         if machine.status(unit) != 'active':
             machine.start(unit)
     machine.health()
+    if machine.status('gambit-read-projector.service') != 'active':
+        raise RuntimeError('The updated metadata projector did not start')
     if machine.status(PACED_UNIT) != 'active':
         catalog = machine.root/'storage/catalog'
         subprocess.run(['systemd-run', '--unit='+PACED_UNIT.removesuffix('.service'),
