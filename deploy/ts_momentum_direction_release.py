@@ -35,6 +35,29 @@ RETIREMENT_SOURCE = STATE / 'incoming/post-reset-9654b7de/source.tar.gz'
 SOURCE = STATE / 'incoming/ts-runner-speedup/runner-official.tar.gz'
 
 
+EXTERNAL_UNIT_EXAMPLES = {
+    'deploy/examples/gambit-chart-projector.service': '4efdb98af676e37ad772f7b02a769c6bf93c2042aeb75c033a4177835fc251ee',
+    'deploy/examples/gambit-read-projector.service': '3435e69e55a96525c5415a15bc9b705fa914e6d7d999fb1e08a5902d19f4fc62',
+}
+
+
+def acknowledge_external_examples(machine, source_files, target_files):
+    """The two already-installed projectors use external systemd unit files."""
+    pinned = {}
+    for path, expected in EXTERNAL_UNIT_EXAMPLES.items():
+        file = machine.root/path
+        if file.exists() or file.is_symlink():
+            continue
+        unit = file.name
+        live = Path('/etc/systemd/system')/unit
+        fragment = subprocess.check_output(['systemctl', 'show', unit, '-p', 'FragmentPath', '--value'],
+                                           text=True).strip()
+        if (source_files.get(path) == target_files.get(path)
+                and sha256(source_files.get(path, b'')).hexdigest() == expected and Path(fragment) == live):
+            pinned[path] = sha256(retired_definitions.trusted_bytes(live)).hexdigest()
+    return pinned
+
+
 def compute_plan(machine, target, checks):
     target_sha = sha256(retired_definitions.trusted_bytes(target)).hexdigest()
     source_sha = sha256(retired_definitions.trusted_bytes(SOURCE)).hexdigest()
@@ -50,9 +73,14 @@ def compute_plan(machine, target, checks):
         RETIREMENT, SOURCE, source_sha, target, target_sha, retirement_archive=RETIREMENT_SOURCE)
     before = retirement.code_plan(machine.root, source_manifest, source_files, source_sha)
     after = retirement.code_plan(machine.root, manifest, files, target_sha)
-    if before['changes'] or before['blockers'] or after['blockers'] or not after['changes']:
-        raise RuntimeError('Installed source or proposed changes differ from the verified archives')
+    pinned_examples = acknowledge_external_examples(machine, source_files, files)
+    unexpected = [block for plan in (before, after) for block in plan['blockers']
+                  if block['path'] not in pinned_examples or block['reason'] != retired_definitions.REGISTRY_BLOCKER]
+    if before['changes'] or unexpected or not after['changes']:
+        raise RuntimeError('Installed source or proposed changes differ from the verified archives: '
+                           + str(unexpected[:3]))
     code = {key: after[key] for key in ('commit', 'changes', 'plan_sha256')}
+    code['external_projector_units'] = pinned_examples
     return {'schema': 'ts_momentum_direction_release_v1', 'code': code, 'archive_sha256': target_sha,
             'checks_sha256': sha256(checks_bytes).hexdigest(),
             'queue': plan_cutover(machine.root, MOMENTUM/'manifest.json', MOMENTUM/'checkpoint.json')}, files
