@@ -179,7 +179,7 @@ def _registered_entry(store, feature):
             for step in recipe['steps']], 'observation_count':None,'outputs':[]}
 
 
-def _verified_branch(store, link):
+def _verified_branch(store, link, *, include_direction=False):
     """Verify completed outcome metadata without opening numerical artifacts."""
     from research.contracts import ref, digest as research_digest
     from data.transformations.contracts import normalize_reference
@@ -233,7 +233,11 @@ def _verified_branch(store, link):
                     or p2['scientific_key']['research_spec']!=p1['scientific_key']['research_spec']
                     or p2['body'].get('decision',value['decision'])!=value['decision']):
                 raise PublicationError('Validation evaluation differs from its discovery branch')
-    return relation,trials,admissions,validations
+    from research.direction import verify_direction_binding
+    sign = verify_direction_binding(store, relation, p1, admissions[0], stages.get('P2'),
+                                    validations[0] if validations else None)
+    verified = relation, trials, admissions, validations
+    return (*verified, sign) if include_direction else verified
 
 
 def _research_catalog(root, issues):
@@ -246,7 +250,7 @@ def _research_catalog(root, issues):
     for path in sorted(catalog_glob(Path(root)/relative, 'RESEARCHLINK_*.json')):
         try:
             link=store.get('link',path.stem)
-            relation,trials,admissions,validations=_verified_branch(store,link)
+            relation,trials,admissions,validations,sign=_verified_branch(store,link,include_direction=True)
             body=relation['body'];recipe_id=body['recipe']['id']
             row={'signal_id':'SIGNAL_'+recipe_id.removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
                 'projection':ref(link),'relationship':ref(relation),'attempt_ids':[],
@@ -255,6 +259,7 @@ def _research_catalog(root, issues):
                 **{key:deepcopy(body[key]) for key in ('scope','mode','horizon','target_family','expected_direction')},
                 'p1_status':admissions[0]['body']['decision'],
                 'p2_status':validations[0]['body']['decision'] if validations else 'not_run'}
+            row['validation_direction'] = sign
             branches.setdefault(canonical_bytes(ref(relation)),[]).append(row)
         except (ValueError,KeyError,TypeError,OSError):
             issues.append({'code':'UNAVAILABLE_RESEARCH_LINK','record_id':path.stem,

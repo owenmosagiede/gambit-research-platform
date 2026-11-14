@@ -57,12 +57,14 @@ def normalize_direction(value: Any) -> str:
 
 
 def validate_profile(*, mode: str, horizon: int, members: Sequence[str],
-                     expected_direction: str, profile: Mapping[str, Any]) -> dict[str, Any]:
+                     expected_direction: str, profile: Mapping[str, Any], allow_discovery_direction=False) -> dict[str, Any]:
     if mode not in {"TS", "CS"}:
         raise ResearchContractError("mode must be TS or CS; a universe is CS only")
     if type(horizon) is not int or horizon not in (1, 7, 21, 63, 252):
         raise ResearchContractError("unsupported horizon")
-    normalize_direction(expected_direction)
+    from research.contracts import DISCOVERY_DIRECTION
+    if not (allow_discovery_direction and expected_direction == DISCOVERY_DIRECTION):
+        normalize_direction(expected_direction)
     if isinstance(members, (str, bytes)) or not members or any(not isinstance(member, str) or not member for member in members):
         raise ResearchContractError("exact frozen members are required")
     if len(set(members)) != len(members):

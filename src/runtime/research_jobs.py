@@ -8,7 +8,7 @@ from copy import deepcopy
 from datetime import datetime,timezone
 import hashlib, json, threading, uuid, logging
 from research.contracts import (normalize_submission,request_id,canonical,digest,ref,
-    profile_blockers,load_profile,ResearchError,ResearchConflict,ResearchBlocked,HORIZONS)
+    profile_blockers,load_profile,ResearchError,ResearchConflict,ResearchBlocked,HORIZONS,DISCOVERY_DIRECTION)
 from research.schedule import period_for
 from research.store import ResearchStore,inside,install_bytes,read_json,lock
 from research.performance import measure, counter, profiling
@@ -290,7 +290,8 @@ class ResearchJobs:
         value={k:deepcopy(v) for k,v in job.items() if k not in ('event_sha256','cancel_requested')}
         # Compatibility is presentation metadata, never a rewrite of frozen history.
         if job['status'] in ('blocked','failed','cancelled'):
-            reason=self._resume_blocker(job['request_id'])
+            reason=({'code':'REQUEST_SUPERSEDED','message':'This request was replaced by its linked successor.'}
+                    if job.get('superseded_by') else self._resume_blocker(job['request_id']))
             value['resumable']=reason is None
             if reason:value['resume_blocker']=reason
         return value
@@ -333,6 +334,8 @@ class ResearchJobs:
         job=self._read_job(rid)
         if job is not None:return job
         horizons=original.get('frozen_plan',{}).get('horizons',HORIZONS)
+        if original.get('p2_followup'):
+            horizons = [h for h in horizons if str(h) in original['p2_followup']['skipped']]
         job={'request_id':rid,'attempt_id':str(uuid.uuid4()),'status':'queued','stage':'recorded',
             'message':'Request recorded. Waiting for the research worker.', 'blockers':[],
             'progress':{'completed':0,'total':len(horizons)},
@@ -363,15 +366,19 @@ class ResearchJobs:
         self.wake.set()
         return value
 
-    def submit(self,value):
+    def submit(self,value,*,momentum_parent=None,p2_followup=None):
         from data.fx_currency_migration import check_intake
         check_intake(self.root)
         from runtime.experiment_identity import IdentityIndex, freeze, scientific_key, save, release_reviews
         request=normalize_submission(value);rid=request.pop('request_id');intent=request
+        if momentum_parent is not None and intent['expected_direction'] != DISCOVERY_DIRECTION:
+            raise ResearchError('Reusing source bindings requires the P1-selected direction policy')
+        if p2_followup is not None and momentum_parent is None:
+            raise ResearchError('P2 follow-up requires its original request')
         index=IdentityIndex(self)
         path=self._submission_path(rid)
         prefetched = None
-        if self.adapter is None and not (path.exists() or index.journal_path(rid).exists()):
+        if self.adapter is None and momentum_parent is None and not (path.exists() or index.journal_path(rid).exists()):
             from research.inputs import feature_manifest_routes
             try:
                 with measure('intake.feature_manifest_prefetch'):
@@ -409,7 +416,10 @@ class ResearchJobs:
                     pass
             try:
                 impl = implementation()
-                if manifest_index is None:
+                if momentum_parent is not None:
+                    from research.direction import continuation_packet
+                    packet=continuation_packet(self,rid,intent,impl,momentum_parent,p2_followup)
+                elif manifest_index is None:
                     packet=freeze(self,intent,impl)
                 else:
                     packet=freeze(self,intent,impl,feature_manifest_index=manifest_index)
@@ -473,6 +483,8 @@ class ResearchJobs:
             incident=self._incident_path(self._submission_path(rid))
             if incident.exists():raise ResearchConflict('Quarantined submissions cannot be resumed or changed')
             job=self._read_job(rid)
+            if job.get('superseded_by'):
+                raise ResearchConflict('This request has already been replaced by ' + job['superseded_by'])
             if job['status'] not in ('blocked','failed','cancelled'):raise ResearchConflict('Only blocked, failed or cancelled work can resume')
             reason=self._resume_blocker(rid)
             if reason:raise ResearchConflict(reason['message'])
@@ -572,7 +584,7 @@ class ResearchJobs:
                 if row['horizon']==h:row.update(changes)
             job['progress']={'completed':sum(r['p1_status'] not in ('pending','running') and r['p2_status'] not in ('pending','running') for r in job['horizons']),'total':len(job['horizons'])}
             self._append(job)
-    def _trial(self,plan,prepared,phase,horizon,relationship,inputs,profile,impl,*,discovery_effect=None,discovery_trial=None,execution_context=None):
+    def _trial(self,plan,prepared,phase,horizon,relationship,inputs,profile,impl,*,discovery_effect=None,discovery_trial=None,execution_context=None, direction_binding=None):
         with measure('inputs.hashing'):
             input_digest=digest({'rows':inputs['rows'],'lineage':inputs.get('lineage',[])})
         period=period_for(plan,phase,horizon)
@@ -581,6 +593,8 @@ class ResearchJobs:
             'targets':[{ 'instrument':m['instrument_id'],'binding':m['targets'][str(horizon)]} for m in plan['members']],
             'implementation':ref(impl),'input_digest':input_digest,
             'discovery_trial':discovery_trial,'discovery_effect':discovery_effect}
+        if direction_binding is not None:
+            key['direction_binding'] = direction_binding
         if execution_context:
             from runtime.execution_compatibility import record_trial_intent
             record_trial_intent(self.store,*execution_context,key)
@@ -597,7 +611,10 @@ class ResearchJobs:
             window_start=period['start_inclusive'],window_end_exclusive=period['end_exclusive'])
         kwargs={'mode':plan['mode'],'horizon':horizon,'members':[m['instrument_id'] for m in plan['members']],
             'expected_direction':plan['intent']['expected_direction'],'profile':kp}
-        if phase=='P2':kwargs['discovery_effect']=discovery_effect
+        if phase=='P2':
+            kwargs['discovery_effect']=discovery_effect
+            if direction_binding is not None:
+                kwargs['expected_direction']=direction_binding['direction']
         calculation=self._kernel(phase,inputs['rows'],**kwargs)
         with measure('research.publication'):
             artifacts=self.store.artifact(key,dict(calculation.get('artifacts',{}),coverage=inputs.get('coverage',{}),lineage=inputs.get('lineage',[])))
@@ -613,12 +630,14 @@ class ResearchJobs:
         body={'relationship':ref(relationship),'trial_results':[ref(p1)]+([ref(p2)] if p2 else []),
             'admission_results':[ref(admission)],'validation_results':[ref(validation)] if validation else []}
         return self.store.put('link',body,body)
-    def _record_access(self,rid,plan,phase,horizon):
+    def _record_access(self,rid,plan,phase,horizon,*,direction_binding=None):
         with lock(self.root,'research-writer'):job=self._read_job(rid)
-        self.store.put('exposure',{'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon},
-            {'event':'sample_access_started','plan_id':plan['plan_id'],'period':period_for(plan,phase,horizon),
-             'classification':plan['profile']['exposure_classification'],
-             'description':'Access intent recorded before loading; interruption means exposure is possible, not certified untouched.'})
+        body = {'event':'sample_access_started','plan_id':plan['plan_id'],'period':period_for(plan,phase,horizon),
+                'classification':plan['profile']['exposure_classification'],
+                'description':'Access intent recorded before loading; interruption means exposure is possible, not certified untouched.'}
+        if direction_binding is not None:
+            body['direction_binding'] = direction_binding
+        self.store.put('exposure',{'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon},body)
     def _run(self,rid):
         from data.verified_inputs import execution_inputs
         # Lifetime is one frozen submission attempt, never the web session.
@@ -676,11 +695,31 @@ class ResearchJobs:
                     if period!=plan['periods'][phase]:options['horizon']=horizon
                     prepared_periods[key]=adapter.prepare_phase(self.root,plan,phase,**options)
                 return prepared_periods[key]
-            if execution_approval is None:
-                prepare('P1',horizons[0])
+            from research.direction import discovery_binding, verify_followup, verify_no_prior_p2
+            direction_policy = plan['intent']['expected_direction']
+            followup = submission.get('p2_followup')
+            if followup:
+                if direction_policy != DISCOVERY_DIRECTION or execution_approval:
+                    raise ResearchError('P2 follow-up requires its pinned discovery-selected implementation')
+                saved = verify_followup(self, submission, plan, verify_artifacts=True)
+                committed_followups = verify_no_prior_p2(self, submission, plan, saved)
+                horizons = tuple(saved)
+            else:
+                saved = {}
+                committed_followups = {}
+                if execution_approval is None and direction_policy != DISCOVERY_DIRECTION:
+                    prepare('P1',horizons[0])
             self._check(rid);pending=[];links=[]
             for horizon in horizons:
-                self._check(rid);self._update(rid,status='p1',stage='P1',message=f'P1 {plan["mode"]}: {horizon} scheduled weekdays.')
+                self._check(rid)
+                if horizon in saved:
+                    relationship, p1, admission, skipped = saved[horizon]
+                    binding = discovery_binding(p1, admission, skipped=skipped)
+                    pending.append((horizon,relationship,p1,admission,p1['body']['metrics']['primary_effect'],binding))
+                    self._horizon(rid,horizon,p1_status='admitted',p2_status='pending',
+                                  discovery_direction=binding['direction'])
+                    continue
+                self._update(rid,status='p1',stage='P1',message=f'P1 {plan["mode"]}: {horizon} scheduled weekdays.')
                 self._horizon(rid,horizon,p1_status='running')
                 relation={'recipe':plan['recipe'],'scope':plan['scope'],'mode':plan['mode'],'target_family':'price_return','horizon':horizon,
                     'horizon_unit':'scheduled_weekdays','members':[m['instrument_id'] for m in plan['members']],
@@ -705,42 +744,58 @@ class ResearchJobs:
                 self._horizon(rid,horizon,p1_status=decision,p2_status='pending' if decision=='admitted' else 'not_admitted')
                 effect=p1['body']['metrics'].get('primary_effect')
                 if decision=='admitted':
-                    direction=1 if plan['intent']['expected_direction']=='POSITIVE' else -1
-                    if effect is not None and float(effect)*direction<=0:
+                    binding = discovery_binding(p1, admission) if direction_policy == DISCOVERY_DIRECTION else None
+                    direction = 1 if direction_policy == 'POSITIVE' else -1
+                    if binding:
+                        self._horizon(rid,horizon,discovery_direction=binding['direction'])
+                        pending.append((horizon,relationship,p1,admission,effect,binding))
+                    elif direction_policy != DISCOVERY_DIRECTION and effect is not None and float(effect)*direction<=0:
                         validation=self.store.put('validation',{'discovery':ref(p1),'precheck':'direction','profile':digest(profile)},
                             {'relationship':ref(relationship),'decision':'FAILED','reason_codes':['DISCOVERY_EFFECT_CONTRADICTS_EXPECTED_DIRECTION'],
                              'discovery_trial':ref(p1),'evaluation_trial':None,'period':period_for(plan,'P2',horizon),'research_spec':ref(profile)})
                         links[-1]=ref(self._link(relationship,p1,admission,validation=validation));self._horizon(rid,horizon,p2_status='FAILED')
-                    elif effect is None:
+                    elif effect is None or direction_policy == DISCOVERY_DIRECTION:
                         validation=self.store.put('validation',{'discovery':ref(p1),'precheck':'missing_effect','profile':digest(profile)},
                             {'relationship':ref(relationship),'decision':'UNRESOLVED','reason_codes':['DISCOVERY_EFFECT_UNAVAILABLE'],
                              'discovery_trial':ref(p1),'evaluation_trial':None,'period':period_for(plan,'P2',horizon),'research_spec':ref(profile)})
                         links[-1]=ref(self._link(relationship,p1,admission,validation=validation))
                         self._horizon(rid,horizon,p2_status='UNRESOLVED')
-                    else:pending.append((horizon,relationship,p1,admission,effect))
+                    else:pending.append((horizon,relationship,p1,admission,effect,None))
                 self._update(rid,results=links)
             if pending:
                 self._check(rid)
-                token={'plan_id':plan['plan_id'],'direction':plan['intent']['expected_direction'],'admitted_horizons':[p[0] for p in pending]}
-                self._update(rid,status='preparing',stage='P2 preparation',message='Preparing the frozen validation interval for admitted candidates only.')
-                if execution_approval is None:
+                token={'plan_id':plan['plan_id'],'admitted_horizons':[p[0] for p in pending]}
+                if direction_policy == DISCOVERY_DIRECTION:
+                    token['directions_by_horizon'] = {str(p[0]): p[-1]['direction'] for p in pending}
+                else:
+                    token['direction'] = direction_policy
+                self._update(rid,status='preparing',stage='P2 preparation',message=(
+                    'Reusing the original P1; preparing only the skipped validation horizons.'
+                    if followup else 'Preparing the frozen validation interval for admitted candidates only.'))
+                if execution_approval is None and direction_policy != DISCOVERY_DIRECTION:
                     prepare('P2',pending[0][0],token)
-                for horizon,relationship,p1,admission,effect in pending:
+                for horizon,relationship,p1,admission,effect,direction_binding in pending:
                     self._check(rid);self._update(rid,status='p2',stage='P2',message=f'P2 {plan["mode"]}: {horizon} scheduled weekdays.')
                     self._horizon(rid,horizon,p2_status='running')
-                    p2=committed_trial(self.store,execution_approval,submission,plan,'P2',horizon,relationship,
-                        discovery_effect=effect,discovery_trial=ref(p1))
+                    p2 = committed_followups.get(horizon)
+                    if p2 is None:
+                        p2=committed_trial(self.store,execution_approval,submission,plan,'P2',horizon,relationship,
+                            discovery_effect=effect,discovery_trial=ref(p1))
                     if p2 is None:
                         prepared2=prepare('P2',horizon,token)
-                        self._record_access(rid,plan,'P2',horizon)
+                        self._record_access(rid,plan,'P2',horizon,direction_binding=direction_binding)
                         data=adapter.load_phase(self.root,plan,prepared2,'P2',horizon,admission=token)
                         self._check(rid)
                         p2=self._trial(plan,prepared2,'P2',horizon,relationship,data,profile,impl,discovery_effect=effect,discovery_trial=ref(p1),
-                            execution_context=(execution_approval,submission) if execution_approval else None)
+                            execution_context=(execution_approval,submission) if execution_approval else None,
+                            direction_binding=direction_binding)
                     else:counter('compatibility.committed_trials_reused')
-                    validation=self.store.put('validation',{'discovery':ref(p1),'evaluation':ref(p2)},
-                        {'relationship':ref(relationship),'decision':p2['body']['decision'],'discovery_trial':ref(p1),'evaluation_trial':ref(p2),
-                         'reason_codes':p2['body'].get('reason_codes',[]),'evidence':p2['body'].get('evidence',{})})
+                    validation_body = {'relationship':ref(relationship),'decision':p2['body']['decision'],
+                        'discovery_trial':ref(p1),'evaluation_trial':ref(p2),
+                        'reason_codes':p2['body'].get('reason_codes',[]),'evidence':p2['body'].get('evidence',{})}
+                    if direction_binding is not None:
+                        validation_body['direction_binding'] = direction_binding
+                    validation=self.store.put('validation',{'discovery':ref(p1),'evaluation':ref(p2)},validation_body)
                     link=self._link(relationship,p1,admission,p2,validation)
                     links=[r for r in links if self.store.resolve('link',r)['body']['relationship']!=ref(relationship)]+[ref(link)]
                     self._horizon(rid,horizon,p2_status=p2['body']['decision']);self._update(rid,results=links)

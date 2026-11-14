@@ -62,7 +62,8 @@ def run_p1(rows: Iterable[Mapping[str, Any]], *, mode: str, horizon: int,
            profile: Mapping[str, Any]) -> dict[str, Any]:
     """Compute one horizon, never one TS trial per member of a CS universe."""
     policy = validate_profile(mode=mode, horizon=horizon, members=members,
-                              expected_direction=expected_direction, profile=profile)
+                              expected_direction=expected_direction, profile=profile,
+                              allow_discovery_direction=True)
     aligned, excluded, sample = prepare_rows(rows, mode=mode, members=members, profile=policy)
     scheduled = policy["kernel_policy"] == scheduled_statistics.POLICY
     if scheduled:

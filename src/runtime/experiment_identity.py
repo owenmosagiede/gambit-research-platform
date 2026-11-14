@@ -45,7 +45,10 @@ def scientific_key(packet):
     # Prepared output inventory is a cache, never an input selection policy.
     for member in plan['members']:
         member.pop('feature_materializations', None)
-    return digest({'intent': packet['intent'], 'research_spec': packet['research_spec'], 'plan': plan})
+    identity = {'intent': packet['intent'], 'research_spec': packet['research_spec'], 'plan': plan}
+    if 'p2_followup' in packet:
+        identity['p2_followup'] = packet['p2_followup']
+    return digest(identity)
 
 
 def freeze(jobs, intent, impl, *, feature_manifest_index=None):

@@ -55,7 +55,7 @@
         const reference = item.intent[key];
         details.append(node("p", `${label}: ${reference.id} · version ${reference.version}`, "queue-id"));
       }
-      details.append(node("p", `Expected direction: ${item.intent.expected_direction}`, "field-note"));
+      details.append(node("p", item.intent.expected_direction === "DISCOVERY_SIGN_V1" ? "P1 selects direction per horizon" : `Expected direction: ${item.intent.expected_direction}`, "field-note"));
     }
     if (item.presentation?.state === "verified") {
       for (const [label, key] of [["Feature definition", "feature_reference"], ["Scope definition", "scope_reference"], ["Frozen membership", "membership_snapshot"]]) {
@@ -79,12 +79,12 @@
         card.append(node("p", "Processed batches may include unavailable observations. This is preparation progress, not P1/P2 results.", "field-note"));
       }
     }
-    if (j.mode) card.append(node("p", `${j.mode === "TS" ? "Time series" : "Cross sectional"} research · 1, 7, 21, 63, 252 scheduled weekdays`));
+    if (j.mode) card.append(node("p", `${j.mode === "TS" ? "Time series" : "Cross sectional"} research · ${j.horizons.map(h => h.horizon).join(", ")} scheduled weekdays`));
     const reasons = [...j.blockers, ...(j.resume_blocker ? [j.resume_blocker] : [])];
     if (reasons.length) { const list = node("ul", undefined, "card-reasons"); for (const b of reasons) list.append(node("li", b.message)); card.append(list); }
     if (j.horizons.length) {
       const list = node("ul", undefined, "card-horizons");
-      for (const h of [...j.horizons].sort((a,b) => a.horizon-b.horizon)) list.append(node("li", `${h.horizon}-day forecast · P1: ${outcome(h.p1_status)} · P2: ${outcome(h.p2_status)}`));
+      for (const h of [...j.horizons].sort((a,b) => a.horizon-b.horizon)) list.append(node("li", `${h.horizon}-day forecast · P1: ${outcome(h.p1_status)}${h.discovery_direction ? " (" + h.discovery_direction.toLowerCase() + ")" : ""} · P2: ${outcome(h.p2_status)}`));
       card.append(list);
     }
     if (j.operational_failure) card.append(node("p", "Operational failure; this is not a statistical rejection. Saved evidence is preserved."));
