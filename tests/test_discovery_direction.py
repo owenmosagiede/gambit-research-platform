@@ -131,7 +131,10 @@ class DirectionTests(TestCase):
         install_bytes(checkpoint, canonical({'manifest_sha256': sha256(manifest.read_bytes()).hexdigest(),
                                              'next_index': 2, 'created': 2, 'existing': 0, 'blocked': []}) + b'\n')
         with patch('ts_momentum_direction_cutover.load_schedule', return_value=schedule):
+            preview = plan_cutover(self.root, manifest, checkpoint, preview=True)
             review = plan_cutover(self.root, manifest, checkpoint)
+        with self.assertRaises(ResearchError):
+            apply_queued(self.root, preview)
         self.assertEqual(review['original_states'], {'succeeded': 1, 'queued': 1})
         self.assertEqual(set(review['followups'][0]['skipped']), {'1', '21'})
         self.assertEqual(len(review['staged']), 1)
@@ -154,3 +157,21 @@ class DirectionTests(TestCase):
         self.assertEqual(set(self.jobs._submission(child)['p2_followup']['skipped']), {'1', '21'})
         with self.assertRaises(ResearchError):
             self.jobs.resume(queued['request_id'])
+    def test_review_rejects_a_live_request(self):
+        row = intent(mode='TS')
+        self.jobs.submit(row)
+        self.jobs._update(row['request_id'], status='p1', stage='P1')
+        schedule = {'id': 'TEST', 'version': '1.0.0'}
+        manifest = self.root / 'manifest.json'
+        checkpoint = self.root / 'checkpoint.json'
+        install_bytes(manifest, canonical({'program': 'GAMBIT_TS_MOMENTUM_20261111',
+                                           'schedule': ref(schedule), 'entries': [row]}) + b'\n')
+        install_bytes(checkpoint, canonical({'manifest_sha256': sha256(manifest.read_bytes()).hexdigest(),
+                                             'next_index': 1, 'created': 1, 'existing': 0, 'blocked': []}) + b'\n')
+        with patch('ts_momentum_direction_cutover.load_schedule', return_value=schedule):
+            with self.assertRaisesRegex(ResearchError, 'Drain the active job'):
+                plan_cutover(self.root, manifest, checkpoint)
+            preview = plan_cutover(self.root, manifest, checkpoint, preview=True)
+        self.assertEqual(preview['original_states'], {'p1': 1})
+        self.assertEqual(preview['queued'], [])
+        self.assertEqual(self.jobs.get(row['request_id'])['status'], 'p1')

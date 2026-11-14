@@ -21,7 +21,7 @@ def discovery_request(row, *, followup=False):
                 request_id=continuation_id(row['request_id'], followup=followup))
 
 
-def plan_cutover(root, manifest_path, checkpoint_path):
+def plan_cutover(root, manifest_path, checkpoint_path, *, preview=False):
     """Capture exact parent jobs and eligible follow-ups without changing production."""
     raw = manifest_path.read_bytes()
     manifest, checkpoint = read_json(manifest_path), read_json(checkpoint_path)
@@ -88,7 +88,7 @@ def plan_cutover(root, manifest_path, checkpoint_path):
                     period = period_for(plan, 'P2', h)
                     verify_skipped(relationship, p1, validation, period)
                     eligible.append((rid, h, link_ref, exposure_key(relationship['body'], period)))
-        else:
+        elif not preview or job['status'] not in ('resolving', 'preparing', 'p1', 'p2'):
             raise ResearchError('Drain the active job and reconcile failed momentum requests before cutover')
     accessed, records, _ = p2_exposures(jobs.store, {row[3] for row in eligible})
     skipped = {}
@@ -101,7 +101,8 @@ def plan_cutover(root, manifest_path, checkpoint_path):
     followups = [{'parent': row['request_id'], 'child': discovery_request(row, followup=True),
                   'skipped': skipped[row['request_id']]}
                  for row in roster[:cursor] if row['request_id'] in skipped]
-    return {'schema': 'ts_momentum_direction_cutover_v1', 'roster_sha256': sha256(raw).hexdigest(),
+    return {'schema': 'ts_momentum_direction_cutover_v1', 'preview': preview,
+            'roster_sha256': sha256(raw).hexdigest(),
             'checkpoint': checkpoint, 'original_states': dict(states),
             'queued': queued, 'staged': staged, 'followups': followups, 'held': held}
 
@@ -128,6 +129,8 @@ def replace_queued(jobs, row):
 
 def apply_queued(root, plan):
     """Run while the independent worker is drained and held by release control."""
+    if plan.get('schema') != 'ts_momentum_direction_cutover_v1' or plan.get('preview') is not False:
+        raise ResearchError('Queue replacement needs a reviewed stopped-worker plan')
     jobs = ResearchJobs(root)
     with lock(root, 'research-worker-service', nonblocking=True) as stopped:
         if not stopped:
@@ -158,11 +161,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
     commands = parser.add_subparsers(dest='command', required=True)
-    review = commands.add_parser('review')
-    review.add_argument('--root', type=Path, required=True)
-    review.add_argument('--manifest', type=Path, required=True)
-    review.add_argument('--checkpoint', type=Path, required=True)
-    review.add_argument('--output', type=Path, required=True)
+    for command in ('preview', 'review'):
+        view = commands.add_parser(command)
+        view.add_argument('--root', type=Path, required=True)
+        view.add_argument('--manifest', type=Path, required=True)
+        view.add_argument('--checkpoint', type=Path, required=True)
+        if command == 'review':
+            view.add_argument('--output', type=Path, required=True)
     apply = commands.add_parser('apply-queued')
     apply.add_argument('--root', type=Path, required=True)
     apply.add_argument('--plan', type=Path, required=True)
@@ -175,8 +180,9 @@ def main():
         plan = read_json(args.plan)
         apply_queued(args.root, plan)
         return
-    plan = plan_cutover(args.root, args.manifest, args.checkpoint)
-    install_bytes(args.output, canonical(plan) + b'\n')
+    plan = plan_cutover(args.root, args.manifest, args.checkpoint, preview=args.command == 'preview')
+    if args.command == 'review':
+        install_bytes(args.output, canonical(plan) + b'\n')
     print(canonical({**plan['original_states'], 'staged': len(plan['staged']),
                      'skipped_p2': sum(len(row['skipped']) for row in plan['followups']),
                      'held_p2': len(plan['held'])}).decode())
