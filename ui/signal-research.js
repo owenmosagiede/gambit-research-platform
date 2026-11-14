@@ -185,7 +185,9 @@
       const sign = relationship.validation_direction ||
         (relationship.expected_direction === "DISCOVERY_SIGN_V1" ? null : relationship.expected_direction);
       root.append(note(sign
-        ? `Direction for validation · ${words(sign)}`
+        ? (sign === "NEGATIVE"
+          ? "Negative direction. P2 tests whether higher Feature values correspond to lower Target returns."
+          : "Positive direction. P2 tests whether higher Feature values correspond to higher Target returns.")
         : "P1 has no direction for validation."));
       if(!result) {
         const validation=relationship.validations?.find(v=>v.evaluation_trial===null);
