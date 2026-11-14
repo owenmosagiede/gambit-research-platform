@@ -5,6 +5,8 @@ from pathlib import Path
 import hashlib, json, math, re, uuid
 
 HORIZONS=(1,7,21,63,252)
+DISCOVERY_DIRECTION = "DISCOVERY_SIGN_V1"
+DIRECTIONS = ("POSITIVE", "NEGATIVE")
 KERNEL_POLICIES={'retained_legacy_v1':'legacy_failed_v1',
                  'scheduled_weekday_hac_v2':'unresolved_required_v1'}
 class ResearchError(ValueError): pass
@@ -48,7 +50,8 @@ def normalize_submission(value):
         raise ResearchError('Submit requires request_id, Feature, Target family, Scope and Expected Direction')
     request_id(value['request_id'])
     if value['target_family']!='price_return':raise ResearchError('Only the populated Price Return family is supported')
-    if value['expected_direction'] not in ('POSITIVE','NEGATIVE'):raise ResearchError('Expected Direction must be frozen explicitly')
+    if value['expected_direction'] not in (*DIRECTIONS, DISCOVERY_DIRECTION):
+        raise ResearchError('Choose a fixed direction or the P1 discovery direction policy')
     return {'request_id':value['request_id'],'feature':exact_selection(value['feature']),
         'target_family':value['target_family'],'scope':exact_selection(value['scope']),
         'expected_direction':value['expected_direction']}

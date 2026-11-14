@@ -173,7 +173,7 @@
       const candidates=family.filter(r=>r.horizon===horizon);branch=Math.min(branch,candidates.length-1);const relationship=candidates[branch];
       const result=relationship.results.find(r=>r.stage===stage);
       const controls=node("div",undefined,"research-controls");
-      if(!source) controls.append(selector("Scope · hypothesis",contexts.map(([key,r])=>[key,`${r.scope_label || r.scope.id} · ${fullMode(r.mode)} · ${words(r.expected_direction)} · ${targetName(r.target_family)} · Spec v${r.results[0]?.research_spec?.version || "—"}`]),selectedContext,value=>{selectedContext=value;branch=0;render();}));
+      if(!source) controls.append(selector("Scope · hypothesis",contexts.map(([key,r])=>[key,`${r.scope_label || r.scope.id} · ${fullMode(r.mode)} · ${r.expected_direction === "DISCOVERY_SIGN_V1" ? "P1-selected direction" : words(r.expected_direction)} · ${targetName(r.target_family)} · Spec v${r.results[0]?.research_spec?.version || "—"}`]),selectedContext,value=>{selectedContext=value;branch=0;render();}));
       const horizons=node("div",undefined,"research-control");horizons.append(node("span","Forecast horizon · scheduled weekdays","research-label"));const hbuttons=node("div",undefined,"research-segments");
       for(const value of [1,7,21,63,252]) {const b=button(String(value),()=>{horizon=value;branch=0;render();});b.disabled=!family.some(r=>r.horizon===value);b.setAttribute("aria-pressed",String(horizon===value));b.title=b.disabled ? "No saved research for this horizon" : `${value}-day forecast horizon (scheduled weekdays)`;hbuttons.append(b);}horizons.append(hbuttons);
       const periods=node("div",undefined,"research-control");periods.append(node("span","Research period","research-label"));const pbuttons=node("div",undefined,"research-segments");
@@ -181,9 +181,12 @@
       if(candidates.length>1) root.append(selector("Saved research result",candidates.map((r,i)=>[String(i),`Saved result ${i + 1} · ${r.results[0]?.period?.start_inclusive || "—"} – ${r.results[0]?.period?.end_exclusive || "—"}`]),String(branch),v=>{branch=Number(v);render();}));
       const badges=node("div",undefined,"research-context");
       badges.append(node("span",`P1 ${status(relationship.p1_status)}`,`research-badge ${tone(relationship.p1_status)}`),node("span",`P2 ${status(relationship.p2_status)}`,`research-badge ${tone(relationship.p2_status)}`),
-        note(`${fullMode(relationship.mode)} · ${targetName(relationship.target_family)} · ${horizon}-day forecast horizon · Expected relationship: ${words(relationship.expected_direction)}`));root.append(badges);
-      const hypothesis=(relationship.mode === "CS" ? "Across instruments within each date: " : "Over time for this instrument: ") + (relationship.expected_direction==="NEGATIVE" ? "Higher Feature values are hypothesized to correspond to lower Target returns." : "Higher Feature values are hypothesized to correspond to higher Target returns.");
-      root.append(note(hypothesis));
+        note(`${fullMode(relationship.mode)} · ${targetName(relationship.target_family)} · ${horizon}-day forecast horizon`));root.append(badges);
+      const sign = relationship.validation_direction ||
+        (relationship.expected_direction === "DISCOVERY_SIGN_V1" ? null : relationship.expected_direction);
+      root.append(note(sign
+        ? `Direction for validation · ${words(sign)}`
+        : "P1 has no direction for validation."));
       if(!result) {
         const validation=relationship.validations?.find(v=>v.evaluation_trial===null);
         const empty=panel(stage === "P2" && validation ? `P2 ${status(validation.decision)} · before validation evaluation` : `${stage} has no saved evaluation`);

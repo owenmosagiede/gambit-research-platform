@@ -23,7 +23,7 @@ from data.targets.fx import (_approved_policy, _price_snapshot, _definition, _sc
     validate_manifest as validate_target_manifest, validate_row as validate_target_row, construct_rows)
 from data.transformations.contracts import normalize_time
 from data.transformations.identity import canonical_bytes, digest, reference
-from research.contracts import KERNEL_POLICIES
+from research.contracts import KERNEL_POLICIES, DIRECTIONS, DISCOVERY_DIRECTION
 from research.performance import measure, counter
 from research.schedule import period_for, resolved_periods
 
@@ -132,14 +132,21 @@ def _phase(plan, phase, admission=None, horizon=None):
     if horizon is not None and (type(horizon) is not int or horizon not in plan['horizons']):
         raise InputsBlocked('Research must use one of the frozen plan horizons')
     if phase == 'P2':
-        if (not isinstance(admission, dict) or admission.get('plan_id') != plan['plan_id']
-                or admission.get('direction') != plan['intent']['expected_direction']):
+        if not isinstance(admission, dict) or admission.get('plan_id') != plan['plan_id']:
             raise InputsBlocked('P2 requires admission bound to this plan and its frozen direction')
         admitted = admission.get('admitted_horizons')
         if (not isinstance(admitted, list) or not admitted or len(admitted) != len(set(admitted))
                 or any(type(h) is not int or h not in plan['horizons'] for h in admitted)
                 or (horizon is not None and horizon not in admitted)):
             raise InputsBlocked('P2 horizon has not been admitted by P1')
+        direction = plan['intent']['expected_direction']
+        if direction == DISCOVERY_DIRECTION:
+            signs = admission.get('directions_by_horizon')
+            if (not isinstance(signs, dict) or set(signs) != {str(h) for h in admitted}
+                    or any(sign not in DIRECTIONS for sign in signs.values())):
+                raise InputsBlocked('P2 requires a frozen discovery sign for each admitted horizon')
+        elif admission.get('direction') != direction:
+            raise InputsBlocked('P2 requires the fixed direction in the frozen plan')
     return period_for(plan, phase, horizon)
 
 
@@ -258,8 +265,8 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     profile = _profile(profile)
     if set(intent) != {'feature', 'scope', 'target_family', 'expected_direction'}:
         raise InputsBlocked('Expected one recipe, Scope, return family and explicit direction')
-    if intent['target_family'] != 'price_return' or intent['expected_direction'] not in ('POSITIVE', 'NEGATIVE'):
-        raise InputsBlocked('Only Price Return and a frozen ex-ante direction are supported')
+    if intent['target_family'] != 'price_return' or intent['expected_direction'] not in (*DIRECTIONS, DISCOVERY_DIRECTION):
+        raise InputsBlocked('Only Price Return and a supported frozen direction policy are allowed')
     from research import external_features as external
     external_source = None
     from research import feature_applications

@@ -13,7 +13,8 @@ from data.fx_pipeline import list_instruments
 from data.reusable_features import legacy_bindings_for_recipe, load_reusable_recipe
 from data.scopes import PAIR_IDS
 from data.transformations.identity import reference
-from research.contracts import ResearchBlocked, canonical, digest, ref
+from research.contracts import DISCOVERY_DIRECTION, ResearchBlocked, canonical, digest, ref
+from research.direction import continuation_id
 from research.schedule import load_schedule
 from research.store import install_bytes, lock, read_json
 from runtime.experiment_identity import freeze
@@ -84,8 +85,20 @@ def verify(root, path):
     if schedule is None or manifest['schedule'] != ref(schedule):
         raise ValueError('The intake manifest does not use the installed research schedule')
     entries = manifest['entries']
-    if manifest['program'] != 'GAMBIT_TS_MOMENTUM_20261111' or len(entries) != len({r['request_id'] for r in entries}):
+    policies = {'GAMBIT_TS_MOMENTUM_20261111': 'POSITIVE',
+                'GAMBIT_TS_MOMENTUM_DISCOVERY_V1': DISCOVERY_DIRECTION}
+    direction = policies.get(manifest['program'])
+    if (direction is None or len(entries) != len({r['request_id'] for r in entries})
+            or (direction == DISCOVERY_DIRECTION
+                and any(row['expected_direction'] != direction for row in entries))):
         raise ValueError('The intake manifest identity or request roster differs')
+    followups = manifest.get('p2_followups', {})
+    if followups:
+        if (direction != DISCOVERY_DIRECTION or set(followups) - {row['request_id'] for row in entries}
+                or any(rid != continuation_id(binding['parent_request_id'], followup=True)
+                       or set(binding) != {'parent_request_id', 'skipped'}
+                       or not binding['skipped'] for rid, binding in followups.items())):
+            raise ValueError('The P2-only follow-up bindings differ from the discovery roster')
     return manifest
 
 
@@ -114,7 +127,12 @@ def submit_manifest(root, manifest_path, checkpoint_path, *, count):
         for index in range(start, end):
             request = entries[index]
             try:
-                _, created = jobs.submit(request)
+                followup = manifest.get('p2_followups', {}).get(request['request_id'])
+                if followup is None:
+                    _, created = jobs.submit(request)
+                else:
+                    _, created = jobs.submit(request, momentum_parent=followup['parent_request_id'],
+                                             p2_followup=followup['skipped'])
             except ResearchBlocked as error:
                 state['blocked'].append({'request_id': request['request_id'], 'blockers': error.blockers})
             else:

@@ -146,7 +146,11 @@ class ResearchStore:
                         if digest(evaluation) not in trial_refs or trial_refs[digest(evaluation)]['body']['stage']!='P2':raise ResearchError('Validation evaluation mismatch')
                         if trial_refs[digest(evaluation)]['scientific_key']['discovery_trial']!=origin:raise ResearchError('Validation refers to another discovery result')
                     elif body['decision']=='VALIDATED':raise ResearchError('Validation success requires an evaluation trial')
-                result.append({'signal_id':'SIGNAL_'+rel['body']['recipe']['id'].removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
+                from research.direction import verify_direction_binding
+                sign = verify_direction_binding(self, rel, trials[0], admissions[0],
+                    next((t for t in trials if t['body']['stage'] == 'P2'), None),
+                    validations[0] if validations else None)
+                result.append({'validation_direction':sign,'signal_id':'SIGNAL_'+rel['body']['recipe']['id'].removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
                     'projection':ref(link),'relationship':ref(rel),'attempt_ids':[],**{k:link['body'][k] for k in ('trial_results','admission_results','validation_results')},
                     'scope':rel['body']['scope'],'mode':rel['body']['mode'],'horizon':rel['body']['horizon'],
                     'target_family':rel['body']['target_family'],'expected_direction':rel['body']['expected_direction'],

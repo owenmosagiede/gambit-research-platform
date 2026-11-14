@@ -48,7 +48,7 @@
     renderCatalog();
     const feature = selection('feature', 'featureReference'), scope = selection('scope', 'scopeReference');
     const target = valid($('target')) && $('target').value === 'price' && $('target').dataset.returnBasis === 'price';
-    const direction = valid($('expected-direction')) && ['POSITIVE', 'NEGATIVE'].includes($('expected-direction').value)
+    const direction = valid($('expected-direction')) && ['DISCOVERY_SIGN_V1', 'POSITIVE', 'NEGATIVE'].includes($('expected-direction').value)
       ? $('expected-direction').value : null;
     const resolution = matchingResolution(feature, scope), resolvedScope = scopeResolution(scope);
     $('contract-example').textContent = JSON.stringify({
@@ -56,7 +56,7 @@
       feature: feature || {id: '<registered Feature ID>', version: '<exact version>'},
       target_family: target ? 'price_return' : '<available Target family>',
       scope: scope || {id: '<registered Scope ID>', version: '<exact version>'},
-      expected_direction: direction || '<POSITIVE or NEGATIVE>'
+      expected_direction: direction || '<DISCOVERY_SIGN_V1, POSITIVE or NEGATIVE>'
     }, null, 2);
     const complete = feature && scope && resolvedScope && target && direction && fields.every(valid);
     $('contract-selection-status').textContent = resolution?.submission_compatible === false

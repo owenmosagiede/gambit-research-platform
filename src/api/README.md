@@ -75,9 +75,11 @@ Submit JSON contains exactly:
 ```
 
 The example's identity descriptions are placeholders, not executable IDs. Direction
-may be `POSITIVE` or `NEGATIVE`. There is no Research Spec or horizon dropdown field.
-An individual instrument selects TS; a universe selects CS only. All five horizons
-are included. P2 runs only for admitted candidates passing the direction precheck.
+may be `DISCOVERY_SIGN_V1`, `POSITIVE` or `NEGATIVE`. The discovery policy
+accepts either direction in P1 and freezes the admitted P1 sign separately for each
+scheduled horizon before P2. The fixed directions retain the original precheck.
+An individual instrument selects TS and a universe selects CS. The backend
+Research Spec sets the schedules.
 
 The horizons remain 1/7/21/63/252 scheduled Monday–Friday steps, with no holiday
 exclusions and both observation and Target endpoint inside the phase. Discovery uses

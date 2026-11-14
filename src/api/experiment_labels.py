@@ -40,7 +40,8 @@ def with_experiment_labels(root, jobs, value):
             feature = store.resolve(recipe_ref)
             scope = store.resolve(scope_ref)
             feature_name, scope_name = recipe_label(feature), scope_label(scope)
-            direction = {'POSITIVE': 'Positive hypothesis', 'NEGATIVE': 'Negative hypothesis'}[intent['expected_direction']]
+            direction = {'POSITIVE': 'Positive hypothesis', 'NEGATIVE': 'Negative hypothesis',
+                         'DISCOVERY_SIGN_V1': 'Direction selected in P1 per horizon'}[intent['expected_direction']]
             mode_name = 'Cross-sectional' if mode == 'CS' else 'Time-series'
             members_name = ('currencies' if frozen_scope.get('reference_currency') else 'instruments') if mode == 'CS' else 'instrument'
             target_label = 'Forward price return · five forecast horizons'

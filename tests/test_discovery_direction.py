@@ -1,0 +1,156 @@
+"""Isolated regression tests for direction selection and momentum continuation."""
+
+from hashlib import sha256
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import TestCase
+from unittest.mock import patch
+
+from api.signal_summaries import _verified_branch
+from research.contracts import DISCOVERY_DIRECTION, ResearchError, canonical, ref
+from research.direction import continuation_id
+from research.schedule import period_for
+from research.store import install_bytes
+from runtime.research_jobs import ResearchJobs
+from test_research_runtime import Adapter, KernelSpy, intent, profile
+
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from ts_momentum_direction_cutover import apply_queued, plan_cutover, write_next_manifest
+from ts_momentum_intake import launch
+
+
+class Kernel(KernelSpy):
+    def run_p1(self, rows, **kwargs):
+        outcome = super().run_p1(rows, **kwargs)
+        outcome['metrics']['primary_effect'] = {1: -1.0, 7: 1.0, 21: -2.0, 63: None, 252: 0.0}[kwargs['horizon']]
+        if kwargs['horizon'] in (63, 252):
+            outcome['admission'] = 'unresolved' if kwargs['horizon'] == 63 else 'rejected'
+        return outcome
+
+    def run_p2(self, rows, **kwargs):
+        outcome = super().run_p2(rows, **kwargs)
+        outcome['expected_direction'] = kwargs['expected_direction']
+        outcome['discovery_effect'] = kwargs['discovery_effect']
+        return outcome
+
+
+class DirectionTests(TestCase):
+    def setUp(self):
+        fixture = TemporaryDirectory()
+        self.addCleanup(fixture.cleanup)
+        self.root = Path(fixture.name)
+        install_bytes(self.root / 'config/research_execution.json', canonical(profile()) + b'\n')
+        self.adapter = Adapter()
+        self.kernel = Kernel()
+        self.jobs = ResearchJobs(self.root, adapter=self.adapter, kernels=self.kernel)
+        self.addCleanup(self.jobs.close)
+
+    def test_admitted_sign_is_distinct_per_horizon(self):
+        row = intent(mode='TS', direction=DISCOVERY_DIRECTION)
+        self.jobs.submit(row)
+        self.jobs.run_pending_once()
+        job = self.jobs.get(row['request_id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual([h.get('discovery_direction') for h in job['horizons']],
+                         ['NEGATIVE', 'POSITIVE', 'NEGATIVE', None, None])
+        self.assertEqual([h['p2_status'] for h in job['horizons']],
+                         ['VALIDATED', 'VALIDATED', 'VALIDATED', 'not_admitted', 'not_admitted'])
+        for link_ref in job['results']:
+            link = self.jobs.store.resolve('link', link_ref)
+            relation, trials, _, decisions, sign = _verified_branch(self.jobs.store, link, include_direction=True)
+            if decisions:
+                self.assertEqual(decisions[0]['body']['direction_binding']['direction'], sign)
+                self.assertEqual(trials[1]['body']['expected_direction'], sign)
+                self.assertEqual(trials[1]['scientific_key']['period'],
+                                 period_for(self.jobs._submission(row['request_id'])['frozen_plan'],
+                                            'P2', relation['body']['horizon']))
+        self.assertEqual([h for stage, h in self.adapter.loads if stage == 'P2'], [1, 7, 21])
+
+    def setup_skipped(self):
+        row = intent(mode='TS')
+        self.jobs.submit(row)
+        self.jobs.run_pending_once()
+        job = self.jobs.get(row['request_id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        skipped = {}
+        for link_ref in job['results']:
+            link = self.jobs.store.resolve('link', link_ref)['body']
+            horizon = self.jobs.store.resolve('relationship', link['relationship'])['body']['horizon']
+            if horizon in (1, 21):
+                skipped[str(horizon)] = link_ref
+        child = dict(row, request_id=continuation_id(row['request_id'], followup=True),
+                     expected_direction=DISCOVERY_DIRECTION)
+        return row, job, child, skipped
+
+    def test_followup_reads_only_missing_p2_and_keeps_parent(self):
+        row, job, child, skipped = self.setup_skipped()
+        envelope = self.jobs._submission(row['request_id'])
+        self.adapter.loads.clear()
+        self.adapter.preparations.clear()
+        self.kernel.calls.clear()
+        self.jobs.submit(child, momentum_parent=row['request_id'], p2_followup=skipped)
+        self.jobs.run_pending_once()
+        result = self.jobs.get(child['request_id'])
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(self.adapter.loads, [('P2', 1), ('P2', 21)])
+        self.assertEqual(self.adapter.preparations, ['P2'])
+        self.assertEqual(self.kernel.calls, self.adapter.loads)
+        self.assertEqual(self.jobs.get(row['request_id']), job)
+        self.assertEqual(self.jobs._submission(row['request_id']), envelope)
+        for link_ref in result['results']:
+            link = self.jobs.store.resolve('link', link_ref)
+            relation, trials, _, validations, sign = _verified_branch(self.jobs.store, link, include_direction=True)
+            earlier = self.jobs.store.resolve('link', skipped[str(relation['body']['horizon'])])['body']
+            self.assertEqual(ref(trials[0]), earlier['trial_results'][0])
+            self.assertEqual(validations[0]['body']['direction_binding']['prior_decision'], earlier['validation_results'][0])
+            self.assertEqual(sign, 'NEGATIVE')
+        self.assertFalse(self.jobs.submit(child, momentum_parent=row['request_id'], p2_followup=skipped)[1])
+
+    def test_p2_access_blocks_followup(self):
+        row, job, child, skipped = self.setup_skipped()
+        self.jobs.store.put('exposure', {'request_id': row['request_id'], 'attempt_id': job['attempt_id'],
+                                         'phase': 'P2', 'horizon': 1}, {'event': 'sample_access_started'})
+        self.jobs.submit(child, momentum_parent=row['request_id'], p2_followup=skipped)
+        self.adapter.loads.clear()
+        self.jobs.run_pending_once()
+        result = self.jobs.get(child['request_id'])
+        self.assertEqual(result['status'], 'blocked', result)
+        self.assertEqual(self.adapter.loads, [])
+
+    def test_cutover_replaces_only_unstarted_and_selects_skipped_p2(self):
+        old, _, _, _ = self.setup_skipped()
+        queued = dict(intent(mode='TS'), feature={'id': 'FEATURE_RECIPE_' + 'b'*64, 'version': '1.0.0'})
+        self.jobs.submit(queued)
+        staged = dict(queued, request_id=intent()['request_id'], scope={'id': 'SCOPE_BBB_TS', 'version': '1.0.0'})
+        schedule = {'id': 'TEST', 'version': '1.0.0'}
+        manifest = self.root / 'manifest.json'
+        checkpoint = self.root / 'checkpoint.json'
+        install_bytes(manifest, canonical({'program': 'GAMBIT_TS_MOMENTUM_20261111',
+                                           'schedule': ref(schedule), 'entries': [old, queued, staged]}) + b'\n')
+        install_bytes(checkpoint, canonical({'manifest_sha256': sha256(manifest.read_bytes()).hexdigest(),
+                                             'next_index': 2, 'created': 2, 'existing': 0, 'blocked': []}) + b'\n')
+        with patch('ts_momentum_direction_cutover.load_schedule', return_value=schedule):
+            review = plan_cutover(self.root, manifest, checkpoint)
+        self.assertEqual(review['original_states'], {'succeeded': 1, 'queued': 1})
+        self.assertEqual(set(review['followups'][0]['skipped']), {'1', '21'})
+        self.assertEqual(len(review['staged']), 1)
+        replacement = review['queued'][0]['child']['request_id']
+        original = self.jobs._submission(queued['request_id'])
+        with patch('ts_momentum_direction_cutover.ResearchJobs', return_value=self.jobs):
+            apply_queued(self.root, review)
+            apply_queued(self.root, review)
+        self.assertEqual(self.jobs.get(queued['request_id'])['superseded_by'], replacement)
+        self.assertEqual(self.jobs._submission(queued['request_id']), original)
+        self.assertEqual(self.jobs.get(replacement)['status'], 'queued')
+        next_manifest = self.root / 'next.json'
+        next_checkpoint = self.root / 'next-checkpoint.json'
+        write_next_manifest(manifest, next_manifest, review)
+        with (patch('ts_momentum_intake.load_schedule', return_value=schedule),
+              patch('ts_momentum_intake.ResearchJobs', return_value=self.jobs)):
+            launch(self.root, next_manifest, next_checkpoint, count=1)
+        child = review['followups'][0]['child']['request_id']
+        self.assertEqual(self.jobs.get(child)['status'], 'queued')
+        self.assertEqual(set(self.jobs._submission(child)['p2_followup']['skipped']), {'1', '21'})
+        with self.assertRaises(ResearchError):
+            self.jobs.resume(queued['request_id'])

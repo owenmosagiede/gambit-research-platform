@@ -164,7 +164,7 @@ class Extractor:
     def branch(self, path):
         store = ResearchStore(self.root); link = store.get('link', Path(path).stem)
         if link['scientific_key'] != link['body']: raise ValueError('Link identity differs')
-        relation, trials, admissions, validations = _verified_branch(store, link)
+        relation, trials, admissions, validations, sign = _verified_branch(store, link, include_direction=True)
         body = relation['body']; recipe_id = body['recipe']['id']
         row = {'signal_id': 'SIGNAL_' + recipe_id.removeprefix('FEATURE_RECIPE_').removeprefix('FEATURE_'),
             'projection': ref(link), 'relationship': ref(relation), 'attempt_ids': [], 'recipe': body['recipe'],
@@ -179,11 +179,12 @@ class Extractor:
         except (ValueError, KeyError, OSError):
             row['scope_label'] = row['scope'].get('id', row['scope'].get('reference', {}).get('id', 'Saved scope'))
         stages = {t['body']['stage']: t for t in trials}; p1 = stages['P1']; p2 = stages.get('P2')
+        row['validation_direction'] = sign
         row['research_stage_pass'] = False
         if row['p2_status'] == 'VALIDATED':
             try:
                 effect = Decimal(str(p1['body']['metrics']['primary_effect']))
-                orientation = {'POSITIVE': 1, 'NEGATIVE': -1}[body['expected_direction'].upper()]
+                orientation = {'POSITIVE': 1, 'NEGATIVE': -1}[sign]
                 valid = (row['p1_status'] == 'admitted' and effect.is_finite() and effect * orientation > 0
                     and p1['body']['execution_status'] == 'completed' and p2 is not None
                     and p2['body']['execution_status'] == 'completed' and p2['body']['decision'] == 'VALIDATED'
