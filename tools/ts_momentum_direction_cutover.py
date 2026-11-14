@@ -159,7 +159,6 @@ def write_next_manifest(manifest_path, path, plan):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, required=True)
     commands = parser.add_subparsers(dest='command', required=True)
     for command in ('preview', 'review'):
         view = commands.add_parser(command)

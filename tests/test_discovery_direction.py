@@ -2,6 +2,7 @@
 
 from hashlib import sha256
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
@@ -175,3 +176,13 @@ class DirectionTests(TestCase):
         self.assertEqual(preview['original_states'], {'p1': 1})
         self.assertEqual(preview['queued'], [])
         self.assertEqual(self.jobs.get(row['request_id'])['status'], 'p1')
+
+    def test_cutover_cli_reaches_preview_with_one_root_option(self):
+        script = Path(__file__).resolve().parents[1] / 'tools/ts_momentum_direction_cutover.py'
+        result = subprocess.run([sys.executable, '-B', str(script), 'preview', '--root', str(self.root),
+                                 '--manifest', str(self.root/'missing-roster.json'),
+                                 '--checkpoint', str(self.root/'missing-checkpoint.json')],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('missing-roster.json', result.stderr)
+        self.assertIn('FileNotFoundError', result.stderr)
