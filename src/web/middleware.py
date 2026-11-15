@@ -3,7 +3,15 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from api.application import ASSETS
 
-PUBLIC_ASSETS = {'site.css', 'gambit-app-mark.svg'}
+PUBLIC_ASSETS = {
+    'site.css': 'text/css; charset=utf-8',
+    'landing.css': 'text/css; charset=utf-8',
+    'gambit-app-mark.svg': 'image/svg+xml',
+    'gambit-wordmark.svg': 'image/svg+xml',
+    'gambit-signal-field.svg': 'image/svg+xml',
+    'gambit-inter.woff2': 'font/woff2',
+    'gambit-plex-mono.woff2': 'font/woff2',
+}
 PUBLIC = {'/', '/about/', '/login/', '/healthz'} | {'/public/' + name for name in PUBLIC_ASSETS}
 PRIVATE = set(ASSETS) - {'/', '/index.html'} | {'/app/', '/session.js', '/logout/'}
 
