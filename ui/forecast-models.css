@@ -39,16 +39,11 @@
 .forecast-back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 16px; }
 .forecast-meta { font: 400 12px/1.6 var(--g-mono); color: var(--g-muted); overflow-wrap: anywhere; }
 .forecast-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: end;
-  gap: 12px 24px;
+  max-width: 32rem;
   margin-block: 24px;
 }
 .forecast-controls select { width: 100%; min-height: 44px; height: auto; }
-.forecast-controls fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.forecast-controls legend { font-weight: 600; font-size: 12px; margin-bottom: 8px; }
-.forecast-controls button, .forecast-page-nav button {
+.forecast-page-nav button {
   min-height: 44px;
   border: 1px solid var(--g-input-border);
   border-radius: var(--g-radius);
@@ -57,7 +52,6 @@
   padding: 8px 14px;
   cursor: pointer;
 }
-.forecast-controls button { margin-right: 4px; }
 .forecast-page-nav button:disabled { opacity: .6; cursor: default; }
 #forecast-detail-status:empty { display: none; }
 .forecast-period-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; margin: 16px 0; }
@@ -74,6 +68,7 @@
 .forecast-panels .forecast-panel { margin-bottom: 0; }
 .forecast-panel h2 { font-size: 17px; line-height: 1.35; }
 .forecast-panel > .field-note { margin: 6px 0 12px; }
+.forecast-return { font: 500 clamp(24px, 4vw, 38px)/1.15 var(--g-mono); margin: 12px 0; }
 .forecast-chart { min-width: 0; }
 .forecast-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .forecast-chart text { font: 400 11px var(--g-mono); fill: var(--g-muted); }
@@ -97,7 +92,7 @@
   .forecast-panels, .forecast-panels + .forecast-panels { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 520px) {
-  .forecast-tasks, .forecast-controls { grid-template-columns: minmax(0, 1fr); }
+  .forecast-tasks { grid-template-columns: minmax(0, 1fr); }
   .forecast-task { padding: 16px; }
   .forecast-panel, .forecast-stat { padding: 12px; }
 }
