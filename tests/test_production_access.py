@@ -78,6 +78,43 @@ class ProductionAccessTests(unittest.TestCase):
         for route in routes:
             with self.subTest(viewer_route=route): self.assertEqual(self.client.get(route).status_code,403)
         self.assertFalse((self.root/'storage').exists())
+    def test_forecast_routes_use_owner_boundary_and_verified_readout_only(self):
+        from hashlib import sha256
+        from web.forecast_models import FORECAST_ASSETS, SCHEMA
+
+        identity = 'P3MODEL_' + 'c'*64
+        endpoints = (*FORECAST_ASSETS, '/api/forecast-models', '/api/forecast-models/'+identity)
+        for route in endpoints:
+            reply = self.client.get(route)
+            self.assertEqual(reply.status_code, 401 if route.startswith('/api/') else 302)
+        self.client.force_login(self.viewer)
+        for route in endpoints:
+            self.assertEqual(self.client.get(route).status_code, 403)
+        token = self.login()
+        readout = self.root.resolve()/'frozen-view'
+        with override_settings(FORECAST_MODELS_DIR=readout), patch('web.views.services',
+                side_effect=AssertionError('Forecast page constructed research services')):
+            page = self.client.get('/forecast-models/')
+            self.assertEqual(page.status_code,200)
+            self.assertIn(b'Forecast Models',page.content)
+            self.assertIn(b'/session.js',page.content)
+            self.assertEqual(self.client.get('/api/forecast-models').json()['tasks'], [])
+            readout.mkdir()
+            detail = dict(schema=SCHEMA,model_id=identity,task_id='task')
+            raw = json.dumps(detail).encode()
+            record = readout/(identity+'.json')
+            record.write_bytes(raw)
+            (readout/'index.json').write_text(json.dumps(dict(schema=SCHEMA,archived_through='2026-11-10',
+                tasks=[{'id':'task'}],model_hashes={identity:sha256(raw).hexdigest()})))
+            self.assertEqual(self.client.get('/api/forecast-models').json()['tasks'], [{'id':'task'}])
+            self.assertEqual(self.client.get('/api/forecast-models/'+identity).json(), detail)
+            self.assertEqual(self.client.get('/api/forecast-models?model=other').status_code, 400)
+            self.assertEqual(self.client.get('/api/forecast-models/not-a-model').status_code, 404)
+            self.assertEqual(self.post({},token,path='/api/forecast-models').status_code, 405)
+            record.write_text('{}')
+            self.assertEqual(self.client.get('/api/forecast-models/'+identity).status_code,503)
+        self.assertFalse((self.root/'storage').exists())
+
     def test_batch_retirement_keeps_owner_csrf_origin_without_starting_services(self):
         token=self.login()
         path='/api/batches/10000000-0000-4000-8000-000000000002'

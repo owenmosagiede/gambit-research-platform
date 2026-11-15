@@ -15,6 +15,7 @@ from data.alfred_onboarding import stable_read
 from data.alfred_pit import inside
 from services.research_worker import WebResearchJobs
 from .middleware import PUBLIC_ASSETS, denied
+from .forecast_models import FORECAST_ASSETS, model_readout
 from .security import consume
 
 @lru_cache(maxsize=4)
@@ -65,12 +66,12 @@ def public_asset(request, name):
 def private_asset(request):
     if request.path == '/session.js':
         return HttpResponse((Path(__file__).parent / 'session.js').read_bytes(), content_type='text/javascript; charset=utf-8')
-    asset = ('index.html', 'text/html; charset=utf-8') if request.path == '/app/' else ASSETS.get(request.path)
+    asset = ('index.html', 'text/html; charset=utf-8') if request.path == '/app/' else (FORECAST_ASSETS.get(request.path) or ASSETS.get(request.path))
     if not asset:
         return HttpResponse(status=404)
     name, kind = asset
     content = stable_read(inside(settings.RESEARCH_ROOT, 'ui/' + name))
-    if name == 'index.html':
+    if name in ('index.html', 'forecast-models.html'):
         if settings.READ_MODEL_DIR:
             content = content.replace(b'name="gambit-read-model" content="disabled"', b'name="gambit-read-model" content="enabled"')
         token = escape(get_token(request))
@@ -84,6 +85,8 @@ def api(request, endpoint):
         response = denied(request, 429, 'RATE_LIMITED', 'Too many requests. Retry shortly using the same submission ID.')
         response['Retry-After'] = '60'
         return response
+    if endpoint == 'forecast-models' or endpoint.startswith('forecast-models/'):
+        return model_readout(request, endpoint)
     if is_retired_batch_path(request.path):
         return denied(request, 410, 'BATCH_RETIRED', BATCH_RETIRED_MESSAGE)
     if request.method in ('GET', 'HEAD') and request.path.startswith('/api/read-model/v1/'):

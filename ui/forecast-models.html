@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forecast Models | Gambit Systems</title>
+  <link rel="icon" type="image/svg+xml" href="/brand/gambit-app-mark.svg">
+  <link rel="stylesheet" href="/brand/gambit.css">
+  <link rel="stylesheet" href="/library.css">
+  <link rel="stylesheet" href="/gambit-theme.css">
+  <link rel="stylesheet" href="/forecast-models.css">
+  <script src="/forecast-models.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#forecast-models">Skip to Forecast Models</a>
+  <div class="app-layout">
+    <aside class="library" aria-label="Workspace navigation">
+      <div class="brand"><img src="/brand/gambit-wordmark-reverse.svg" width="160" height="35" alt="Gambit Systems"><p>Research platform</p></div>
+      <nav class="page-navigation" aria-label="Workspace">
+        <a href="/app/#experiment">Trial queue</a>
+        <a href="/app/#signals">Signal Library</a>
+        <a href="/app/#ledger">Trial Ledger</a>
+        <a href="/forecast-models/" aria-current="page">Forecast Models</a>
+      </nav>
+    </aside>
+    <main id="forecast-models" tabindex="-1">
+      <div id="forecast-library">
+        <header class="page-header">
+          <p class="section-label">Research</p>
+          <h1>Forecast Models</h1>
+          <p class="page-description">Choose a prediction task to inspect its saved models, forecasts, and evaluation.</p>
+        </header>
+        <p id="forecast-catalog-notice" class="forecast-notice" hidden></p>
+        <p id="forecast-catalog-status" class="field-note" role="status">Loading saved prediction tasks…</p>
+        <button id="forecast-catalog-retry" class="retry-button" type="button" hidden>Retry</button>
+        <div id="forecast-tasks" class="forecast-tasks"></div>
+      </div>
+      <div id="forecast-detail" hidden>
+        <a id="forecast-back" class="forecast-back" href="/forecast-models/">← Forecast Models</a>
+        <header class="page-header">
+          <p class="section-label">Prediction task</p>
+          <h1 id="forecast-title" tabindex="-1"></h1>
+          <p id="forecast-context" class="forecast-meta"></p>
+        </header>
+        <div class="forecast-controls">
+          <div>
+            <label for="forecast-method">Estimation method</label>
+            <select id="forecast-method"></select>
+          </div>
+          <fieldset>
+            <legend>Research period</legend>
+            <button type="button" data-period="training" class="research-button" aria-pressed="false">Training</button>
+            <button type="button" data-period="evaluation" class="research-button" aria-pressed="true">Evaluation</button>
+          </fieldset>
+        </div>
+        <p id="forecast-detail-status" role="status" class="field-note" aria-live="polite"></p>
+        <button id="forecast-detail-retry" class="retry-button" type="button" hidden>Retry</button>
+        <div id="forecast-snapshot" aria-busy="false"></div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -2,6 +2,7 @@ import logging
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from api.application import ASSETS
+from .forecast_models import FORECAST_ASSETS
 
 PUBLIC_ASSETS = {
     'site.css': 'text/css; charset=utf-8',
@@ -13,7 +14,7 @@ PUBLIC_ASSETS = {
     'gambit-plex-mono.woff2': 'font/woff2',
 }
 PUBLIC = {'/', '/about/', '/login/', '/healthz'} | {'/public/' + name for name in PUBLIC_ASSETS}
-PRIVATE = set(ASSETS) - {'/', '/index.html'} | {'/app/', '/session.js', '/logout/'}
+PRIVATE = set(ASSETS) - {'/', '/index.html'} | {'/app/', '/session.js', '/logout/'} | set(FORECAST_ASSETS)
 
 def denied(request, status, code, message):
     if request.path.startswith('/api/'):
