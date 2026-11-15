@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Publish read-only diagnostics from a verified frozen P3 fit and forecast replay.
-
-This adapter never runs the forecast engine or reads portfolio or account results.
-"""
+"""Publish read-only diagnostics from verified frozen P3 and P4 archives."""
 
 import argparse
 from collections import Counter, defaultdict
@@ -14,7 +11,7 @@ import gzip
 from hashlib import sha256
 from itertools import groupby
 import json
-from math import ceil, isfinite, sqrt
+from math import ceil, isclose, isfinite, sqrt
 from pathlib import Path
 import re
 from statistics import StatisticsError, correlation, mean
@@ -29,6 +26,7 @@ CALENDAR = 'Scheduled weekdays'
 MODEL_ID = re.compile(r'P3MODEL_[0-9a-f]{64}')
 TASK_ID = re.compile(r'P3GROUP_[0-9a-f]{64}')
 MAX_FORECAST_ROWS = 100_000
+PORTFOLIO_POLICY = 'P4-NET-BOOK-WITH-FIXED-DEAD-ZONE-v1'
 
 
 def checksum(data):
@@ -296,7 +294,42 @@ def dump(path, value):
     return checksum(data)
 
 
-def build(fit_path, archive, manifest_hash, output, research_root=None):
+def portfolio_performance(path, digest, manifest, models, forecasts, market_dates):
+    if path is None and digest is None:
+        return {}
+    if path is None or not re.fullmatch(r'[a-f0-9]{64}', digest or ''):
+        raise ValueError('A portfolio report and its verified SHA-256 are required together')
+    report = json.loads(verified(path, digest, 512_000))
+    if (report['fit'] != manifest['fit'] or report['period'] != manifest['period']
+            or report['fx_snapshot'] != manifest['price_snapshot']['id']
+            or report['close_panel_sha256'] != manifest['input_sha256']
+            or report['forecast_sha256'] != manifest['files']['p4-forecasts.csv.gz']
+            or report['market_dates'] != len(market_dates) or report['policy']['id'] != PORTFOLIO_POLICY
+            or report['one_way_cost'] != 0.0001 or report['gross_cap'] != 2.0
+            or report['broker_execution_verified'] is not False):
+        raise ValueError('Portfolio report differs from the verified replay or portfolio benchmark')
+    results = {}
+    for row in report['models']:
+        model_id = row['model_id']
+        model = models.get(model_id)
+        if (model_id not in forecasts or model_id in results or row['method'] != model['method']
+                or row['horizon'] != model['horizon'] or row['reference'] != model['scope']['reference_currency']):
+            raise ValueError('Portfolio report contains an incompatible or duplicate model')
+        baseline = row['net']
+        net, gross, turnover = (number(baseline[key]) for key in ('net_pnl','gross_pnl','total_turnover'))
+        if (turnover < 0 or baseline['blocked_orders'] != 0
+                or not isclose(net, gross - turnover * report['one_way_cost'], rel_tol=0, abs_tol=1e-12)):
+            raise ValueError('Saved portfolio return does not reconcile with executed notional and costs')
+        results[model_id] = {
+            'net_return_fraction': net, 'period': report['period'], 'one_way_cost': report['one_way_cost'],
+            'gross_cap': report['gross_cap'], 'report_policy': PORTFOLIO_POLICY, 'variant': 'net', 'report_sha256': digest,
+        }
+    if results.keys() != forecasts.keys():
+        raise ValueError('Portfolio report and archived forecasts cover different models')
+    return results
+
+
+def build(fit_path, archive, manifest_hash, output, research_root=None, portfolio_report=None, portfolio_report_hash=None):
     manifest = json.loads(verified(archive/'p4-run-manifest.json',manifest_hash,64_000))
     fit = json.loads(verified(fit_path,manifest['fit_sha256'],10_000_000))
     panel = json.loads(verified(archive/'p4-inputs.json',manifest['input_sha256'],12_000_000))
@@ -315,6 +348,7 @@ def build(fit_path, archive, manifest_hash, output, research_root=None):
     index = {origin: pos for pos,origin in enumerate(market_dates)}
     models,tasks = read_models(fit)
     forecasts = read_forecasts(archive_forecasts,models,set(origins))
+    performance = portfolio_performance(portfolio_report, portfolio_report_hash, manifest, models, forecasts, origins)
     constituents = {row['relationship']['id']:row for row in fit['constituents']}
     if len(constituents) != len(fit['constituents']):
         raise ValueError('Duplicate saved relationships')
@@ -347,7 +381,8 @@ def build(fit_path, archive, manifest_hash, output, research_root=None):
                 'training':{'bounds':fit['fit_period'],'fit_evidence':{k:v for k,v in fit_state.items() if k not in ('weights','intercept')},
                             'availability':'Paired training predictions and outcomes were not retained in this fit archive.'},
                 'evaluation':{'bounds':[first,last] if rows else None,'rows':rows,'diagnostics':diagnostics(rows,task['mode']),
-                              'availability':None if rows else 'No saved evaluation forecasts for this model.'},
+                              'availability':None if rows else 'No saved evaluation forecasts for this model.',
+                              'portfolio':performance.get(model_id)},
                 'inputs':model_inputs(model,constituents,describe),
                 'lineage':{'fit_sha256':manifest['fit_sha256'],'source_snapshot':manifest['price_snapshot'],
                            'forecast_stream_sha256':forecast_hash if rows else None,'evaluation_archive_sha256':manifest_hash if rows else None,
@@ -370,8 +405,11 @@ def main():
     parser.add_argument('--manifest-sha256',required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--research-root',type=Path)
+    parser.add_argument('--portfolio-report',type=Path)
+    parser.add_argument('--portfolio-report-sha256')
     args=parser.parse_args()
-    print(json.dumps(build(args.fit,args.archive,args.manifest_sha256,args.output,args.research_root)))
+    print(json.dumps(build(args.fit,args.archive,args.manifest_sha256,args.output,args.research_root,
+                           args.portfolio_report,args.portfolio_report_sha256)))
 
 
 if __name__ == '__main__':

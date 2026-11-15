@@ -16,7 +16,7 @@ FORECAST_ASSETS = {
 SCHEMA = 'gambit_forecast_models_readout_v1'
 MODEL_ID = re.compile(r'P3MODEL_[a-f0-9]{64}')
 DIGEST = re.compile(r'[a-f0-9]{64}')
-DEFAULT_READOUT = Path('/var/lib/gambit-forecast-models/v1')
+DEFAULT_READOUT = Path('/var/lib/gambit-forecast-models/v2')
 MAX_INDEX = 256_000
 MAX_DETAIL = 1_500_000
 

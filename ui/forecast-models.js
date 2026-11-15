@@ -8,7 +8,6 @@
   const number = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : "Unavailable";
   const signed = (value, digits = 2) => Number.isFinite(value) ? (value > 0 ? "+" : "") + value.toFixed(digits) : "—";
   const integer = new Intl.NumberFormat("en-US");
-  const periods = [...document.querySelectorAll("[data-period]")];
   let catalog = null, activeTask = null, selected = null, controller, observer, fromLibrary = null;
   let loadSequence = 0;
 
@@ -21,11 +20,11 @@
   function viewLabel(view) {
     return ({CS:"Cross sectional",TS:"Time series",COMBINED:"Combined"})[view] || view;
   }
-  function linkFor(task, candidate, period) {
-    return pagePath + "#" + new URLSearchParams({task, ...(candidate && {model:candidate}), ...(period && {period})});
+  function linkFor(task, candidate) {
+    return pagePath + "#" + new URLSearchParams({task, ...(candidate && {model:candidate})});
   }
-  function route(task, candidate, period, replace = false) {
-    const href = task ? linkFor(task,candidate,period) : pagePath;
+  function route(task, candidate, replace = false) {
+    const href = task ? linkFor(task,candidate) : pagePath;
     window.history[replace ? "replaceState" : "pushState"](task && fromLibrary ? {forecastFromLibrary:true} : null,"",href);
     navigate();
   }
@@ -133,7 +132,6 @@
       || task.methods.find(item=>item.status==="fitted") || task.methods[0];
     const chosenId = params.has("model") ? params.get("model") : defaultModel?.id;
     const candidate = task.methods.find(item=>item.id===chosenId);
-    const period = params.has("period") ? params.get("period") : (candidate?.has_evaluation ? "evaluation" : "training");
     const methodControl = $("forecast-method");
     if (activeTask?.id !== task.id) {
       methodControl.replaceChildren(el("option","Select a saved method"));
@@ -149,19 +147,18 @@
     $("forecast-title").textContent = task.title;
     methodControl.value = candidate?.id || "";
     $("forecast-context").textContent = `${task.target_label} · ${viewLabel(task.view)} · ${task.unit} · ${task.calendar}`;
-    for (const button of periods) button.setAttribute("aria-pressed",String(button.dataset.period===period));
     clearSnapshot();
-    if (!candidate || !["training","evaluation"].includes(period)) {
-      $("forecast-detail-status").textContent = "Choose a saved method and supported period for this task.";
+    if (!candidate) {
+      $("forecast-detail-status").textContent = "Choose a saved method for this task.";
       return;
     }
-    if (!params.has("model") || !params.has("period")) {
-      window.history.replaceState(window.history.state,"",linkFor(task.id,candidate.id,period));
+    if (!params.has("model") || params.has("period")) {
+      window.history.replaceState(window.history.state,"",linkFor(task.id,candidate.id));
     }
-    loadModel(task,candidate,period,loadSequence);
+    loadModel(task,candidate,loadSequence);
   }
 
-  async function loadModel(task,candidate,period,sequence) {
+  async function loadModel(task,candidate,sequence) {
     const pane = $("forecast-snapshot");
     pane.setAttribute("aria-busy","true");
     $("forecast-detail-status").textContent = "Loading the selected saved model…";
@@ -175,9 +172,9 @@
       if (snapshot.model_id !== candidate.id || snapshot.task_id !== task.id || snapshot.method !== candidate.method) {
         throw new Error("Mismatched readout");
       }
-      renderSnapshot(pane,snapshot,task,candidate,period);
+      renderSnapshot(pane,snapshot,task,candidate);
       selected = snapshot;
-      $("forecast-detail-status").textContent = `${candidate.label} · ${period === "training" ? "Training" : "Evaluation"} loaded.`;
+      $("forecast-detail-status").textContent = `${candidate.label} · Evaluation loaded.`;
     } catch (_) {
       if (sequence !== loadSequence) return;
       pane.replaceChildren();
@@ -395,44 +392,45 @@
     lineage.append(disclosure("Lineage and fit context",{
       task_id:task.id,model_id:snapshot.model_id,method:candidate.method,policy:snapshot.saved_policy,
       fit_id:snapshot.fit_id,fit_period:snapshot.training.bounds,fit_evidence:snapshot.training.fit_evidence,
-      scope:task.scope,calendar:task.calendar,...snapshot.lineage,
+      portfolio_backtest:snapshot.evaluation.portfolio ?? null,scope:task.scope,calendar:task.calendar,...snapshot.lineage,
     }),el("p","No canonical Model Comparison Record is attached to this archive.","field-note"));
     return lineage;
   }
-  function renderSnapshot(pane,snapshot,task,candidate,period) {
+  function portfolioPanel(result) {
+    const region = panel("Net portfolio return");
+    if (Number.isFinite(result?.net_return_fraction)) {
+      const percent = Intl.NumberFormat("en-US",{style:"percent",minimumFractionDigits:2,
+        maximumFractionDigits:Math.abs(result.net_return_fraction) < 0.0001 ? 3 : 2,
+        signDisplay:"exceptZero"}).format(result.net_return_fraction);
+      region.append(el("p",percent,"forecast-return"),
+        el("p",`P4 backtest · Cost-aware sizing · ${result.one_way_cost * 10000} bp per side · ${result.gross_cap}× gross cap`,"field-note"),
+        el("p","Total return on starting capital using simulated fills. Financing and swaps are excluded.","field-note"));
+    } else {
+      region.append(el("p","No saved P4 portfolio return for this model.","field-note"));
+    }
+    return region;
+  }
+  function renderSnapshot(pane,snapshot,task,candidate) {
     const fragment=document.createDocumentFragment(), charts=new Map();
     const evaluation=snapshot.evaluation, diag=evaluation.diagnostics;
     const header=el("div",undefined,"forecast-period-line");
-    const bounds=snapshot.training.bounds;
-    header.append(el("p",period==="training"
-      ? `Fit window ${bounds.start_inclusive} to ${bounds.end_exclusive} (end excluded)`
-      : evaluation.bounds ? `Archived evaluation ${evaluation.bounds[0]} to ${evaluation.bounds[1]}` : "Evaluation unavailable","forecast-meta"),
+    header.append(el("p",evaluation.bounds ? `Evaluation ${evaluation.bounds[0]} to ${evaluation.bounds[1]}` : "Evaluation unavailable","forecast-meta"),
       el("p",`Saved fit · ${snapshot.fit_id.slice(-12)}`,"forecast-meta"));
     fragment.append(header);
     if (snapshot.fit_reason) fragment.append(el("p","Saved fit unavailable · "+snapshot.fit_reason.replaceAll("_"," ").toLowerCase(),"forecast-notice"));
-    if (period==="training") {
-      const saved=snapshot.training.fit_evidence;
-      fragment.append(el("p",snapshot.training.availability,"forecast-notice"));
-      const evidence=panel("Saved fit support","Chronological development sample used for this saved combination when recorded.");
-      evidence.append(metricCards([["Matched dates",saved.matched_dates],["Matched rows",saved.matched_rows],
-        ["Non-overlapping windows",saved.non_overlapping_intervals]].map(([label,value])=>(
-          {label,value,unit:null,digits:0,note:Number.isFinite(value)?"Recorded in the archived fit":"Unavailable in this fit record."}))));
-      fragment.append(evidence,inputsPanel(snapshot));
+    fragment.append(portfolioPanel(evaluation.portfolio));
+    if (evaluation.availability) {
+      fragment.append(el("p",evaluation.availability,"forecast-notice"),inputsPanel(snapshot));
     } else {
-      if (evaluation.availability) fragment.append(el("p",evaluation.availability,"forecast-notice"));
-      else {
-        const c=diag.counts, coverage=diag.breadth.length
-          ? (diag.breadth[0]===diag.breadth[1] ? String(diag.breadth[0]) : diag.breadth.join("–")) : "—";
-        fragment.append(metricCards(diag.metric_values),
-          el("p",`${integer.format(c.matched||0)} matched · ${diag.dates} evaluated dates · ${diag.quality_dates} valid ranks · ${integer.format(c.pending_outcome||0)} pending · ${integer.format(c.missing_outcome||0)} missing outcomes · ${integer.format(c.unavailable_forecast||0)} unavailable forecasts · ${integer.format(c.excluded_incomplete_scope||0)} excluded · ${coverage} instruments per evaluated date`,"field-note"));
-        fragment.append(chartsFor(diag,charts));
-      }
+      const c=diag.counts, coverage=diag.breadth.length
+        ? (diag.breadth[0]===diag.breadth[1] ? String(diag.breadth[0]) : diag.breadth.join("–")) : "—";
       const row=el("div",undefined,"forecast-panels");
-      if (!evaluation.availability) row.append(errorPanel(diag,charts),inputsPanel(snapshot));
-      if (row.children.length) fragment.append(row); else fragment.append(inputsPanel(snapshot));
-      fragment.append(ledgerPanel(snapshot));
+      row.append(errorPanel(diag,charts),inputsPanel(snapshot));
+      fragment.append(metricCards(diag.metric_values),
+        el("p",`${integer.format(c.matched||0)} matched · ${diag.dates} evaluated dates · ${diag.quality_dates} valid ranks · ${integer.format(c.pending_outcome||0)} pending · ${integer.format(c.missing_outcome||0)} missing outcomes · ${integer.format(c.unavailable_forecast||0)} unavailable forecasts · ${integer.format(c.excluded_incomplete_scope||0)} excluded · ${coverage} instruments per evaluated date`,"field-note"),
+        chartsFor(diag,charts),row);
     }
-    fragment.append(lineagePanel(snapshot,task,candidate));
+    fragment.append(ledgerPanel(snapshot),lineagePanel(snapshot,task,candidate));
     pane.replaceChildren(fragment);
     if (charts.size) {
       observer=new ResizeObserver(entries=>{
@@ -448,17 +446,13 @@
   $("forecast-catalog-retry").addEventListener("click",loadCatalog);
   $("forecast-detail-retry").addEventListener("click",navigate);
   $("forecast-method").addEventListener("change",event=>{
-    const period=new URLSearchParams(window.location.hash.slice(1)).get("period")||"evaluation";
-    route(activeTask.id,event.target.value,period,true);
-  });
-  for (const button of periods) button.addEventListener("click",()=>{
-    if (activeTask) route(activeTask.id,$("forecast-method").value,button.dataset.period,true);
+    route(activeTask.id,event.target.value,true);
   });
   $("forecast-back").addEventListener("click",event=>{
     if (!plainClick(event)) return;
     event.preventDefault();
     if (window.history.state?.forecastFromLibrary && fromLibrary) window.history.back();
-    else route(null,null,null,true);
+    else route(null,null,true);
   });
   document.querySelector(".skip-link")?.addEventListener("click",event=>{
     event.preventDefault();

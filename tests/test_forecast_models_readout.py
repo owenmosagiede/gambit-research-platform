@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
 from build_forecast_models_readout import (
-    SOURCE_POLICY, SCHEMA, build, calibration_bins, checksum, diagnostics, evaluation_rows,
+    PORTFOLIO_POLICY, SOURCE_POLICY, SCHEMA, build, calibration_bins, checksum, diagnostics, evaluation_rows,
 )
 
 
@@ -60,7 +60,7 @@ class ForecastReadoutTests(unittest.TestCase):
         self.assertEqual([b['count'] for b in bins],[3,3,2])
         self.assertEqual(diagnostics(rows,'COMBINED')['metric_values'][0]['value'],None)
 
-    def export_fixture(self, directory, *, incompatible=False, corrupt=False):
+    def export_fixture(self, directory, *, incompatible=False, corrupt=False, portfolio=None):
         task_id = 'P3GROUP_'+'e'*64
         model_id = 'P3MODEL_'+'9'*64
         scope = {'id':'FX_CCY_VS_CAD','reference_currency':'CAD','members':['AUDCAD','NZDCAD']}
@@ -100,7 +100,22 @@ class ForecastReadoutTests(unittest.TestCase):
         if corrupt:
             panel.write_text('{}')
         output=directory/'readout'
-        result=build(target,directory,checksum(manifest.read_bytes()),output)
+        report = report_hash = None
+        if portfolio:
+            archived = json.loads(manifest.read_bytes())
+            evidence = dict(fit=fit['id'], period=archived['period'], fx_snapshot='snapshot',
+                            close_panel_sha256=archived['input_sha256'], forecast_sha256=archived['files']['p4-forecasts.csv.gz'],
+                            market_dates=2, policy={'id':PORTFOLIO_POLICY}, one_way_cost=0.0001, gross_cap=2.0,
+                            broker_execution_verified=False)
+            row = dict(model_id=model_id, method='equal_weight', horizon=1, reference='CAD',
+                       net={'net_pnl':-0.0046, 'gross_pnl':-0.004, 'total_turnover':6, 'blocked_orders':0})
+            evidence['models'] = [row]
+            portfolio(evidence, row)
+            report = directory/'results.json'
+            report.write_text(json.dumps(evidence))
+            report_hash = checksum(report.read_bytes())
+        result=build(target,directory,checksum(manifest.read_bytes()),output,
+                     portfolio_report=report,portfolio_report_hash=report_hash)
         return result,output,task_id,model_id
 
     def test_full_readout_preserves_saved_ids_and_applies_declared_centering(self):
@@ -120,6 +135,30 @@ class ForecastReadoutTests(unittest.TestCase):
             self.assertAlmostEqual(matched['realized_bps'],50)
             self.assertAlmostEqual(matched['error_bps'],40)
             self.assertIsNone(detail['model_version'])
+            self.assertIsNone(detail['evaluation']['portfolio'])
+
+    def test_portfolio_return_is_joined_to_the_exact_frozen_model(self):
+        with tempfile.TemporaryDirectory() as path:
+            _,output,_,model_id=self.export_fixture(Path(path),portfolio=lambda *_: None)
+            detail=json.loads((output/(model_id+'.json')).read_bytes())
+            portfolio=detail['evaluation']['portfolio']
+            self.assertEqual(portfolio['net_return_fraction'],-0.0046)
+            self.assertEqual(portfolio['period'],detail['evaluation']['bounds'])
+            self.assertEqual(portfolio['variant'],'net')
+            self.assertEqual(portfolio['report_sha256'],checksum((Path(path)/'results.json').read_bytes()))
+
+    def test_incompatible_portfolio_results_are_rejected(self):
+        cases = {
+            'verified replay': lambda report, _: report.update(period=['2026-09-02','2026-09-03']),
+            'duplicate model': lambda report, row: report['models'].append(row),
+            'incompatible or duplicate model': lambda _, row: row.update(method='ridge_reg_weight'),
+            'does not reconcile': lambda _, row: row['net'].update(net_pnl=0.0046),
+            'cover different models': lambda report, _: report['models'].clear(),
+        }
+        for error, change in cases.items():
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as path:
+                with self.assertRaisesRegex(ValueError,error):
+                    self.export_fixture(Path(path),portfolio=change)
 
     def test_mixed_target_or_changed_archive_is_rejected(self):
         with tempfile.TemporaryDirectory() as path:
