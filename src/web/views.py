@@ -55,10 +55,11 @@ def csrf_failure(request, reason=''):
 
 @require_http_methods(['GET', 'HEAD'])
 def public_asset(request, name):
-    if name not in PUBLIC_ASSETS:
+    content_type = PUBLIC_ASSETS.get(name)
+    if content_type is None:
         return HttpResponse(status=404)
     content = (Path(__file__).parent / 'public' / name).read_bytes()
-    return HttpResponse(content, content_type='image/svg+xml' if name.endswith('.svg') else 'text/css; charset=utf-8')
+    return HttpResponse(content, content_type=content_type)
 
 @require_http_methods(['GET', 'HEAD'])
 def private_asset(request):

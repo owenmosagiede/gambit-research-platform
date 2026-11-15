@@ -117,13 +117,33 @@ class ProductionAccessTests(unittest.TestCase):
         self.assertFalse((self.root/'storage').exists())
 
     def test_public_has_no_private_bundle_or_research_metadata(self):
-        for route in ('/', '/about/', '/login/', '/healthz', '/public/site.css', '/public/gambit-app-mark.svg'):
+        public_assets = {
+            '/public/site.css': 'text/css; charset=utf-8',
+            '/public/landing.css': 'text/css; charset=utf-8',
+            '/public/gambit-app-mark.svg': 'image/svg+xml',
+            '/public/gambit-wordmark.svg': 'image/svg+xml',
+            '/public/gambit-signal-field.svg': 'image/svg+xml',
+            '/public/gambit-inter.woff2': 'font/woff2',
+            '/public/gambit-plex-mono.woff2': 'font/woff2',
+        }
+        for route in ('/', '/about/', '/login/', '/healthz', *public_assets):
             r=self.client.get(route); self.assertEqual(r.status_code,200)
+            if route in public_assets:
+                self.assertEqual(r['Content-Type'], public_assets[route])
             for forbidden in (b'/api/', b'/signals.js', b'/submission.js', b'FEATURE_RECIPE_', b'CES050'):
                 self.assertNotIn(forbidden,r.content)
         for path in ('/src/web/settings.py','/storage/catalog/submissions/a.json','/.env','/index.html',
-                     '/public/../session.js','/public/%2e%2e/session.js','/public/%2fapp','/admin/'):
+                     '/public/../session.js','/public/unknown.woff2','/public/%2e%2e/session.js','/public/%2fapp','/admin/'):
             self.assertEqual(self.client.get(path).status_code,404,path)
+    def test_landing_routes_share_the_public_page_and_owner_sign_in(self):
+        home = self.client.get('/')
+        self.assertEqual(home.content, self.client.get('/about/').content)
+        self.assertIn(b'href="/public/landing.css"', home.content)
+        self.assertIn(b'href="/login/"', home.content)
+        self.assertIn(b'href="#approach"', home.content)
+        self.assertNotIn(b'<script', home.content)
+        self.assertNotIn("'unsafe-inline'", home['Content-Security-Policy'])
+
     def test_csrf_and_origin_reject_before_persistence(self):
         token=self.login(); body=intent()
         r=self.post(body); self.assertEqual(r.status_code,403);self.assertIs(r.json()['recorded'],False)
