@@ -135,12 +135,13 @@ class ProductionAccessTests(unittest.TestCase):
         for path in ('/src/web/settings.py','/storage/catalog/submissions/a.json','/.env','/index.html',
                      '/public/../session.js','/public/unknown.woff2','/public/%2e%2e/session.js','/public/%2fapp','/admin/'):
             self.assertEqual(self.client.get(path).status_code,404,path)
-    def test_landing_routes_share_the_public_page_and_owner_sign_in(self):
+    def test_landing_routes_share_the_public_page_and_sign_in(self):
         home = self.client.get('/')
         self.assertEqual(home.content, self.client.get('/about/').content)
         self.assertIn(b'href="/public/landing.css"', home.content)
         self.assertIn(b'href="/login/"', home.content)
-        self.assertIn(b'href="#approach"', home.content)
+        self.assertIn(b'id="products"', home.content)
+        self.assertIn(b'href="mailto:', home.content)
         self.assertNotIn(b'<script', home.content)
         self.assertNotIn("'unsafe-inline'", home['Content-Security-Policy'])
 

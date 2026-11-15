@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Gambit Systems develops quantitative research and technology for a systematic approach to global markets.">
-  <meta name="theme-color" content="#F3F1E9">
+  <meta name="description" content="Gambit Systems is an investment firm combining quantitative research, proprietary technology, and disciplined portfolio construction.">
+  <meta name="theme-color" content="#F1EFE6">
   <title>Gambit Systems</title>
   <link rel="icon" href="/public/gambit-app-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/public/landing.css">
@@ -16,87 +16,98 @@
       <a class="wordmark" href="/" aria-label="Gambit Systems home">
         <img src="/public/gambit-wordmark.svg" alt="Gambit Systems" width="201" height="28">
       </a>
-      <nav class="navigation" aria-label="Main navigation">
-        <a href="#firm">The firm</a>
-        <a href="#research">Research</a>
-        <a href="#approach">Our approach</a>
-      </nav>
-      <a class="owner-link" href="/login/">Owner sign in <span aria-hidden="true">↗</span></a>
+      <a class="sign-in" href="/login/">Sign In</a>
     </div>
   </header>
 
   <main id="main" tabindex="-1">
     <section class="hero" aria-labelledby="hero-title">
       <div class="wrap">
+        <p class="eyebrow">Gambit Systems</p>
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow">Systematic research</p>
             <h1 id="hero-title">A systematic approach to global markets.</h1>
-            <p class="hero-lede">Gambit Systems develops quantitative research and proprietary technology to evaluate investment ideas and put them into practice.</p>
-            <a class="action" href="#approach">Explore our approach <span aria-hidden="true">↘</span></a>
+            <p class="hero-lede">Gambit Systems is an investment firm combining quantitative research, proprietary technology, and disciplined portfolio construction.</p>
           </div>
-          <div class="hero-art" aria-hidden="true">
-            <img src="/public/gambit-signal-field.svg" alt="" width="224" height="226" fetchpriority="high">
-          </div>
+          <img class="hero-art" src="/public/gambit-signal-field.svg" alt="" width="224" height="226" fetchpriority="high">
         </div>
-        <div class="hero-rule" aria-hidden="true"></div>
+        <div class="hero-notes">
+          <p>Quantitative research. Disciplined implementation.</p>
+          <p>Across markets and investment horizons.</p>
+        </div>
       </div>
     </section>
 
-    <section id="firm" class="section section-split wrap" aria-labelledby="firm-title">
-      <div>
-        <p class="eyebrow">The firm</p>
+    <section id="firm" class="section wrap" aria-labelledby="firm-title">
+      <p class="eyebrow">The firm</p>
+      <div class="section-split">
         <h2 id="firm-title">Independent thinking.<br>Systematic discipline.</h2>
-      </div>
-      <div class="body-copy firm-copy">
-        <p>We study what drives returns, starting with foreign exchange. Our work brings economic intuition into dialogue with empirical evidence.</p>
-        <p>We test whether an idea holds up across markets and time, then ask whether it can help build a portfolio after risk and trading costs.</p>
+        <div class="body-copy firm-copy">
+          <p>We seek to identify repeatable sources of return and combine them in portfolios informed by risk, liquidity, and implementation costs.</p>
+          <p>Our investment process brings economic intuition into dialogue with empirical evidence. We ask clear questions, challenge assumptions, and evaluate how ideas behave across markets and changing conditions.</p>
+        </div>
       </div>
     </section>
 
     <section id="research" class="section research" aria-labelledby="research-title">
       <div class="wrap">
-        <div class="research-intro">
-          <p class="eyebrow">Research &amp; technology</p>
-          <h2 id="research-title">Research is the foundation.</h2>
-          <p>Our platform preserves the data, assumptions, and results behind each step, from the first test to paper trading.</p>
-        </div>
-        <div class="research-grid">
-          <section aria-labelledby="data-title">
-            <h3 id="data-title">Data</h3>
-            <p>Track where observations came from and what information was available when each forecast was made.</p>
-          </section>
-          <section aria-labelledby="discovery-title">
-            <h3 id="discovery-title">Discovery &amp; validation</h3>
-            <p>Discover candidate signals, then test whether the relationship holds in a later period.</p>
-          </section>
-          <section aria-labelledby="testing-title">
-            <h3 id="testing-title">Forecasts &amp; paper trading</h3>
-            <p>Combine validated signals into forecasts and track how they perform in simulated portfolios after trading costs.</p>
-          </section>
-        </div>
+        <p class="eyebrow">Research &amp; technology</p>
+        <h2 id="research-title">Research is the foundation.<br>Technology connects the work.</h2>
+        <p class="body-copy research-intro">Our research and investment infrastructure connects the entire process, from the first question to portfolio implementation.</p>
+
+        <figure class="research-loop" aria-label="Data leads to Research, then Implementation, then back to Data.">
+          <div class="loop-ring" aria-hidden="true">
+            <span class="loop-arc arc-to-research"></span>
+            <span class="loop-arc arc-to-implementation"></span>
+            <span class="loop-arc arc-to-data"></span>
+            <span class="loop-arrow arrow-to-research"></span>
+            <span class="loop-arrow arrow-to-implementation"></span>
+            <span class="loop-arrow arrow-to-data"></span>
+            <span class="loop-label loop-data"><span>01</span>Data</span>
+            <span class="loop-label loop-research"><span>02</span>Research</span>
+            <span class="loop-label loop-implementation"><span>03</span>Implementation</span>
+          </div>
+        </figure>
       </div>
     </section>
 
-    <section id="approach" class="section section-split wrap" aria-labelledby="approach-title">
+    <section id="products" class="section section-split wrap products" aria-labelledby="products-title">
       <div>
-        <p class="eyebrow">Our approach</p>
-        <h2 id="approach-title">From signal to portfolio.</h2>
-        <p class="body-copy approach-copy">A forecast is one part of a portfolio decision. We also consider how positions interact and what it costs to trade them.</p>
+        <p class="eyebrow">Our products</p>
+        <h2 id="products-title">Systematic investment strategies across markets.</h2>
       </div>
-      <div class="approach-steps">
-        <details name="research-approach" open>
-          <summary>Signal research <span class="toggle" aria-hidden="true"></span></summary>
-          <p>We look for repeatable relationships between market observations and future returns. Each test records the instrument, forecast horizon, and outcome.</p>
+      <div class="product-list">
+        <details name="products" open>
+          <summary>Global Macro <span class="toggle" aria-hidden="true"></span></summary>
+          <p>Strategies informed by economic conditions and relationships across global markets.</p>
         </details>
-        <details name="research-approach">
-          <summary>Forecasting <span class="toggle" aria-hidden="true"></span></summary>
-          <p>We combine signals that predict the same outcome over the same horizon and evaluate each model on later observations.</p>
+        <details name="products">
+          <summary>Multi Asset <span class="toggle" aria-hidden="true"></span></summary>
+          <p>Strategies that combine opportunities across multiple asset classes in a single portfolio.</p>
         </details>
-        <details name="research-approach">
-          <summary>Portfolio construction <span class="toggle" aria-hidden="true"></span></summary>
-          <p>We study how position sizes, concentration, and turnover affect simulated performance after trading costs.</p>
+        <details name="products">
+          <summary>Global Equity L/S <span class="toggle" aria-hidden="true"></span></summary>
+          <p>Long and short equity strategies across global stock markets.</p>
         </details>
+        <details name="products">
+          <summary>Futures <span class="toggle" aria-hidden="true"></span></summary>
+          <p>Systematic strategies across futures markets.</p>
+        </details>
+        <details name="products">
+          <summary>Crypto <span class="toggle" aria-hidden="true"></span></summary>
+          <p>Systematic strategies focused on digital asset markets.</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="investors" class="section investors" aria-labelledby="investors-title">
+      <div class="section-split wrap">
+        <div>
+          <p class="eyebrow">Investors</p>
+          <h2 id="investors-title">Connect with Gambit Systems.</h2>
+          <p class="body-copy">For investor inquiries, contact Owen.</p>
+        </div>
+        <a class="contact-link" href="mailto:Owen.osagiede@gmail.com">Owen.osagiede@gmail.com</a>
       </div>
     </section>
   </main>
@@ -106,7 +117,7 @@
       <a class="wordmark" href="/" aria-label="Gambit Systems home">
         <img src="/public/gambit-wordmark.svg" alt="Gambit Systems" width="201" height="28">
       </a>
-      <a class="owner-link" href="/login/">Owner sign in <span aria-hidden="true">↗</span></a>
+      <p>Research. Technology. Portfolio discipline.<br>Gambit Systems</p>
     </div>
   </footer>
 </body>
