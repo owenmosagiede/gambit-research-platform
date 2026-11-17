@@ -3,6 +3,8 @@ from copy import deepcopy
 from datetime import date, timedelta
 import io
 import math
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
@@ -19,6 +21,18 @@ def months(start_year, count):
 
 
 class ValueCalculationTests(unittest.TestCase):
+    def test_value_results_have_verified_signal_page_presentations(self):
+        from api.signal_summaries import _registered_entry, _output_candidates
+        with TemporaryDirectory() as folder:
+            store = FeatureStore(Path(folder))
+            for family in value.FAMILIES:
+                definition = value.recipe(family)
+                store.install_record(definition)
+                entry = _registered_entry(store, definition)
+                self.assertEqual(entry['name'], definition['display_name'])
+                self.assertEqual(entry['source']['input_contract']['family'], family)
+                self.assertEqual(_output_candidates(folder, definition), {})
+
     def test_exactly_two_fixed_five_year_definitions(self):
         for family in value.FAMILIES:
             original = value.recipe(family)

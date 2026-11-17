@@ -86,6 +86,15 @@ def _research(entries):
 
 
 def _recipe_presentation(store, recipe):
+    if recipe.get('schema_version') == '0.9.0':
+        from data.fx_value import validate_record
+        validate_record(recipe)
+        family = recipe['body']['family']
+        label = 'Archived IMF inflation and pair closes' if family == 'weo_bilateral' else 'Archived BIS real effective exchange rates'
+        return {'kind': 'fx_value_recipe', 'id': recipe['id'], 'recipe': reference(recipe),
+            'name': recipe['display_name'], 'source': {'label': label,
+                'input_contract': {'profile': recipe['body']['input_contract'], 'family': family}},
+            'transformations': [], 'observation_count': None, 'outputs': []}
     contract=recipe['body']['input_contract']
     if contract.get('measure')!='close' or contract.get('value_semantics')!='price':
         raise PublicationError('Unsupported reusable input display contract')
@@ -331,6 +340,12 @@ def list_signal_summaries(root):
 
 def _output_candidates(root, feature):
     """Exact selected-recipe Feature references, without a stored-output scan."""
+    if feature.get('schema_version') == '0.9.0':
+        # Pair value snapshots are exact trial inputs in the value catalog.
+        # This endpoint lists the older source-bound Feature materializations.
+        from data.fx_value import validate_record
+        validate_record(feature)
+        return {}
     if feature['record_type']!='feature_recipe_definition':
         return {feature['body']['signal_id']:reference(feature)}
     selected=reference(feature)
