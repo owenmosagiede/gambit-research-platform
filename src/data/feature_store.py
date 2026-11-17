@@ -73,6 +73,9 @@ class FeatureStore:
 
     def _validate(self, record):
         version=record.get('schema_version')
+        if version=='0.9.0':
+            from data.fx_value import validate_record as validate_value
+            return validate_value(record)
         if version=='0.7.0':
             from data.reusable_feature_contracts import validate_record as validate_reusable_feature
             return validate_reusable_feature(record)
