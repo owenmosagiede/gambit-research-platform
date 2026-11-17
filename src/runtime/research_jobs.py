@@ -699,8 +699,11 @@ class ResearchJobs:
             direction_policy = plan['intent']['expected_direction']
             followup = submission.get('p2_followup')
             if followup:
-                if direction_policy != DISCOVERY_DIRECTION or execution_approval:
+                if direction_policy != DISCOVERY_DIRECTION:
                     raise ResearchError('P2 follow-up requires its pinned discovery-selected implementation')
+                # authorize_execution already requires an exact approved bridge
+                # for a changed executor. The original parent, P1 artifacts and
+                # unused P2 exposure are independently verified below.
                 saved = verify_followup(self, submission, plan, verify_artifacts=True)
                 committed_followups = verify_no_prior_p2(self, submission, plan, saved)
                 horizons = tuple(saved)
