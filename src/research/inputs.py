@@ -115,6 +115,13 @@ def _validate_plan(plan):
     if not plan['members'] or plan['structural_common_start']!=max(member['structural_source_start'] for member in plan['members']):
         raise InputsBlocked('Frozen research structural start differs from member source coverage')
     expected = resolved_periods(plan['profile'], plan['structural_common_start'])
+    if plan.get('application_class') == 'fx_value_pair_ts':
+        from research.value_inputs import restrict_horizons
+        expected = restrict_horizons(expected, plan['value_source'])
+        if (plan['mode'] != 'TS' or len(plan['members']) != 1
+                or plan['value_source']['recipe'] != plan['recipe']
+                or plan['value_source']['price_snapshot'] != plan['members'][0]['price_snapshot']):
+            raise InputsBlocked('Frozen value inputs differ from the selected pair or recipe')
     fields = ('periods', 'horizons', 'horizon_periods', 'excluded_horizons')
     if any(plan.get(field) != expected.get(field) for field in fields):
         raise InputsBlocked('Frozen research plan periods or horizons differ')
@@ -269,6 +276,7 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
         raise InputsBlocked('Only Price Return and a supported frozen direction policy are allowed')
     from research import external_features as external
     external_source = None
+    value_source = None
     from research import feature_applications
     try:
         scope = resolve_scope(root, intent['scope']['id'], intent['scope']['version'])
@@ -276,9 +284,13 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise InputsBlocked(str(exc), reasons=getattr(exc, 'blockers', None)) from exc
     external_selection = application['contract']['kind'] == feature_applications.SINGLE_SERIES
+    value_selection = application['contract']['kind'] == feature_applications.VALUE_PAIR
     try:
-        recipe = (external.definition(root, intent['feature']) if external_selection else
-                  load_reusable_recipe(root, intent['feature']['id'], intent['feature']['version']))
+        if value_selection:
+            recipe = feature_applications.load_definition(root, intent['feature'])
+        else:
+            recipe = (external.definition(root, intent['feature']) if external_selection else
+                      load_reusable_recipe(root, intent['feature']['id'], intent['feature']['version']))
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise InputsBlocked('The selected registered recipe or Scope could not be verified: ' + str(exc)) from exc
     if scope.get('kind') not in ('instrument', 'universe'):
@@ -291,6 +303,11 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
         if scope['kind'] != 'instrument':
             raise InputsBlocked('External stored Features support individual instrument TS only; universe broadcasting is unsupported')
         external_source = external.resolve_source(root, recipe, profile)
+    if value_selection:
+        from data.fx_value import source as value_inputs
+        if scope['kind'] != 'instrument':
+            raise InputsBlocked('Value Features require an individual pair Scope')
+        value_source = value_inputs(root, recipe, scope['members'][0])
     store = TargetStore(root)
     config = strict_json(stable_read(store.path('config/fx_retrospective_completion.json')))
     batch = _approved_policy(store, config['return_policy'])
@@ -312,8 +329,9 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     current = {item['instrument_id']: item for item in current_rows}
     if len(current) != len(current_rows):
         raise InputsBlocked('Current instrument registry contains conflicting identities')
-    bindings = [] if external_selection else legacy_bindings_for_recipe(root, reference(recipe), verify_features=False)
-    projector = None if external_selection else legacy_recipe_projector(root, recipe)
+    stored_selection = external_selection or value_selection
+    bindings = [] if stored_selection else legacy_bindings_for_recipe(root, reference(recipe), verify_features=False)
+    projector = None if stored_selection else legacy_recipe_projector(root, recipe)
     selected = profile['target_selection'].get('materializations', {})
     source_pins = profile['target_selection'].get('source_snapshots', {})
     registry_pins = profile['target_selection'].get('selection_scope') in ('registered_fx_registry','currency_price_catalog')
@@ -346,10 +364,16 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
             start = _structural_start(store, snapshot)
             if external_source:
                 start = max(start, external_source['first_eligible_anchor'])
+            if value_source:
+                if value_source['price_snapshot'] != reference(snapshot):
+                    raise InputsBlocked('Value Feature belongs to a different pinned spot history')
+                start = max(start, value_source['first_anchor'])
             starts.append(start)
-            if external_source:
+            if stored_selection:
                 members.append({'instrument_id': symbol, 'feature': reference(recipe),
-                    'signal_id': recipe['body']['signal_id'], 'price_snapshot': reference(snapshot),
+                    'signal_id': ('SIGNAL_' + digest({'recipe': reference(recipe), 'pair': symbol})
+                                  if value_selection else recipe['body']['signal_id']),
+                    'price_snapshot': reference(snapshot),
                     'source_view': snapshot['body']['definition'], 'structural_source_start': start,
                     'feature_materializations': [],
                     'targets': _target_metadata(store, snapshot, batch, cutoff, selected.get(symbol, {}))})
@@ -373,6 +397,11 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     if oriented:
         frozen_scope.update({k:deepcopy(scope[k]) for k in ('research_basis','reference_currency','price_catalog')})
     schedule = resolved_periods(profile, max(starts))
+    if value_source:
+        from research.value_inputs import restrict_horizons
+        schedule = restrict_horizons(schedule, value_source)
+        if not schedule['horizons']:
+            raise InputsBlocked('The value pair has no eligible research horizon')
     discovery = schedule['periods']['P1']
     if discovery['start_inclusive'] >= discovery['end_exclusive']:
         raise InputsBlocked('The selected Scope has no structural history in the approved discovery period')
@@ -384,6 +413,9 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     if external_source:
         plan['application_class'] = 'external_stored_feature_to_individual_ts'
         plan['external_source'] = external_source
+    if value_source:
+        plan['application_class'] = 'fx_value_pair_ts'
+        plan['value_source'] = value_source
     plan['plan_id'] = _plan_id(plan)
     return plan
 
@@ -441,6 +473,9 @@ def _prepare_phase(root, plan, phase, progress, cancelled, period):
     """Prepare only this phase's selected recipe; validation requires admission."""
     if plan.get('application_class') == 'external_stored_feature_to_individual_ts':
         from research.external_features import prepare
+        return prepare(root, plan, phase, period, cancelled)
+    if plan.get('application_class') == 'fx_value_pair_ts':
+        from research.value_inputs import prepare
         return prepare(root, plan, phase, period, cancelled)
     from data.verified_inputs import current, retain_price_inputs
     requested = set(_period_days(period))
@@ -658,6 +693,9 @@ def _load_phase(root, plan, prepared, phase, horizon, admission=None):
         raise InputsBlocked('Prepared outputs silently changed Scope membership')
     if plan.get('application_class') == 'external_stored_feature_to_individual_ts':
         from research.external_features import load
+        return load(root, plan, prepared, phase, horizon, period)
+    if plan.get('application_class') == 'fx_value_pair_ts':
+        from research.value_inputs import load
         return load(root, plan, prepared, phase, horizon, period)
     rows, coverage = [], []
     for member, outputs in zip(plan['members'], prepared['members']):

@@ -64,6 +64,10 @@ def freeze(jobs, intent, impl, *, feature_manifest_index=None):
         _, capability = feature_applications.binding_for(jobs.root, intent['feature'])
         if capability['kind'] == feature_applications.SINGLE_SERIES:
             profile = external_features.load_profile(jobs.root)
+        elif capability['kind'] == feature_applications.VALUE_PAIR:
+            from research.value_inputs import load_profile as value_profile
+            profile = value_profile(jobs.root)
+            price_time_series = True
         elif capability['kind'] == feature_applications.CURRENCY_QUOTE:
             from data.fx_currency_release import load_profile as currency_profile
             profile=currency_profile(jobs.root)

@@ -8,7 +8,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from api.signal_summaries import _verified_branch
-from research.contracts import DISCOVERY_DIRECTION, ResearchError, canonical, ref
+from research.contracts import DISCOVERY_DIRECTION, ResearchError, canonical, digest, ref
 from research.direction import continuation_id
 from research.schedule import period_for
 from research.store import install_bytes
@@ -122,6 +122,42 @@ class DirectionTests(TestCase):
         result = self.jobs.get(child['request_id'])
         self.assertEqual(result['status'], 'blocked', result)
         self.assertEqual(self.adapter.loads, [])
+
+    def test_followup_executor_change_requires_exact_approval_and_reuses_parent_p1(self):
+        from runtime import execution_compatibility as compatibility
+        from runtime.experiment_identity import scientific_key
+        from runtime.research_jobs import implementation
+        from test_execution_compatibility import synthetic_approval, synthetic_implementation
+        row, parent_job, child, skipped = self.setup_skipped()
+        self.jobs.submit(child, momentum_parent=row['request_id'], p2_followup=skipped)
+        submission = self.jobs._submission(child['request_id'])
+        old = implementation()
+        new = synthetic_implementation('isolated reviewed followup executor')
+        self.adapter.loads.clear()
+        self.kernel.calls.clear()
+        with patch('runtime.research_jobs.implementation', return_value=new):
+            self.jobs.run_pending_once()
+        blocked = self.jobs.get(child['request_id'])
+        self.assertEqual(blocked['status'], 'blocked')
+        self.assertEqual(blocked['blockers'][0]['code'], 'IMPLEMENTATION_CHANGED')
+        self.assertEqual(self.adapter.loads, [])
+        proposal = compatibility.make_proposal(
+            manifest_sha256='a' * 64, operator_sha256='b' * 64,
+            from_implementation=old, to_implementation=new,
+            cohort=[{'request_id': child['request_id'], 'canonical_request_id': child['request_id'],
+                'intent_sha256': digest(submission['intent']), 'scientific_identity': scientific_key(submission),
+                'submission_sha256': submission['record_sha256'], 'committed_trials': []}],
+            evidence={'equivalence_sha256': 'c' * 64, 'tests_sha256': 'd' * 64},
+            source_archive_sha256='e' * 64, target_archive_sha256='f' * 64)
+        compatibility.install_approval(self.root, synthetic_approval(proposal))
+        with patch('runtime.research_jobs.implementation', return_value=new):
+            self.jobs.resume(child['request_id'])
+            self.jobs.run_pending_once()
+        result = self.jobs.get(child['request_id'])
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(self.adapter.loads, [('P2', 1), ('P2', 21)])
+        self.assertEqual(self.kernel.calls, self.adapter.loads)
+        self.assertEqual(self.jobs.get(row['request_id']), parent_job)
 
     def test_cutover_replaces_only_unstarted_and_selects_skipped_p2(self):
         old, _, _, _ = self.setup_skipped()

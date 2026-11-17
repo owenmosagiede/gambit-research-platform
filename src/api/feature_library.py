@@ -61,6 +61,15 @@ def list_feature_library(root, *, store=None):
         if any(catalog_glob(store.path('storage/catalog/feature_recipes'), '*/manifest.json')):raise
         native=[]
     features=[_item(store,record,'reusable_fx_recipe') for record in native]
+    from data.fx_value import FAMILIES, recipe as value_recipe
+    for family in FAMILIES:
+        selected = value_recipe(family)
+        path = store.path(record_path(selected))
+        if path.is_file():
+            record = store.resolve(reference(selected))
+            features.append({'id': record['id'], 'version': record['version'], 'reference': reference(record),
+                'name': record['display_name'], 'kind': 'fx_value_recipe', 'registration_state': 'registered',
+                'transformations': [], 'signal_id': None})
     issues=[]
     for path in sorted(catalog_glob(store.path('definitions/features'), '*/*.json')):
         try:
@@ -132,6 +141,41 @@ def _legacy_resolution(root, identifier, version, scope_id, scope_version):
         'research_spec':(research_ref(profile) if compatible else None)}
 
 
+def _value_resolution(root, definition, scope):
+    from research import inputs
+    from research.value_inputs import load_profile
+    from research.schedule import apply_schedule, load_schedule
+    profile = apply_schedule(load_profile(root), load_schedule(root), price_time_series=True)
+    intent = {'feature': {key: definition[key] for key in ('id', 'version')},
+              'scope': {key: scope[key] for key in ('id', 'version')},
+              'target_family': 'price_return', 'expected_direction': 'DISCOVERY_SIGN_V1'}
+    issues, outputs = [], []
+    try:
+        plan = inputs.resolve_plan(root, intent, profile)
+        source = plan['value_source']
+        outputs = [{'reference': source['snapshot'], 'row_count': source['row_count'],
+                    'coverage': source['coverage']}]
+        compatible = True
+        reason = 'Dated five-year value inputs verified for horizons ' + ', '.join(map(str, plan['horizons'])) + '.'
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        compatible = False
+        reason = str(exc)
+        issues.append({'code': 'VALUE_INPUTS_UNAVAILABLE', 'message': reason})
+    readiness = {'retrospective_research': {'decision': 'provisional' if compatible else 'blocked', 'reason': reason},
+                 'historical_replay': {'decision': 'unresolved', 'reason': 'Spot inputs retain historical date labels.'},
+                 'live_use': {'decision': 'unresolved', 'reason': 'Research publication only.'}}
+    return {'schema_version': '1.0.0',
+        'recipe': {'reference': reference(definition), 'name': definition['display_name'], 'kind': 'fx_value_recipe'},
+        'scope': {key: scope[key] for key in ('id', 'version', 'reference', 'display_name', 'membership_snapshot')},
+        'registration_state': 'registered', 'selection_read_only': True, 'member_count': len(scope['members']),
+        'members': [{'instrument_id': pair, 'state': 'materialized' if compatible else 'blocked',
+                     'reason': reason, 'materializations': outputs, 'readiness': readiness} for pair in scope['members']],
+        'summary': {'materialized_member_count': int(compatible), 'missing_member_count': 0,
+                    'blocked_member_count': 0 if compatible else len(scope['members'])},
+        'source_materializations': outputs, 'source_application_note': reason, 'issues': issues,
+        'submission_compatible': compatible, 'research_spec': reference(profile)}
+
+
 def get_feature_resolution(root, identifier, version, scope_id, scope_version):
     if not isinstance(identifier,str) or not FEATURE_ID.fullmatch(identifier):raise InvalidFeatureQuery('Invalid Feature identity')
     if not isinstance(version,str) or not SCOPE_VERSION.fullmatch(version):raise InvalidFeatureQuery('Exact Feature version required')
@@ -142,7 +186,9 @@ def get_feature_resolution(root, identifier, version, scope_id, scope_version):
     selection={'id':identifier,'version':version}
     try:definition=feature_applications.load_definition(root,selection)
     except (ValueError,OSError) as exc:raise FeatureNotFound(str(exc)) from exc
-    if definition['record_type']=='feature_recipe_definition':
+    if definition.get('schema_version') == '0.9.0':
+        result = _value_resolution(root, definition, resolve_scope(root, scope_id, scope_version))
+    elif definition['record_type']=='feature_recipe_definition':
         from data.feature_resolution import resolve_feature_scope
         result=resolve_feature_scope(root,identifier,scope_id,scope_version,version=version)
     else:

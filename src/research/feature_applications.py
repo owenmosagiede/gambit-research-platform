@@ -15,8 +15,18 @@ CURRENCY_QUOTE = "currency_quote_input"
 PER_MEMBER = "per_instrument_input"
 SINGLE_SERIES = "selected_single_series"
 ENTITY_MAPPED = "entity_mapped_series"
+VALUE_PAIR = "fx_value_pair"
 
 CONTRACTS = {
+    VALUE_PAIR: {
+        "id": "APPLICATION_FX_VALUE_PAIR", "version": "1.0.0",
+        "adapter": "fx_value_pair_v1", "definition_type": "feature_recipe_definition",
+        "scope_modes": {"instrument": "TS"},
+        "input_binding": "pair_specific_dated_macro_and_pinned_spot",
+        "orientation": "base_currency_cheapness_minus_quote_currency_cheapness",
+        "comparability": "individual_pair_ts_with_explicit_CNH_proxy",
+        "alignment": "date_only_sources_strictly_before_target_anchor",
+    },
     PER_MEMBER: {
         "id": "APPLICATION_PER_INSTRUMENT_INPUT", "version": "1.0.0",
         "adapter": "fx_recipe_v1", "definition_type": "feature_recipe_definition",
@@ -101,7 +111,10 @@ def install_binding(root, record, kind):
     actual = load_definition(root, {"id": record["id"], "version": record["version"]})
     if reference(actual) != reference(record) or record["record_type"] != value["definition_type"]:
         raise ApplicationBlocked("APPLICATION_INPUT_MISMATCH", "Feature definition does not match application contract")
-    if kind in (PER_MEMBER,CURRENCY_QUOTE):
+    if kind == VALUE_PAIR:
+        from data.fx_value import validate_record
+        validate_record(record)
+    elif kind in (PER_MEMBER,CURRENCY_QUOTE):
         from data.reusable_feature_contracts import validate_record
         validate_record(record)
         profile='fx_currency_price.1.0.0' if kind==CURRENCY_QUOTE else 'fx_price.1.0.0'
