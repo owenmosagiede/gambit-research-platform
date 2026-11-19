@@ -1,5 +1,6 @@
 # Documentation index
 
+- [Cloud and research throughput audit](research-throughput-audit.md) covers production timings, parallel execution, input reuse, and compute sizing.
 - [Return Target library](target_library.md): supported investment returns, source eligibility, scheduling, availability, storage and retrieval.
 - [Target implementation report](target_implementation_report.md): executable coverage, actual tests, persisted proof and the real market-source prerequisite.
 - [Return Target specification](../specs/18_return_targets.md): current authoritative 0.4 Target contracts and timing policies.
