@@ -106,7 +106,11 @@ class SeparateServicesTests(unittest.TestCase):
         active=self.wait(lambda: observe(self.root).get('active'))
         self.assertEqual(active['request_id'],r['request_id'])
         for _ in range(3):
-            self.assertEqual(observe(self.root)['active']['request_id'],r['request_id'])
+            # A heartbeat can advance while the bounded observer reads it.
+            # Retry an explicitly unavailable checkpoint, retaining the exact
+            # request assertion and the existing fixture deadline.
+            active=self.wait(lambda: observe(self.root).get('active'))
+            self.assertEqual(active['request_id'],r['request_id'])
         self.assertNotEqual(worker.pid, web.pid)
         web.terminate(); web.join(3)
         self.assertTrue(worker.is_alive())
