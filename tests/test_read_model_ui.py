@@ -57,11 +57,10 @@ class ReadModelUITests(unittest.TestCase):
         self.assertEqual(len(view['calls']),1)
         self.assertIn('Existing experiments continue independently',view['text'])
 
-    def test_staleness_is_visible_without_claiming_live_worker_health(self):
-        view=self.run_ui(hash='#experiment',responses=[response([],freshness={'generation':'a'*32,'observed_at':'2026-11-05T12:00:00+00:00','state':'stale'})])
-        self.assertIn('current activity unknown',view['text'])
-        self.assertIn('Live worker activity is unavailable',view['text'])
-        self.assertIn(30000,view['timers'])
+    def test_queue_has_no_history_catalog_or_activity_requests(self):
+        view=self.run_ui(hash='#experiment')
+        self.assertEqual([],view['calls'])
+        self.assertNotIn(30000,view['timers'])
 
 
 class RichReadModelUITests(ReadModelUITests):
@@ -96,38 +95,3 @@ class RichReadModelUITests(ReadModelUITests):
             view=self.run_ui(**kwargs)
             self.assertIn('Chart and block evidence could not be verified',view['text'])
             self.assertIn('0.48',view['text'])  # chart failure must not erase saved metrics
-
-    def test_live_identity_is_separate_from_snapshot_and_honest_on_failure(self):
-        routes={'/api/read-model/v1/queue':response([],status_counts={'queued':49}),
-                '/api/read-model/v1/activity':{'schema_version':'live_activity_v1','observed_at':'2026-11-07T12:00:00Z','worker':{'state':'running'},'active':{'request_id':'fixture-request','attempt_id':'fixture-attempt','status':'p2','message':'Evaluating saved P2','updated_at':'2026-11-07T11:55:00Z'}}}
-        view=self.run_ui(hash='#experiment',routes=routes)
-        self.assertIn('49 waiting',view['text']);self.assertIn('Worker: Running',view['text']);self.assertIn('Evaluating saved P2',view['text'])
-        self.assertIn('fixture-request',view['text']);self.assertNotIn('Negative hypothesis program',view['text'])
-        routes['/api/read-model/v1/activity']={'http':503}
-        view=self.run_ui(hash='#experiment',routes=routes)
-        self.assertIn('49 waiting',view['text']);self.assertIn('Live worker activity is unavailable',view['text'])
-
-    def test_live_activity_survives_catalog_read_failure(self):
-        routes={'/api/read-model/v1/queue':{'http':503},'/api/read-model/v1/activity':{'schema_version':'live_activity_v1','observed_at':'2026-11-07T12:00:00Z','worker':{'state':'draining'},'active':None}}
-        view=self.run_ui(hash='#experiment',routes=routes)
-        self.assertIn('Worker: Draining',view['text'])
-        self.assertIn('temporarily unavailable',view['text'])
-
-    def test_queue_requests_only_next_five_and_keeps_live_activity_separate(self):
-        from test_queue_ui import catalog
-        rows=[]
-        for number in range(5):
-            item=catalog()['items'][0]
-            item['job']['request_id']='waiting-'+str(number)
-            rows.append(item)
-        routes={'/api/read-model/v1/queue':response(rows,total=265,next_cursor='more',status_counts={'queued':265}),
-                '/api/read-model/v1/activity':{'schema_version':'live_activity_v1','observed_at':'2026-11-18T12:00:00Z','worker':{'state':'running'},'active':{'request_id':'live-current','attempt_id':'current-attempt','status':'p1','message':'Evaluating current horizon','updated_at':'2026-11-18T11:59:00Z'}}}
-        view=self.run_ui(hash='#experiment',routes=routes)
-        self.assertIn('limit=5',view['calls'][0]['url'])
-        self.assertIn('status=queued',view['calls'][0]['url'])
-        self.assertIn('Up next',view['text'])
-        self.assertIn('265 waiting',view['text'])
-        self.assertIn('Evaluating current horizon',view['text'])
-        self.assertNotIn('Next page',view['text'])
-        for number in range(5):self.assertIn('waiting-'+str(number),view['text'])
-        self.assertTrue(all(call['method']=='GET' for call in view['calls']))

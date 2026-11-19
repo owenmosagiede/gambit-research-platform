@@ -159,7 +159,7 @@ select:disabled { cursor: default; background: var(--g-quiet); color: var(--g-mu
 /* The authenticated session inserts this form after workspace navigation. */
 .library form[action="/logout/"] { display: block; margin: 0; }
 .library form[action="/logout/"] button { white-space: nowrap; }
-.experiment-contract-inputs { margin-top: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+.experiment-contract-inputs { margin-top: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .experiment-contract-inputs > div { min-width: 0; }
 .contract-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .contract-heading h2 { margin: 0; font-size: 18px; font-weight: 500; }
@@ -390,3 +390,9 @@ main { width: min(100%, 1460px); margin-top: 48px; padding-inline: 40px; }
 .card-horizons, .card-reasons { padding-left: 16px; margin: 14px 0; font-size: 11px; line-height: 1.7; color: var(--g-muted); }
 .queue-card .text-button + .text-button, .ledger-card .text-button + .text-button { margin-left: 16px; }
 .queue-card .card-action-status { margin-top: 12px; color: var(--g-text); }
+
+.queue-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
+.queue-metric { padding: 24px; border: 1px solid var(--g-border); border-radius: var(--g-radius); }
+.queue-metric h2 { margin: 0; font-size: 16px; font-weight: 500; }
+.queue-metric-value { margin: 20px 0; font-size: clamp(40px, 5vw, 64px); font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .queue-metrics { grid-template-columns: minmax(0, 1fr); } }

@@ -25,7 +25,9 @@ from services.research_worker import WebResearchJobs
 from api.catalog_cache import CatalogCache
 from api.feature_research import feature_research, trial_evidence, RECIPE, TRIAL, TABLE_ROLES
 
-ASSETS = dict(PIT_ASSETS, **{'/read-model.js': ('read-model.js', 'text/javascript; charset=utf-8'),
+ASSETS = dict(PIT_ASSETS, **{'/contract-examples.js': ('contract-examples.js', 'text/javascript; charset=utf-8'),
+                           '/queue-metrics.js': ('queue-metrics.js', 'text/javascript; charset=utf-8'),
+                           '/read-model.js': ('read-model.js', 'text/javascript; charset=utf-8'),
                            '/signals.js': ('signals.js', 'text/javascript; charset=utf-8'),
                            '/signal-research.js': ('signal-research.js', 'text/javascript; charset=utf-8'),
                            '/signal-research.css': ('signal-research.css', 'text/css; charset=utf-8'),
@@ -81,6 +83,16 @@ class ApplicationRoutes:
             self.error(404,'NOT_FOUND','This address is not available.',head);return
         from api.read_model_views import serve
         if serve(self,target,self.read_model_dir,head=head): return
+        if target.path == '/api/research-metrics':
+            if target.query:
+                self.error(400, 'UNSUPPORTED_QUERY', 'Research counts accept no query.', head); return
+            try:
+                from api.research_metrics import observe_counts
+                value = catalogs.get(('research_metrics', str(root)), lambda: observe_counts(root), ttl=30.0)
+                self.send_json(200, value, head)
+            except Exception:
+                self.error(503, 'RESEARCH_METRICS_UNAVAILABLE', 'Research counts could not be verified. Research continues independently.', head)
+            return
         if target.path=='/api/research-readiness':
             if target.query:self.error(400,'UNSUPPORTED_QUERY','This endpoint accepts no query.',head);return
             try:

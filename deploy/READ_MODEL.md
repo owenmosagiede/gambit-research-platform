@@ -83,13 +83,40 @@ return 410; the UI offers refresh. Query errors return 400; missing/invalid serv
 state returns 503 without falling back to a filesystem reconstruction. Existing
 command and legacy read routes keep their authentication/CSRF behavior.
 
-The opt-in browser uses this path for Ledger, queue, recipe cards, relationship
-pages and trial metadata. It retains the no-filter-bar Library, shows freshness,
-and shows the live active experiment followed by at most five queued experiments
-in their existing order. The queue requests `status=queued&limit=5`, retains the
-waiting count, and does not expose queue pagination. Ledger and Library pagination
-remain available. It polls the queue every 30 seconds (existing page behavior,
-not a new automation). No research mutations exist in this script. The current UI loads bounded chart summaries through the optional chart cache
+The opt-in browser uses this path for Ledger, recipe cards, relationship pages
+and trial metadata. Library and Ledger pagination remain available. The Trial
+Queue page displays only queued-job count and completed-job count over the rolling
+past hour. It never requests queue cards, activity details or catalog dropdowns.
+`/api/research-metrics` supplies those operational counts independently of the
+history projector; it has the same authenticated transport boundary and accepts
+no query parameters. The bounded observer verifies canonical job projections
+against their exact operational events and retries one concurrently advancing
+capture. It is not a scientific-result audit. Counts exclude staged plans and
+aliases; completion means execution finished, regardless of scientific disposition.
+
+The metrics reader is read-only, creates no locks or files, and cannot resolve
+Features, read numerical payloads, execute research, repair records, or enumerate
+whole event histories. Limits are 10,000 job projections, 256 KiB per metadata
+record, 64 MiB of total metadata and a four-second cooperative deadline. A changing,
+corrupt, missing or over-budget capture reports unavailable instead of partial or
+zero counts. Verified per-job status/timestamps and file signatures are reused in bounded
+process memory; changed dependencies are reread and unchanged records are fully
+reverified at least every five minutes. No full result bodies are retained in this
+cache. Successful captures share a 30-second single-flight response cache;
+other catalog TTLs remain unchanged. The visible page refreshes every 30 seconds
+and clears unavailable or stale numbers. Hidden pages make no metrics requests.
+
+The Experiment contract is static reference content: three registered Feature
+examples, three Scope examples, and the currently accepted `price_return` family.
+It neither loads catalogs/readiness nor submits requests. Direction is not a
+user selection. The example retains the current API's required
+`expected_direction: DISCOVERY_SIGN_V1` selector: P1 discovers direction per
+horizon and P2 validates the frozen discovery. This presentation change does not
+make the API field optional or change historical fixed-direction contracts.
+New research supports 1, 7, 21 and 63 scheduled weekdays subject to eligibility;
+252D historical evidence remains intact in the Ledger and Library.
+
+No research mutations exist in this script. The current UI loads bounded chart summaries through the optional chart cache
 described below; it never opens numerical source payloads. Legacy explicit
 artifact/output endpoints remain available for existing tooling; the chart projector is separate from metadata backfill.
 Do not claim that those legacy heavy endpoints have become bounded.
@@ -190,8 +217,7 @@ remain necessary.
 
 ## Research interface and optional saved charts
 
-The interface retains three existing views. The queue separates current worker
-activity from dated metadata counts and ordering. The ledger separates execution
+The interface retains three existing views. The queue shows only operational waiting and rolling-hour completion counts. The ledger separates execution
 status from the P1/P2 scientific dispositions. The library lists only recipes with
 verified research links, with relationship counts and unique research-stage passes.
 Its exact saved relationship selector preserves scope, direction, horizon and
