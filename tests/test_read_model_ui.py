@@ -112,3 +112,22 @@ class RichReadModelUITests(ReadModelUITests):
         view=self.run_ui(hash='#experiment',routes=routes)
         self.assertIn('Worker: Draining',view['text'])
         self.assertIn('temporarily unavailable',view['text'])
+
+    def test_queue_requests_only_next_five_and_keeps_live_activity_separate(self):
+        from test_queue_ui import catalog
+        rows=[]
+        for number in range(5):
+            item=catalog()['items'][0]
+            item['job']['request_id']='waiting-'+str(number)
+            rows.append(item)
+        routes={'/api/read-model/v1/queue':response(rows,total=265,next_cursor='more',status_counts={'queued':265}),
+                '/api/read-model/v1/activity':{'schema_version':'live_activity_v1','observed_at':'2026-11-18T12:00:00Z','worker':{'state':'running'},'active':{'request_id':'live-current','attempt_id':'current-attempt','status':'p1','message':'Evaluating current horizon','updated_at':'2026-11-18T11:59:00Z'}}}
+        view=self.run_ui(hash='#experiment',routes=routes)
+        self.assertIn('limit=5',view['calls'][0]['url'])
+        self.assertIn('status=queued',view['calls'][0]['url'])
+        self.assertIn('Up next',view['text'])
+        self.assertIn('265 waiting',view['text'])
+        self.assertIn('Evaluating current horizon',view['text'])
+        self.assertNotIn('Next page',view['text'])
+        for number in range(5):self.assertIn('waiting-'+str(number),view['text'])
+        self.assertTrue(all(call['method']=='GET' for call in view['calls']))

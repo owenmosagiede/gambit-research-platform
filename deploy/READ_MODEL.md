@@ -40,6 +40,14 @@ execution bindings and queue keys remain unchanged. Program membership is **not
 inferred**: this release serves all verified stored research, including either
 hypothesis direction, without claiming a manifest association it did not verify.
 
+Verified unit-cache values use lossless, checksummed zlib storage when this is
+smaller than their JSON representation. The cache decoder accepts older plain
+JSON values and bounds decompression to 64 MiB per unit. Dependency checks and
+immutable-source checksum baselines remain unchanged. List/detail tables retain
+their exact JSON records; no trial history or provenance is removed to shrink
+the cache. The publisher can compact empty SQLite pages in its unpublished copy
+after cache conversion, while retaining the current and previous generations.
+
 ## Output and HTTP contract
 
 A closed rollback-journal SQLite file, schema/inventory manifest and atomic pointer
@@ -77,7 +85,10 @@ command and legacy read routes keep their authentication/CSRF behavior.
 
 The opt-in browser uses this path for Ledger, queue, recipe cards, relationship
 pages and trial metadata. It retains the no-filter-bar Library, shows freshness,
-and polls the visible first queue page every 30 seconds (existing page behavior,
+and shows the live active experiment followed by at most five queued experiments
+in their existing order. The queue requests `status=queued&limit=5`, retains the
+waiting count, and does not expose queue pagination. Ledger and Library pagination
+remain available. It polls the queue every 30 seconds (existing page behavior,
 not a new automation). No research mutations exist in this script. The current UI loads bounded chart summaries through the optional chart cache
 described below; it never opens numerical source payloads. Legacy explicit
 artifact/output endpoints remain available for existing tooling; the chart projector is separate from metadata backfill.

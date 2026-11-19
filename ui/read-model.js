@@ -39,7 +39,8 @@
     queue: ["queue-board","queue-status"], ledger:["ledger-items","ledger-status"], recipes:["signal-table-container","signal-library-status"]
   };
   function params(kind) {
-    const q = new URLSearchParams({limit:"50"});
+    const q = new URLSearchParams({limit:kind === "queue" ? "5" : "50"});
+    if (kind === "queue") q.set("status","queued");
     if (kind === "ledger") for (const [id,key] of [["ledger-search","search"],["ledger-state","status"],["ledger-from","from"],["ledger-to","to"]]) {
       const value = $(id)?.value?.trim(); if (value) q.set(key,value);
     }
@@ -78,8 +79,8 @@
   }
   function pager(kind, container, data) {
     const s=state.get(kind), nav=node("div",undefined,"queue-heading");
-    if (s.index>0) nav.append(button("Previous page",()=>load(kind,s.index-1)));
-    if (data.next_cursor) nav.append(button("Next page",()=> { s.cursors[s.index+1]=data.next_cursor; load(kind,s.index+1); }));
+    if (kind !== "queue" && s.index>0) nav.append(button("Previous page",()=>load(kind,s.index-1)));
+    if (kind !== "queue" && data.next_cursor) nav.append(button("Next page",()=> { s.cursors[s.index+1]=data.next_cursor; load(kind,s.index+1); }));
     nav.append(button("Refresh latest",()=>load(kind,0,true))); container.append(nav);
   }
   async function load(kind,index=0,reset=false) {
@@ -96,14 +97,14 @@
       const data=await request(prefix+kind+"?"+q,s.controller);
       if (serial!==s.serial) return;
       if (!Array.isArray(data.items) || !Number.isInteger(data.total)) throw new Error("Invalid saved view.");
-      status.textContent=freshness(data)+`${data.items.length} shown of ${data.total}. `+(kind==="queue" ? "Queue counts and order belong to this snapshot; live activity is shown separately." : "");
+      status.textContent=freshness(data)+`${data.items.length} shown of ${data.total}${kind==="queue" ? " waiting" : ""}. `+(kind==="queue" ? "Showing up to five queued tests. Current research is shown separately above." : "");
       container.replaceChildren();
       container.className=kind==="recipes" ? "read-model-recipes" : "read-model-records";
       if(kind==="queue") {
         const activity=node("section",undefined,"research-panel live-activity");container.append(activity);
         loadActivity(activity,data);
         const counts=data.status_counts||{};
-        container.append(node("h3",`${counts.queued ?? "—"} waiting · saved queue`),node("p",data.status_counts ? `Recorded stages: preparation ${(counts.preparing||0)+(counts.resolving||0)} · P1 ${counts.p1||0} · P2 ${counts.p2||0}. Ordered by the stored queue; snapshot states may lag the current worker.` : "Recorded stage counts unavailable.","field-note"));
+        container.append(node("h3",`Up next · ${counts.queued ?? "—"} waiting`));
       }
       for (const item of data.items) container.append(kind==="recipes" ? recipeCard(item,data.freshness.generation) : trialCard(item));
       if (!data.items.length) container.append(node("p",data.issue_count ? "No verified records in this view. Some records are unavailable." : "No saved records in this view.","field-note"));

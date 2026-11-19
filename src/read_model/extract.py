@@ -22,6 +22,7 @@ from research.store import ResearchStore, read_json
 from runtime.experiment_identity import IdentityIndex
 from runtime.research_jobs import ResearchJobs
 from read_model.storage import encoded, signature, IntegrityFailure
+from read_model.unit_cache import pack, unpack
 
 MAX_FILES = 200000
 MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -116,7 +117,7 @@ class Extractor:
             dependencies.update({p: self.source(p) for p in previous if p not in dependencies})
             if dependencies == previous:
                 self.reused[kind] += 1
-                return json.loads(old['value'])
+                return unpack(old['value'])
         with catalog_reads(self.root) as capture:
             value = loader()
             if not capture.unchanged(): raise IntegrityFailure('Metadata changed while extracting a unit')
@@ -128,7 +129,7 @@ class Extractor:
             # Event discovery and aliases are explicitly captured outside loaders.
             if capture.listings: raise IntegrityFailure('Unexpected uncaptured catalog scan')
         self.db.execute('INSERT OR REPLACE INTO units VALUES(?,?,?,?)',
-                        (kind, identity, encoded(dependencies), encoded(value)))
+                        (kind, identity, encoded(dependencies), pack(value)))
         self.rebuilt[kind] += 1
         return value
 
@@ -301,7 +302,7 @@ class Extractor:
                 cached = self.db.execute('SELECT value FROM units WHERE kind=? AND id=?',
                                          ('branch', selected_branch['unit_id'])).fetchone()
                 if cached is None: raise IntegrityFailure('Selected branch unit disappeared')
-                value = json.loads(cached['value'])
+                value = unpack(cached['value'])
                 row = value['row']
                 if row != selected_branch['row']: raise IntegrityFailure('Selected branch unit differs')
                 self.db.execute('INSERT OR IGNORE INTO relationships VALUES(?,?)', (row['relationship']['id'], encoded(value['relationship'])))
