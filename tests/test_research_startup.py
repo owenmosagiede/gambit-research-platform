@@ -19,8 +19,8 @@ CATALOGS = {'/api/scope-library', '/api/feature-library', '/api/target-library'}
 CONTRACT_READS = CATALOGS | {'/api/research-readiness'}
 
 
-def startup(hash_value='#ledger', steps=(), *, hold_queue=False, hold_catalogs=True,
-            hold_readiness=True):
+def startup(hash_value='#experiment', steps=(), *, hold_queue=False, hold_catalogs=True,
+            hold_readiness=True, read_model=True, metrics=None):
     node = shutil.which('node')
     if not node:
         raise unittest.SkipTest('Node.js is required to execute the shipped page scripts')
@@ -31,8 +31,11 @@ def startup(hash_value='#ledger', steps=(), *, hold_queue=False, hold_catalogs=T
     value = {
         'root': str(ROOT), 'scripts': scripts, 'ids': ids, 'hash': hash_value,
         'steps': list(steps), 'holdQueue': hold_queue, 'holdCatalogs': hold_catalogs,
-        'holdReadiness': hold_readiness,
+        'holdReadiness': hold_readiness, 'readModel': read_model,
         'responses': {
+            '/api/research-metrics': metrics or {'schema_version':'research_metrics_v1','counting_unit':'canonical_research_jobs','observed_at':'2026-11-19T12:00:00+00:00','queued':23,'completed_last_hour':5},
+            '/api/read-model/v1/ledger': {'schema_version':'read_model_v1','items':[],'total':0,'next_cursor':None,'issue_count':0,'freshness':{'generation':'a'*32,'observed_at':'2026-11-19T12:00:00+00:00','state':'current'}},
+            '/api/read-model/v1/recipes': {'schema_version':'read_model_v1','items':[],'total':0,'next_cursor':None,'issue_count':0,'freshness':{'generation':'a'*32,'observed_at':'2026-11-19T12:00:00+00:00','state':'current'}},
             '/api/experiments': queue_catalog('succeeded'),
             '/api/signal-library-summaries': {
                 'schema_version': '1.0.0', 'entries': [signal], 'entry_count': 1, 'issues': []},
@@ -59,18 +62,18 @@ class Element {
 const ids=Object.fromEntries(input.ids.map(id=>[id,new Element(id)]));
 const skip=new Element('a'),nav=['experiment','signals','ledger'].map(page=>{const e=new Element('a');e.dataset.page=page;return e;});
 const events={},docEvents={},timers=new Map(),calls=[],waiting=[],active=[],timeline=[],snapshots=[];
-let clock=1000000,nextTimer=0;
+let clock=Date.parse('2026-11-19T12:00:00Z'),nextTimer=0;
 const add=(map,n,fn)=>(map[n] ||= []).push(fn);
 const fire=(map,n,e={})=>{for(const fn of map[n]||[])fn(e);};
 const catalogs=new Set(['/api/feature-library','/api/scope-library','/api/target-library']);
-const held=url=>catalogs.has(url)&&input.holdCatalogs || url==='/api/experiments'&&input.holdQueue ||
+const held=url=>catalogs.has(url)&&input.holdCatalogs || ['/api/experiments','/api/research-metrics'].includes(url)&&input.holdQueue ||
  url==='/api/research-readiness'&&input.holdReadiness;
 function finish(request,error=false){
  if(request.done)throw Error('Request already settled');
  request.done=true;active.splice(active.indexOf(request),1);
  timeline.push({type:'response',url:request.url});
  if(error)request.reject(Error('Fixture network failure'));
- else request.resolve({ok:true,status:200,json:async()=>input.responses[request.url]});
+ else request.resolve({ok:true,status:200,json:async()=>input.responses[request.url.split('?')[0]]});
  pump();
 }
 function pump(){
@@ -80,18 +83,18 @@ function pump(){
   if(!held(request.url))queueMicrotask(()=>finish(request));
  }
 }
-const context={AbortController,Date:class extends Date{static now(){return clock;}},
+const context={URLSearchParams,AbortController,Date:class extends Date{static now(){return clock;}},
  CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail;}},
  document:{getElementById:id=>ids[id]||null,createElement:tag=>new Element(tag),
   createElementNS:(_,tag)=>new Element(tag),createDocumentFragment:()=>new Element('fragment'),
   createTextNode:text=>{const e=new Element('text');e.textContent=text;return e;},
-  querySelector:selector=>selector==='.skip-link'?skip:null,querySelectorAll:selector=>selector==='[data-page]'?nav:[],
+  querySelector:selector=>selector==='.skip-link'?skip:selector==='meta[name="gambit-read-model"]'?{content:input.readModel?'enabled':'disabled'}:selector==='meta[name="gambit-queue-metrics"]'?{content:'enabled'}:null,querySelectorAll:selector=>selector==='[data-page]'?nav:[],
   hidden:false,visibilityState:'visible',addEventListener:(n,fn)=>add(docEvents,n,fn)},
  window:{location:{hash:input.hash},localStorage:{getItem:()=>null,setItem:()=>{throw Error('Unexpected storage write');}},
   addEventListener:(n,fn)=>add(events,n,fn),dispatchEvent:e=>{timeline.push({type:'event',event:e.type,detail:e.detail});fire(events,e.type,e);},
   setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,ms,at:clock+ms});return id;},clearTimeout:id=>timers.delete(id)},
  fetch:(url,options={})=>new Promise((resolve,reject)=>{
-  if(!Object.hasOwn(input.responses,url))throw Error('Unexpected endpoint: '+url);
+  if(!Object.hasOwn(input.responses,url.split('?')[0]))throw Error('Unexpected endpoint: '+url);
   const request={url,method:options.method||'GET',body:options.body??null,resolve,reject,started:false,done:false,aborted:false};
   calls.push(request);waiting.push(request);
   // Aborting a browser fetch does not interrupt the work already on the server.
@@ -103,7 +106,7 @@ function snap(){snapshots.push({hash:context.window.location.hash,calls:calls.ma
  active:active.map(x=>x.url),waiting:waiting.map(x=>x.url),timeline:[...timeline],
  ledger:ids['ledger-status'].textContent,ledgerRows:text(ids['ledger-items']),queue:ids['queue-status'].textContent,
  signals:ids['signal-library-status'].textContent,signalCards:text(ids['signal-table-container']),
- catalog:ids['contract-catalog-status'].textContent,readiness:ids['research-readiness-status'].textContent,
+ example:ids['contract-example'].textContent,queued:ids['queue-waiting-count'].textContent,completed:ids['queue-completed-count'].textContent,
  timers:[...timers.values()].map(x=>x.ms),catalogBusy:Object.fromEntries(['feature','scope','target'].map(x=>[x,ids[x].getAttribute('aria-busy')]))});}
 (async()=>{
  for(const script of input.scripts)vm.runInNewContext(fs.readFileSync(input.root+'/ui'+script,'utf8'),context,{filename:script});
@@ -114,6 +117,7 @@ function snap(){snapshots.push({hash:context.window.location.hash,calls:calls.ma
   if(step.action==='event')fire(events,step.name,{detail:step.detail});
   if(step.action==='visibility'){context.document.hidden=step.hidden;context.document.visibilityState=step.hidden?'hidden':'visible';fire(docEvents,'visibilitychange');}
   if(step.action==='click')ids[step.id].click();
+  if(step.action==='select'){ids[step.id].value=step.value;ids[step.id].fire('change');}
   if(step.action==='settle'){
    const request=active.filter(x=>x.url===step.url&&!x.done)[step.index||0];if(!request)throw Error('No active request to settle: '+step.url);
    finish(request,step.error);
@@ -121,7 +125,7 @@ function snap(){snapshots.push({hash:context.window.location.hash,calls:calls.ma
   if(step.action==='settle-catalog'){
    const request=active.find(x=>catalogs.has(x.url)&&!x.done);if(!request)throw Error('No active catalog to settle');finish(request,step.error);
   }
-  if(step.action==='poll'){const t=[...timers].find(([,v])=>v.ms===5000);if(t){timers.delete(t[0]);t[1].fn();}}
+  if(step.action==='poll'){const t=[...timers].find(([,v])=>v.ms===30000);if(t){timers.delete(t[0]);t[1].fn();}}
   if(step.action==='advance')for(const [id,t] of [...timers])if(t.at<=clock){timers.delete(id);t.fn();}
   await flush();snap();
  }
@@ -136,176 +140,61 @@ function snap(){snapshots.push({hash:context.window.location.hash,calls:calls.ma
 
 
 class ResearchStartupTests(unittest.TestCase):
-    def assert_read_only(self, snapshot):
-        self.assertTrue(all(row['method'] == 'GET' and row['body'] is None
-                            for row in snapshot['calls']))
-
-    def test_direct_history_does_not_queue_behind_hidden_contract_catalogs(self):
-        for address in ('#ledger', '#ledger-page'):
-            with self.subTest(address=address):
-                view = startup(address)[0]
-                self.assertIn('1 of 1 saved submissions', view['ledger'])
-                self.assertIn('10000000-0000-4000-8000-000000000001', view['ledgerRows'])
-                self.assertEqual([row['url'] for row in view['calls']], ['/api/experiments'])
-                self.assertFalse(view['waiting'])
-                self.assert_read_only(view)
-
-    def test_direct_signals_has_real_researched_entries_without_hidden_reads(self):
-        for address in ('#signals', '#signal-page'):
-            with self.subTest(address=address):
-                view = startup(address)[0]
-                self.assertIn('1 researched Signal', view['signals'])
-                self.assertIn('63-day log momentum', view['signalCards'])
-                self.assertTrue({'/api/experiments', '/api/signal-library-summaries'} <=
-                                {row['url'] for row in view['calls']})
-                self.assertFalse(CONTRACT_READS & {row['url'] for row in view['calls']})
-                self.assertFalse(view['waiting'])
-                self.assert_read_only(view)
-
-    def test_default_contract_first_verifies_queue_then_serializes_catalog_warmup(self):
-        steps = [{'action': 'event', 'name': 'pageshow'},
-                 {'action': 'settle', 'url': '/api/experiments'},
-                 *[{'action': 'settle-catalog'} for _ in range(3)]]
+    def test_queue_loads_only_two_operational_counts(self):
         for address in ('', '#experiment', '#experiment-inputs', '#trial-example'):
-            with self.subTest(address=address):
-                views = startup(address, steps, hold_queue=True)
-                for view in views[:2]:
-                    self.assertEqual([row['url'] for row in view['calls']], ['/api/experiments'])
-                    self.assertNotIn('No saved submissions', view['ledger'])
-                for view in views[2:]:
-                    self.assertIn('1 of 1 saved submissions', view['ledger'])
-                    self.assertLessEqual(len(CATALOGS & set(view['active'])), 1)
-                called = [row['url'] for row in views[-1]['calls']]
-                self.assertEqual(called[0], '/api/experiments')
-                for endpoint in CONTRACT_READS:
-                    self.assertEqual(called.count(endpoint), 1)
-                self.assert_read_only(views[-1])
+            for enabled in (True, False):
+                with self.subTest(address=address, read_model=enabled):
+                    view=startup(address,read_model=enabled)[0]
+                    self.assertEqual(['/api/research-metrics'],[r['url'] for r in view['calls']])
+                    self.assertEqual(('23','5'),(view['queued'],view['completed']))
+                    self.assertIn(30000,view['timers'])
+                    self.assertEqual('DISCOVERY_SIGN_V1',json.loads(view['example'])['expected_direction'])
+    def test_history_and_library_never_load_contract_catalogs_or_counts(self):
+        for address,endpoint in (('#ledger','ledger'),('#signals','recipes')):
+            view=startup(address)[0]
+            self.assertEqual(['/api/read-model/v1/'+endpoint+'?limit=50'],[r['url'] for r in view['calls']])
+            self.assertNotIn(30000,view['timers'])
+    def test_static_selection_updates_example_without_network_or_storage(self):
+        feature='FEATURE_RECIPE_e79063e3de1bf94bb82c5cb5e276841abb70655eeadfda47e8851562205a90f6'
+        views=startup('#experiment',[{'action':'select','id':'feature','value':feature},{'action':'select','id':'scope','value':'USDJPY'}])
+        self.assertEqual(views[0]['calls'],views[-1]['calls'])
+        example=json.loads(views[-1]['example'])
+        self.assertEqual(feature,example['feature']['id']);self.assertEqual('USDJPY',example['scope']['id'])
+        from research.contracts import normalize_submission
+        normalize_submission(dict(example,request_id='12345678-1111-4111-8111-111111111111'))
+    def test_poll_and_refresh_are_read_only_and_pause_on_other_pages(self):
+        views=startup('#experiment',[{'action':'poll'},{'action':'click','id':'queue-refresh'},{'action':'navigate','hash':'#ledger'},{'action':'poll'}])
+        self.assertEqual(3,sum(r['url']=='/api/research-metrics' for r in views[-1]['calls']))
+        self.assertTrue(all(r['method']=='GET' and r['body'] is None for r in views[-1]['calls']))
+        self.assertNotIn(30000,views[-1]['timers'])
+    def test_stale_invalid_or_negative_counts_show_unknown_not_zero(self):
+        valid={'schema_version':'research_metrics_v1','counting_unit':'canonical_research_jobs','observed_at':'2026-11-19T12:00:00Z','queued':23,'completed_last_hour':5}
+        for changes in ({'queued':-1},{'completed_last_hour':None},{'observed_at':'2026-11-19T11:58:00Z'},{'observed_at':'2026-11-20T12:00:00Z'},{'schema_version':'bad'}):
+            with self.subTest(changes=changes):
+                v=startup(metrics=dict(valid,**changes))[0]
+                self.assertEqual(('—','—'),(v['queued'],v['completed']));self.assertIn('unavailable',v['queue'])
+    def test_failed_refresh_clears_old_counts_and_preserves_contract_example(self):
+        views=startup('#experiment',[{'action':'settle','url':'/api/research-metrics'},{'action':'click','id':'queue-refresh'},{'action':'settle','url':'/api/research-metrics','error':True}],hold_queue=True)
+        self.assertEqual('23',views[1]['queued']);self.assertEqual('—',views[-1]['queued']);self.assertTrue(views[-1]['example'])
+    def test_page_is_static_and_examples_match_registered_definitions(self):
+        from html.parser import HTMLParser
+        class Options(HTMLParser):
+            def __init__(self):super().__init__();self.name=None;self.choices={}
+            def handle_starttag(self,tag,attrs):
+                a=dict(attrs)
+                if tag=='select':self.name=a.get('id');self.choices.setdefault(self.name,[])
+                if tag=='option' and self.name:self.choices[self.name].append(a['value'])
+            def handle_endtag(self,tag):
+                if tag=='select':self.name=None
+        html=(ROOT/'ui/index.html').read_text();parser=Options();parser.feed(html)
+        for kind in ('feature','scope'):
+            self.assertEqual(3,len(parser.choices[kind]))
+            for name in parser.choices[kind]:self.assertTrue((ROOT/'definitions'/('feature_recipes' if kind=='feature' else 'scopes')/name/'1.0.0.json').is_file())
+        self.assertEqual(['price_return'],parser.choices['target'])
+        self.assertNotIn('expected-direction',parser.choices)
+        self.assertNotIn('<script src="/submission.js"',html)
+        for old in ('features','targets','scopes'):self.assertNotIn('<script src="/'+old+'.js"',html)
+        self.assertNotIn('id="contract-refresh"',html);self.assertNotIn('Loading features',html)
+        self.assertIn('1, 7, 21 and 63',html)
 
-    def test_first_contract_entry_within_thirty_seconds_is_not_throttled(self):
-        views = startup('#ledger', [
-            {'action': 'navigate', 'hash': '#experiment', 'ms': 1000},
-            {'action': 'event', 'name': 'pageshow'},
-            {'action': 'navigate', 'hash': '#experiment-inputs'},
-            *[{'action': 'settle-catalog'} for _ in range(3)],
-        ])
-        self.assertFalse(CONTRACT_READS & {row['url'] for row in views[0]['calls']})
-        for endpoint in CONTRACT_READS:
-            self.assertEqual([row['url'] for row in views[-1]['calls']].count(endpoint), 1)
-        self.assertIn('1 of 1 saved submissions', views[-1]['ledger'])
-
-    def test_leaving_contract_does_not_schedule_remaining_hidden_catalogs(self):
-        views = startup('#experiment', [
-            {'action': 'navigate', 'hash': '#ledger'},
-            {'action': 'settle-catalog'},
-            {'action': 'event', 'name': 'pageshow'},
-        ])
-        self.assertEqual(sum(row['url'] in CATALOGS for row in views[-1]['calls']), 1)
-        self.assertIn('1 of 1 saved submissions', views[-1]['ledger'])
-        self.assertFalse(CATALOGS & set(views[-1]['active']))
-
-    def test_explicit_refresh_restarts_one_complete_catalog_cycle(self):
-        views = startup('#experiment', [
-            *[{'action': 'settle-catalog'} for _ in range(3)],
-            {'action': 'click', 'id': 'contract-refresh'},
-            {'action': 'event', 'name': 'pageshow'},
-            *[{'action': 'settle-catalog'} for _ in range(3)],
-        ])
-        called = [row['url'] for row in views[-1]['calls']]
-        for endpoint in CATALOGS:
-            self.assertEqual(called.count(endpoint), 2)
-        self.assertIn('1 of 1 saved submissions', views[-1]['ledger'])
-        self.assert_read_only(views[-1])
-
-    def test_slow_catalog_cannot_starve_signal_reads_or_history_refresh(self):
-        views = startup('#experiment', [
-            {'action': 'navigate', 'hash': '#signals', 'ms': 5000},
-            {'action': 'click', 'id': 'queue-refresh'},
-            {'action': 'navigate', 'hash': '#ledger'},
-        ])
-        for view in views:
-            self.assertEqual(len(CATALOGS & set(view['active'])), 1)
-            self.assertFalse(view['waiting'])
-            self.assertIn('1 of 1 saved submissions', view['ledger'])
-        self.assertIn('1 researched Signal', views[1]['signals'])
-        self.assertIn('63-day log momentum', views[1]['signalCards'])
-        self.assertEqual([row['url'] for row in views[-1]['calls']].count('/api/experiments'), 2)
-        self.assert_read_only(views[-1])
-
-    def test_failed_initial_queue_read_unlocks_contract_once_without_claiming_empty_history(self):
-        views = startup('#experiment', [
-            {'action': 'settle', 'url': '/api/experiments', 'error': True},
-            {'action': 'event', 'name': 'pageshow'},
-            {'action': 'settle', 'url': '/api/experiments'},
-            *[{'action': 'settle-catalog'} for _ in range(3)],
-        ], hold_queue=True)
-        self.assertIn('unavailable', views[1]['ledger'].lower())
-        self.assertNotIn('No saved submissions', views[1]['ledger'])
-        settled = [event for event in views[-1]['timeline']
-                   if event.get('event') == 'research-queue-settled']
-        self.assertEqual(len(settled), 1)
-        self.assertEqual(settled[0]['detail'], {'verified': False})
-        for endpoint in CONTRACT_READS:
-            self.assertEqual([row['url'] for row in views[-1]['calls']].count(endpoint), 1)
-        self.assertIn('1 of 1 saved submissions', views[-1]['ledger'])
-
-    def test_pagehide_during_first_queue_read_defers_contract_until_pageshow(self):
-        views = startup('#experiment', [
-            {'action': 'event', 'name': 'pagehide'},
-            {'action': 'settle', 'url': '/api/experiments'},
-            {'action': 'event', 'name': 'pageshow'},
-            {'action': 'event', 'name': 'pageshow'},
-            {'action': 'settle', 'url': '/api/experiments'},
-            *[{'action': 'settle-catalog'} for _ in range(3)],
-        ], hold_queue=True)
-        self.assertFalse(CONTRACT_READS & {row['url'] for row in views[2]['calls']})
-        self.assertIn('1 of 1 saved submissions', views[2]['ledger'])
-        self.assertEqual(sum(event.get('event') == 'research-queue-settled'
-                             for event in views[-1]['timeline']), 1)
-        for endpoint in CONTRACT_READS:
-            self.assertEqual([row['url'] for row in views[-1]['calls']].count(endpoint), 1)
-
-    def test_queue_deadline_leaves_server_work_but_retry_still_has_capacity(self):
-        views = startup('#experiment', [
-            {'action': 'advance', 'ms': 60000},
-            {'action': 'click', 'id': 'queue-refresh'},
-            {'action': 'settle', 'url': '/api/experiments', 'index': 1},
-        ], hold_queue=True)
-        self.assertTrue(views[1]['calls'][0]['aborted'])
-        self.assertFalse(views[1]['calls'][0]['done'])
-        self.assertIn('unavailable', views[1]['ledger'].lower())
-        self.assertEqual(len(views[2]['active']), 4)
-        self.assertFalse(views[2]['waiting'])
-        self.assertIn('1 of 1 saved submissions', views[-1]['ledger'])
-        self.assertEqual(sum(event.get('event') == 'research-queue-settled'
-                             for event in views[-1]['timeline']), 1)
-        self.assert_read_only(views[-1])
-
-    def test_return_after_interrupted_warmup_reloads_current_catalog_without_throttle(self):
-        views = startup('#experiment', [
-            {'action': 'navigate', 'hash': '#ledger'},
-            {'action': 'settle-catalog'},
-            {'action': 'navigate', 'hash': '#experiment-inputs', 'ms': 1000},
-            *[{'action': 'settle-catalog'} for _ in range(3)],
-        ])
-        called = [row['url'] for row in views[-1]['calls']]
-        self.assertEqual(called.count('/api/scope-library'), 2)
-        self.assertEqual(called.count('/api/feature-library'), 1)
-        self.assertEqual(called.count('/api/target-library'), 1)
-        self.assertFalse(CATALOGS & set(views[-1]['active']))
-
-    def test_repeated_forced_refresh_during_warmup_coalesces_one_followup_cycle(self):
-        views = startup('#experiment', [
-            {'action': 'click', 'id': 'contract-refresh'},
-            {'action': 'click', 'id': 'contract-refresh'},
-            {'action': 'event', 'name': 'pageshow'},
-            *[{'action': 'settle-catalog'} for _ in range(6)],
-        ])
-        for view in views:
-            self.assertLessEqual(len(CATALOGS & set(view['active'])), 1)
-        for endpoint in CATALOGS:
-            self.assertEqual([row['url'] for row in views[-1]['calls']].count(endpoint), 2)
-        self.assert_read_only(views[-1])
-
-
-if __name__ == '__main__':
-    unittest.main()
+if __name__=='__main__':unittest.main()

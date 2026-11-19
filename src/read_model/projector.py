@@ -57,6 +57,16 @@ def stamp():
     return datetime.now(timezone.utc).isoformat()
 
 
+def compact_if_wasteful(db):
+    """Reclaim empty pages in the unpublished copy after cache conversion."""
+    pages = db.execute('PRAGMA page_count').fetchone()[0]
+    unused = db.execute('PRAGMA freelist_count').fetchone()[0]
+    size = db.execute('PRAGMA page_size').fetchone()[0]
+    if unused and (pages * size > MAX_DATABASE_BYTES
+                   or (unused * size >= 64 * 1024 * 1024 and unused * 5 >= pages)):
+        db.execute('VACUUM')
+
+
 def build(root, directory, *, timeout=600, max_bytes=MAX_DIRECTORY_BYTES, fail_at=None):
     root = Path(root).resolve(); directory = Path(directory).absolute()
     if directory.resolve() != directory or directory.is_relative_to(root) or root.is_relative_to(directory):
@@ -108,6 +118,7 @@ def _build(root, directory, timeout, max_bytes, fail_at):
                     'issue_count': len(extraction['issues']), 'source_inventory': extraction['inventory_sha256']}
         for key, value in metadata.items(): db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)', (key, encoded(value)))
         db.commit()
+        compact_if_wasteful(db)
         if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok' or db.execute('PRAGMA foreign_key_check').fetchone():
             raise IntegrityFailure('Derived database failed integrity checks')
         counts = {table: db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in

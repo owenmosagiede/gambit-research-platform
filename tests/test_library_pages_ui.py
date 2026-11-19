@@ -16,9 +16,12 @@ class PageStructureTests(unittest.TestCase):
         self.assertNotIn('<section', aside)
         self.assertNotIn('library-items', aside)
         experiment = html.split('<main id="experiment-inputs"', 1)[1].split('</main>', 1)[0]
-        for label in ('Trial queue', 'Sequential execution', 'queue-board', 'queue-status'):
+        for label in ('Trial Queue', 'Tests in queue', 'Completed in the past hour', 'queue-summary', 'queue-status'):
             self.assertIn(label, experiment)
-        self.assertIn('/queue.js', html)
+        queue = experiment.split('</section>', 1)[0]
+        self.assertNotIn('<details', queue)
+        self.assertNotIn('Sequential execution', queue)
+        self.assertIn('/queue-metrics.js', html)
 
     def test_pit_page_and_signal_filters_are_not_shipped(self):
         html = (ROOT / 'ui/index.html').read_text()

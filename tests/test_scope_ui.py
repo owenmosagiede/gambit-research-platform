@@ -338,7 +338,7 @@ class ScopeUiTests(unittest.TestCase):
         self.assertEqual(len(view['options']), 1)
         self.assertFalse(view['retryHidden'])
 
-    def test_markup_uses_existing_styles_and_keeps_four_inputs(self):
+    def test_markup_uses_existing_styles_and_three_static_inputs(self):
         from html.parser import HTMLParser
         class Parser(HTMLParser):
             def __init__(self):
@@ -366,11 +366,13 @@ class ScopeUiTests(unittest.TestCase):
         parser.feed(source)
         self.assertEqual(parser.contract_role, 'group')
         self.assertEqual([item['id'] for item in parser.selects],
-                         ['feature', 'target', 'scope', 'expected-direction'])
-        self.assertEqual(parser.selects[2]['aria-describedby'], 'scope-status')
-        self.assertIn('/scopes.js', parser.scripts)
-        self.assertIn('id="scope-status" class="field-note"', source)
-        self.assertIn('id="scope-retry" class="text-button"', source)
+                         ['feature', 'target', 'scope'])
+        self.assertIn('/contract-examples.js', parser.scripts)
+        for script in ('/features.js', '/targets.js', '/scopes.js', '/submission.js'):
+            self.assertNotIn(script, parser.scripts)
+        for control in ('expected-direction', 'scope-status', 'scope-retry', 'contract-refresh'):
+            self.assertNotIn('id="'+control+'"', source)
+        self.assertTrue(all('disabled' not in item for item in parser.selects))
         self.assertNotIn('mock-scope-', source)
         self.assertNotIn('id="experiment-submit"', source)
 

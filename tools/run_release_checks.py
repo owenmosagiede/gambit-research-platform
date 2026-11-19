@@ -13,6 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = [
+    'test_research_metrics',
     'test_fx_value',
     'test_fx_currency', 'test_fx_currency_migration', 'test_fx_migration_index', 'test_fx_catalog_preflight', 'test_fx_migration_control', 'test_feature_resolution',
     'test_scopes', 'test_scope_api', 'test_scope_ui', 'test_fx_transformations', 'test_fx_targets',
@@ -28,7 +29,7 @@ SUITES = [
     'test_research_http', 'test_experiment_views', 'test_experiment_labels', 'test_separate_services', 'test_two_workers', 'test_production_access', 'test_forecast_models_readout',
     'test_production_http', 'test_production_session_js', 'test_queue_ui',
     'test_signal_recipe_ui', 'test_library_pages_ui', 'test_research_ui', 'test_research_startup',
-    'test_read_model', 'test_read_model_branches', 'test_read_model_http', 'test_read_model_ui', 'test_chart_evidence', 'test_live_activity',
+    'test_read_model', 'test_read_model_unit_cache', 'test_read_model_branches', 'test_read_model_http', 'test_read_model_ui', 'test_chart_evidence', 'test_live_activity',
     'test_catalog_cache', 'test_catalog_reads', 'test_signal_recipe_summaries',
     'test_signal_library_api', 'test_feature_library_api',
     'test_reusable_feature_recipes', 'test_feature_research_dashboard',

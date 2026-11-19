@@ -60,6 +60,35 @@ class ReadModelTests(unittest.TestCase):
         self.assertEqual(fourth['counts']['experiments'],1); self.assertEqual(fourth['counts']['aliases'],1)
         self.assertEqual(detail(self.output,'experiment',alias)['record']['job']['request_id'],rid)
 
+    def test_compressed_units_preserve_exact_served_records_and_source_baselines(self):
+        from read_model.storage import encoded
+        self.submit();self.jobs.run_pending_once();before=self.files()
+        plain=self.base/'plain-serving'
+        with patch('read_model.extract.pack',side_effect=encoded):old=build(self.root,plain)
+        new=build(self.root,self.output)
+        self.assertEqual(old['projection_sha256'],new['projection_sha256'])
+        a=connect(current(plain)[0]);b=connect(current(self.output)[0])
+        try:
+            for table in ('experiments','aliases','branches','trials','decisions','relationships','recipes'):
+                self.assertEqual([tuple(r) for r in a.execute('SELECT * FROM '+table+' ORDER BY id')],
+                                 [tuple(r) for r in b.execute('SELECT * FROM '+table+' ORDER BY id')])
+            self.assertEqual([tuple(r) for r in a.execute('SELECT path,signature,sha256 FROM sources ORDER BY path')],
+                             [tuple(r) for r in b.execute('SELECT path,signature,sha256 FROM sources ORDER BY path')])
+            self.assertLess(b.execute('SELECT sum(length(value)) FROM units').fetchone()[0],
+                            a.execute('SELECT sum(length(value)) FROM units').fetchone()[0])
+        finally:a.close();b.close()
+        self.assertEqual(before,self.files())
+        refreshed=build(self.root,self.output)
+        self.assertEqual(refreshed['projection_sha256'],new['projection_sha256'])
+        self.assertEqual(refreshed['extraction']['rebuilt'],{})
+
+    def test_failed_compaction_preserves_last_generation_and_research(self):
+        self.submit();original=build(self.root,self.output);before=self.files()
+        with patch('read_model.projector.compact_if_wasteful',side_effect=OSError('No temporary space')):
+            with self.assertRaises(OSError):build(self.root,self.output)
+        self.assertEqual(current(self.output)[1]['generation'],original['generation'])
+        self.assertEqual(before,self.files())
+
     def test_pagination_pins_old_generation_during_new_publication(self):
         self.submit(); self.submit('NEGATIVE'); build(self.root,self.output)
         first=page(self.output,'queue',{'limit':'1'})

@@ -5,7 +5,7 @@
   const $ = id => document.getElementById(id);
   const prefix = "/api/read-model/v1/";
   const state = new Map();
-  let visible = null, timer = null, selected = null, activityController = null;
+  let visible = null, selected = null;
   const node = (tag, text, cls) => {
     const n = document.createElement(tag);
     if (text !== undefined) n.textContent = text;
@@ -36,7 +36,7 @@
     } finally { window.clearTimeout(timeout); }
   }
   const targets = {
-    queue: ["queue-board","queue-status"], ledger:["ledger-items","ledger-status"], recipes:["signal-table-container","signal-library-status"]
+    ledger:["ledger-items","ledger-status"], recipes:["signal-table-container","signal-library-status"]
   };
   function params(kind) {
     const q = new URLSearchParams({limit:"50"});
@@ -96,15 +96,9 @@
       const data=await request(prefix+kind+"?"+q,s.controller);
       if (serial!==s.serial) return;
       if (!Array.isArray(data.items) || !Number.isInteger(data.total)) throw new Error("Invalid saved view.");
-      status.textContent=freshness(data)+`${data.items.length} shown of ${data.total}. `+(kind==="queue" ? "Queue counts and order belong to this snapshot; live activity is shown separately." : "");
+      status.textContent=freshness(data)+`${data.items.length} shown of ${data.total}. `;
       container.replaceChildren();
       container.className=kind==="recipes" ? "read-model-recipes" : "read-model-records";
-      if(kind==="queue") {
-        const activity=node("section",undefined,"research-panel live-activity");container.append(activity);
-        loadActivity(activity,data);
-        const counts=data.status_counts||{};
-        container.append(node("h3",`${counts.queued ?? "—"} waiting · saved queue`),node("p",data.status_counts ? `Recorded stages: preparation ${(counts.preparing||0)+(counts.resolving||0)} · P1 ${counts.p1||0} · P2 ${counts.p2||0}. Ordered by the stored queue; snapshot states may lag the current worker.` : "Recorded stage counts unavailable.","field-note"));
-      }
       for (const item of data.items) container.append(kind==="recipes" ? recipeCard(item,data.freshness.generation) : trialCard(item));
       if (!data.items.length) container.append(node("p",data.issue_count ? "No verified records in this view. Some records are unavailable." : "No saved records in this view.","field-note"));
       pager(kind,container,data); s.data=data;s.generation=data.freshness.generation;
@@ -114,11 +108,6 @@
       const retry=button("Refresh latest",()=>load(kind,0,true));
       if (!s.data) container.replaceChildren(retry);
       else if (error.status===410) container.append(retry);
-      if(kind==="queue") {
-        let activity=container.querySelector?.(".live-activity");
-        if(!activity) {activity=node("section",undefined,"research-panel live-activity");container.append(activity);}
-        loadActivity(activity,s.data||{items:[]});
-      }
     } finally {
       if (serial===s.serial) container.setAttribute("aria-busy","false");
       window.dispatchEvent(new CustomEvent("research-queue-settled",{detail:{verified:Boolean(s.data)}}));
@@ -199,30 +188,8 @@
       body.append(button("Refresh relationships",()=>showBranches(recipe,null)));
     } catch (error) { if (identity===selected) {status.textContent=error.message;body.replaceChildren(button("Retry",()=>showBranches(recipe,null)));} }
   }
-  async function loadActivity(panel,snapshot) {
-    activityController?.abort();const controller=new AbortController();activityController=controller;
-    panel.replaceChildren(node("h3","Current research"),node("p","Checking the worker…"));
-    try {
-      const data=await request(prefix+"activity",controller,"live_activity_v1");
-      if(controller!==activityController||visible!=="queue")return;
-      panel.replaceChildren(node("h3","Current research"),node("p",`Worker: ${words(data.worker.state)} · checked ${stamp(data.observed_at)}`));
-      if(!data.active) {
-        panel.append(node("p",data.activity_unavailable || data.worker.state==="unknown" ? "Current experiment cannot be verified. The queue below is a saved snapshot." : "No active experiment was observed at this checkpoint."));return;
-      }
-      const active=data.active;
-      const saved=snapshot.items.find(x=>x.job.request_id===active.request_id);
-      let item=saved;
-      if(!item && snapshot.freshness?.generation)try{item=(await request(prefix+"experiment/"+active.request_id+"?generation="+snapshot.freshness.generation,controller)).record;}catch(_){}
-      if(controller!==activityController||visible!=="queue")return;
-      panel.append(node("h4",item?.presentation?.title || "Active experiment"),node("p",item?.presentation?.subtitle || active.request_id),badge(active.status),node("p",active.message),node("p",`Stage updated ${stamp(active.updated_at)}`,"field-note"));
-      const prep=active.preparation;
-      if(prep && prep.state!=="complete") panel.append(node("p",`${prep.phase || ""} preparation · ${prep.members_completed ?? "—"} of ${prep.members_total ?? "—"} members · ${prep.batches_completed ?? "—"} batches completed`));
-      references(panel,{request_id:active.request_id,attempt_id:active.attempt_id,event_sha256:active.event_sha256,observed_at:data.observed_at});
-    } catch(_) {if(controller===activityController)panel.replaceChildren(node("h3","Current research"),node("p","Live worker activity is unavailable. Saved queue records below do not establish current activity."));}
-  }
   function navigate() {
-    window.clearTimeout(timer);
-    selected?.controller.abort();selected=null;window.SignalResearch?.cancel();activityController?.abort();
+    selected?.controller.abort();selected=null;window.SignalResearch?.cancel();
     $("signal-detail").hidden=true;$("signal-catalog-view").hidden=false;
     const hash=window.location.hash;
     visible=["#ledger","#ledger-page"].includes(hash) ? "ledger" : ["#signals","#signal-page"].includes(hash) ? "recipes" : "queue";
@@ -233,18 +200,8 @@
     }
     const skip=document.querySelector(".skip-link"); if (skip) { skip.href=visible==="queue" ? "#experiment-inputs" : visible==="recipes" ? "#signal-page" : "#ledger-page"; skip.textContent="Skip to current research page"; }
     for (const [kind,s] of state) if (kind!==visible) s.controller?.abort();
-    load(visible,0,true);
-    if (visible==="queue") timer=window.setTimeout(poll,30000);
+    if (visible !== "queue") load(visible,0,true);
   }
-  function poll() {
-    if (!document.hidden && visible==="queue") {
-      const saved=state.get("queue");
-      if((saved?.index||0)===0)load("queue",0,true);
-      else {const activity=$("queue-board").querySelector?.(".live-activity");if(activity)loadActivity(activity,saved.data||{items:[]});}
-    }
-    timer=window.setTimeout(poll,30000);
-  }
-  $("queue-refresh").addEventListener("click",()=>load("queue",0,true));
   $("signal-library-retry").hidden=false;
   $("signal-library-retry").addEventListener("click",()=>load("recipes",0,true));
   $("signal-back").addEventListener("click",()=>{ selected?.controller.abort();selected=null;window.SignalResearch?.cancel();$("signal-detail").hidden=true;$("signal-catalog-view").hidden=false; });
@@ -252,11 +209,7 @@
   for (const id of ["ledger-search","ledger-state","ledger-from","ledger-to"]) $(id).addEventListener("input",()=>{window.clearTimeout(searchTimer);searchTimer=window.setTimeout(()=>load("ledger",0,true),250);});
   $("ledger-clear").addEventListener("click",()=> { for (const id of ["ledger-search","ledger-state","ledger-from","ledger-to"]) $(id).value="";load("ledger",0,true); });
   window.addEventListener("hashchange",navigate);
-  window.addEventListener("pagehide",()=>{window.clearTimeout(timer);window.clearTimeout(searchTimer);activityController?.abort();window.SignalResearch?.cancel();selected?.controller.abort();for(const s of state.values())s.controller?.abort();});
+  window.addEventListener("pagehide",()=>{window.clearTimeout(searchTimer);window.SignalResearch?.cancel();selected?.controller.abort();for(const s of state.values())s.controller?.abort();});
   window.addEventListener("pageshow",event=>{if(event.persisted)navigate();});
-  // Put observation first while retaining the existing contract reference below.
-  const activityPage=$("experiment-inputs"),queueSection=$("trial-queue");
-  if(activityPage?.prepend && queueSection) {activityPage.prepend(queueSection);queueSection.className+=" read-model-activity-top";}
-  const queueLink=document.querySelector('[data-page="experiment"]');if(queueLink)queueLink.textContent="Trial queue";
   navigate();
 })();

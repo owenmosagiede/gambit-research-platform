@@ -3,6 +3,8 @@
 (() => {
   if (document.querySelector?.('meta[name="gambit-read-model"]')?.content === "enabled") return;
   const $ = id => document.getElementById(id);
+  const summaryMode = document.querySelector?.('meta[name="gambit-queue-metrics"]')?.content === "enabled";
+  const historyVisible = () => ["#ledger", "#ledger-page"].includes(window.location.hash);
   const board = $("queue-board"), status = $("queue-status"), refresh = $("queue-refresh");
   if (!board || !status || !refresh) return;
   const groups = [
@@ -91,6 +93,7 @@
     if (j.results.length) { const link=node("a", `${j.results.length} saved result links · View Signal Library`, "text-button"); link.href="#signals"; card.append(link); }
   }
   function renderUnavailable(failed = false) {
+    if (summaryMode) { $("ledger-status").textContent = "Research history is unavailable."; return; }
     const message = failed ? "Saved submissions could not be loaded. Refresh to try again." : "Loading saved submissions…";
     board.replaceChildren(node("p", message, "field-note"));
     $("ledger-items")?.replaceChildren(node("p", message, "field-note"));
@@ -98,6 +101,7 @@
     if ($("ledger-status")) $("ledger-status").textContent = failed ? "Trial history is unavailable. No saved history has been verified yet." : "Loading trial history…";
   }
   function render(value) {
+    if (summaryMode) return;
     board.replaceChildren();
     for (const [key, title, states] of groups) {
       const rows = value.items.filter(item => states.includes(item.job.status) && !isDismissed(item));
@@ -140,6 +144,7 @@
     notice.textContent = "Removed from this browser’s queue. Saved records remain in Trial Ledger.";
   }
   function updateStatus() {
+    if (summaryMode) return;
     const visible = last.items.filter(item => !["succeeded", "cancelled"].includes(item.job.status) && !isDismissed(item)).length;
     status.textContent = (stale ? "Queue status could not be refreshed. Showing the last verified status; it may be out of date. " : "") +
       `${visible} queue item${visible === 1 ? "" : "s"}. Completed submissions are in Trial Ledger. ` +
@@ -220,7 +225,7 @@
     return value;
   }
   async function load() {
-    if (loading || !active) return;
+    if (loading || !active || summaryMode && !historyVisible()) return;
     if (timer !== null) window.clearTimeout(timer);
     loading = true; refresh.disabled = true;
     if (!last) renderUnavailable();
@@ -281,7 +286,8 @@
     ledgerRendered = null; renderLedger();
   });
   window.addEventListener("research-queue-refresh", load);
-  refresh.addEventListener("click", load);
+  if (!summaryMode) refresh.addEventListener("click", load);
+  if (summaryMode) window.addEventListener("hashchange", load);
   window.addEventListener("pagehide", () => { active = false; window.clearTimeout(timer); });
   window.addEventListener("pageshow", () => { active = true; load(); });
   load();

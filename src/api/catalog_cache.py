@@ -72,10 +72,11 @@ class CatalogCache:
             with self.lock:
                 self.pending.pop(key, None)
 
-    def get(self, key, read):
+    def get(self, key, read, *, ttl=None):
+        age_limit = self.ttl if ttl is None else min(max(float(ttl), 0.0), 300.0)
         with self.lock:
             cached = self.entries.get(key)
-            if cached and self.clock() - cached[0] < self.ttl:
+            if cached and self.clock() - cached[0] < age_limit:
                 self.entries.move_to_end(key)
                 return deepcopy(cached[1])
             future = self.pending.get(key)
