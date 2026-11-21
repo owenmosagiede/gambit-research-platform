@@ -46,6 +46,28 @@ class PairedTests(TestCase):
         self.assertTrue(all(r['target_end']<'2024-03-01' for r in total['rows']))
         self.assertNotEqual([r['target'] for r in total['rows']],[r['target'] for r in common['rows']])
 
+    def test_external_update_coverage_counts_only_financed_valid_rows(self):
+        from research.paired_returns import branch_data
+        funding=fx_funding.install(self.root,*captures(start='2024-02-01'))
+        bindings={h:fx_total.materialize(self.root,b['materialization'],funding)
+                  for h,b in self.base['members'][0]['targets'].items()}
+        config={'schema':'fx_total_return_release_v1','funding_model':reference(fx_total.policy()),
+                'funding_snapshot':funding,'materializations':{'EURUSD':bindings}}
+        (self.root/'config/fx_total_return.json').write_text(json.dumps(config))
+        plan=inputs.resolve_plan(self.root,self.intent,self.fixture.profile)
+        prepared=inputs.prepare_phase(self.root,plan,'P1')
+        common=inputs.load_phase(self.root,plan,prepared,'P1',1)
+        for row in common['rows']:
+            row['lineage']['original_observation']={'source_update':row['date']}
+        spot_valid=sum(r['valid'] for r in common['rows'])
+        common['coverage'][0]['valid_distinct_source_update_count']=spot_valid
+        total=branch_data(self.root,plan,common,'total_return','P1',1)
+        total_valid=sum(r['valid'] for r in total['rows'])
+        self.assertGreater(total_valid,0)
+        self.assertLess(total_valid,spot_valid)
+        self.assertEqual(total['coverage'][0]['valid_distinct_source_update_count'],total_valid)
+        self.assertEqual(common['coverage'][0]['valid_distinct_source_update_count'],spot_valid)
+
     def test_p1_does_not_decode_validation_target_values_in_shared_year_partition(self):
         from research.paired_returns import branch_data
         from data.alfred_onboarding import strict_json

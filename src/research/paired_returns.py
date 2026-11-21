@@ -88,6 +88,9 @@ def branch_data(root,plan,data,family,phase,horizon):
     for coverage in result['coverage']:
         valid=sum(r['valid'] for r in result['rows'] if r['instrument']==coverage['instrument_id'])
         coverage.update(valid_rows=valid,unavailable_rows=coverage['scheduled_rows']-valid)
+        if 'valid_distinct_source_update_count' in coverage:
+            coverage['valid_distinct_source_update_count']=len({digest(r['lineage']['original_observation'])
+                for r in result['rows'] if r['instrument']==coverage['instrument_id'] and r['valid']})
     result['lineage']['funding_model']=plan['paired_returns']['funding_model']
     result['lineage']['paired_spot_plan_id']=plan['plan_id']
     return result
