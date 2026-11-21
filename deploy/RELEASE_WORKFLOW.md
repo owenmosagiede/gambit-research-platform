@@ -66,6 +66,12 @@ stops the idle worker. It holds all writer/executor locks during file replacemen
 No forced termination is used. Original changed code is saved with checksums,
 then services restart and health is checked. Runtime Python remains unchanged.
 
+After restart, the controller allows up to ten minutes for the worker's initial
+queue verification and the public health endpoint to become healthy. It refreshes
+the private health oneshot at most once every ten seconds to avoid systemd's start
+limit. Both services must be active and the existing public health check must pass;
+no health requirement, queue check, backup check or rollback guard is skipped.
+
 A separately approved frozen-program cutover can preserve a fully accepted
 queue. If that cutover follows the exact reviewed momentum reset, see
 [Retired-definition cutover](RETIRED_DEFINITION_CUTOVER.md) for the narrowly pinned
