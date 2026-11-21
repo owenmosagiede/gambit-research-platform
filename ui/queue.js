@@ -46,7 +46,7 @@
     }
     return {Feature: "Saved experiment", Scope: item.intent?.scope.id || "Scope unavailable", Title: "Saved experiment",
       Subtitle: "Saved input labels could not be verified. Expand the record for its exact selections.",
-      Target: "Forward price return · five forecast horizons"};
+      Target: item.intent?.target_family === "total_return" ? "Spot + modelled total return" : "Forward price return · five forecast horizons"};
   }
   function references(card, item) {
     const details = node("details", undefined, "definition-panel");

@@ -60,7 +60,11 @@
     }, null, 2);
     const complete = feature && scope && resolvedScope && target && direction && fields.every(valid) &&
       ($('target').value !== 'total_return' || direction === 'DISCOVERY_SIGN_V1' && resolvedScope.kind === 'instrument');
-    $('contract-selection-status').textContent = resolution?.submission_compatible === false
+    const pairedUnsupported = $('target').value === 'total_return' &&
+      (direction !== 'DISCOVERY_SIGN_V1' || resolvedScope?.kind !== 'instrument');
+    $('contract-selection-status').textContent = pairedUnsupported
+      ? 'Paired modelled total-return tests require an individual FX pair and direction discovery in P1. This page never submits a request.'
+      : resolution?.submission_compatible === false
       ? `This combination is unsupported. ${resolution.source_application_note || 'Choose compatible registered inputs.'} This page never submits a request.`
       : complete && resolution?.submission_compatible === true
         ? 'Example for the selected inputs. Replace the UUID placeholder in research tooling; the service rechecks and freezes the exact dependencies on submission. This page never submits a request.'

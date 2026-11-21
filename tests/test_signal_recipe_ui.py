@@ -648,6 +648,17 @@ class SignalRecipeUiTests(unittest.TestCase):
         self.assertEqual(rows(view['table'])[0][3], 'N/A')
         self.assertNotIn('VALIDATED', flatten(view['table']))
 
+    def test_modelled_total_return_and_discovered_direction_remain_visible(self):
+        item=recorded_group()
+        item['research']['relationships'][0].update(target_family='total_return',
+            expected_direction='DISCOVERY_SIGN_V1',validation_direction='NEGATIVE')
+        view=ui([item],[{'action':'select','id':item['id']}])[-1]
+        self.assertEqual(len(rows(view['table'])),1)
+        text=flatten(view['detail'])
+        self.assertIn('Modelled Total Return',text)
+        self.assertIn('P1-selected: NEGATIVE',text)
+        self.assertIn('Price Return',text)
+
     def test_new_result_event_refreshes_existing_selection_and_deduplicates_repeats(self):
         old, updated = group(), recorded_group()
         states = ui([old], [{'action': 'select', 'id': old['id']},

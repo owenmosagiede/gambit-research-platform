@@ -84,8 +84,8 @@
     if (item.results === undefined) return true; // Historical reference-only projections.
     const date = value => text(value) && /^\d{4}-\d{2}-\d{2}$/.test(value);
     return Array.isArray(item.results) && item.scope && text(item.scope.id) && ["TS", "CS"].includes(item.mode) &&
-      [1, 7, 21, 63, 252].includes(item.horizon) && item.target_family === "price_return" &&
-      ["POSITIVE", "NEGATIVE"].includes(item.expected_direction) && text(item.p1_status) && text(item.p2_status) &&
+      [1, 7, 21, 63, 252].includes(item.horizon) && ["price_return", "total_return"].includes(item.target_family) &&
+      ["POSITIVE", "NEGATIVE", "DISCOVERY_SIGN_V1"].includes(item.expected_direction) && text(item.p1_status) && text(item.p2_status) &&
       item.results.every(result => result && ["P1", "P2"].includes(result.stage) && result.period &&
         date(result.period.start_inclusive) && date(result.period.end_exclusive) &&
         result.period.start_inclusive < result.period.end_exclusive && reference(result.authority) &&
@@ -300,8 +300,11 @@
       for (const relationship of entry.research.relationships.filter(r => Array.isArray(r.results))) {
         const section = el('section', undefined, 'research-note');
         section.append(el('h3', `${relationship.mode} · ${relationship.horizon}-day forecast horizon`));
-        section.append(facts([['Scope', relationship.scope_label || relationship.scope.id], ['Target', 'Price Return'],
-          ['Expected Direction', relationship.expected_direction], ['P1', relationship.p1_status], ['P2', relationship.p2_status]]));
+        section.append(facts([['Scope', relationship.scope_label || relationship.scope.id],
+          ['Target', relationship.target_family === 'total_return' ? 'Modelled Total Return' : 'Price Return'],
+          ['Expected Direction', relationship.expected_direction === 'DISCOVERY_SIGN_V1' ?
+            `P1-selected${relationship.validation_direction ? ': ' + relationship.validation_direction : ''}` : relationship.expected_direction],
+          ['P1', relationship.p1_status], ['P2', relationship.p2_status]]));
         for (const result of relationship.results) {
           section.append(el('h4', `${result.stage} · ${result.period.start_inclusive} – ${result.period.end_exclusive} (exclusive)`));
           const metrics = Object.entries(result.metrics || {}).filter(([,value]) => value === null || ['string','number','boolean'].includes(typeof value));
