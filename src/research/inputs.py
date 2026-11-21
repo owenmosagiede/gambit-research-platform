@@ -269,6 +269,9 @@ def _structural_start(store, snapshot):
 
 def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     """Resolve metadata and immutable bindings, without any preparation or labels."""
+    if intent.get('target_family')=='total_return':
+        from research.paired_returns import resolve_plan as paired_plan
+        return paired_plan(root,intent,profile,feature_manifest_index=feature_manifest_index)
     profile = _profile(profile)
     if set(intent) != {'feature', 'scope', 'target_family', 'expected_direction'}:
         raise InputsBlocked('Expected one recipe, Scope, return family and explicit direction')

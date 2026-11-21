@@ -73,6 +73,9 @@ class FeatureStore:
 
     def _validate(self, record):
         version=record.get('schema_version')
+        if version=='0.10.0':
+            from data.fx_funding import validate_record as validate_funding
+            return validate_funding(record)
         if version=='0.9.0':
             from data.fx_value import validate_record as validate_value
             return validate_value(record)

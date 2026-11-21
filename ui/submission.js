@@ -47,18 +47,19 @@
   function render() {
     renderCatalog();
     const feature = selection('feature', 'featureReference'), scope = selection('scope', 'scopeReference');
-    const target = valid($('target')) && $('target').value === 'price' && $('target').dataset.returnBasis === 'price';
+    const target = valid($('target')) && ['price','total_return'].includes($('target').value) && $('target').dataset.returnBasis === $('target').value;
     const direction = valid($('expected-direction')) && ['DISCOVERY_SIGN_V1', 'POSITIVE', 'NEGATIVE'].includes($('expected-direction').value)
       ? $('expected-direction').value : null;
     const resolution = matchingResolution(feature, scope), resolvedScope = scopeResolution(scope);
     $('contract-example').textContent = JSON.stringify({
       request_id: '<new canonical UUID>',
       feature: feature || {id: '<registered Feature ID>', version: '<exact version>'},
-      target_family: target ? 'price_return' : '<available Target family>',
+      target_family: target ? ($('target').value === 'total_return' ? 'total_return' : 'price_return') : '<available Target family>',
       scope: scope || {id: '<registered Scope ID>', version: '<exact version>'},
       expected_direction: direction || '<DISCOVERY_SIGN_V1, POSITIVE or NEGATIVE>'
     }, null, 2);
-    const complete = feature && scope && resolvedScope && target && direction && fields.every(valid);
+    const complete = feature && scope && resolvedScope && target && direction && fields.every(valid) &&
+      ($('target').value !== 'total_return' || direction === 'DISCOVERY_SIGN_V1' && resolvedScope.kind === 'instrument');
     $('contract-selection-status').textContent = resolution?.submission_compatible === false
       ? `This combination is unsupported. ${resolution.source_application_note || 'Choose compatible registered inputs.'} This page never submits a request.`
       : complete && resolution?.submission_compatible === true

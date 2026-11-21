@@ -47,6 +47,8 @@ def with_experiment_labels(root, jobs, value):
             target_label = 'Forward price return · five forecast horizons'
             if plan.get('profile', {}).get('research_schedule'):
                 target_label = 'Forward price return · ' + ', '.join(f'{h}D' for h in plan['horizons'])
+            if 'paired_returns' in plan:
+                target_label = 'Spot + modelled total return · separate P1/P2 decisions'
             item['presentation'] = {
                 'state': 'verified',
                 'feature_label': feature_name, 'scope_label': scope_name,

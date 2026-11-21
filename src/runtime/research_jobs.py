@@ -637,7 +637,11 @@ class ResearchJobs:
                 'description':'Access intent recorded before loading; interruption means exposure is possible, not certified untouched.'}
         if direction_binding is not None:
             body['direction_binding'] = direction_binding
-        self.store.put('exposure',{'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon},body)
+        key={'request_id':rid,'attempt_id':job['attempt_id'],'phase':phase,'horizon':horizon}
+        if 'paired_execution' in plan:
+            key['target_family']=plan['paired_execution']['family']
+            body['paired_execution']=plan['paired_execution']
+        self.store.put('exposure',key,body)
     def _run(self,rid):
         from data.verified_inputs import execution_inputs
         # Lifetime is one frozen submission attempt, never the web session.
@@ -695,6 +699,12 @@ class ResearchJobs:
                     if period!=plan['periods'][phase]:options['horizon']=horizon
                     prepared_periods[key]=adapter.prepare_phase(self.root,plan,phase,**options)
                 return prepared_periods[key]
+            if 'paired_returns' in plan:
+                if execution_approval or submission.get('p2_followup'):
+                    raise ResearchBlocked([{'code':'PAIRED_COMPATIBILITY_UNSUPPORTED','message':'Paired returns require their original exact implementation; cross-version follow-ups are not supported.'}])
+                from research.paired_returns import execute as execute_paired
+                execute_paired(self,rid,plan,adapter,prepare,profile,impl)
+                return
             from research.direction import discovery_binding, verify_followup, verify_no_prior_p2
             direction_policy = plan['intent']['expected_direction']
             followup = submission.get('p2_followup')

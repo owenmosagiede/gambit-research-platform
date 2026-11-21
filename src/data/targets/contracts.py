@@ -238,6 +238,9 @@ def create_definition(body, display_name='Investment return Target'):
 
 
 def validate_definition(record):
+    if record.get('schema_version')=='0.10.0':
+        from .fx_total import validate_record as validate_total
+        return validate_total(record)
     validate_schema(record)
     object_fields(record, {'schema_version', 'record_type', 'id', 'version', 'display_name', 'body'}, path='Target definition')
     expected = create_definition(record['body'], record['display_name'])

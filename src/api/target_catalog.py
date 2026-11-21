@@ -16,6 +16,11 @@ def list_target_catalog(root):
             if target_path(record['id'], record['version']) != str(path.relative_to(store.root)):
                 raise ValueError('Target definition path mismatch')
             body = record['body']
+            if record.get('schema_version')=='0.10.0':
+                from data.targets.fx_total import catalog_item
+                definitions[record['id']]=record
+                targets[record['id']]=catalog_item(record,[])
+                continue
             economic = store.resolve(next(s for s in body['sources'] if s['role']=='instrument')['economic_policy'])['body']
             definitions[record['id']] = record
             targets[record['id']] = {'target_id':record['id'], 'name':record['display_name'],
@@ -33,6 +38,12 @@ def list_target_catalog(root):
             if path.parent.name != manifest['id'] or reference(definitions[definition['id']]) != manifest['definition']:
                 raise ValueError('Target manifest ownership mismatch')
             item = targets[definition['id']]
+            if manifest['schema_version']=='0.10.0':
+                from data.targets.fx_total import catalog_item
+                saved=catalog_item(definition,[manifest])
+                item['materializations'].extend(saved['materializations'])
+                item.update(source_eligibility='eligible',readiness=manifest['research_readiness'])
+                continue
             saved = {'id':manifest['id'], 'state':manifest['state'], 'research_readiness':manifest['research_readiness'],
                 'valid_count':manifest['status_counts'].get('valid',0), 'row_count':manifest['row_count'],
                 'verification_state':'catalog_metadata_only', 'reason':'Catalog metadata; observation integrity is verified on use.'}

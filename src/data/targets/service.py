@@ -185,6 +185,9 @@ def read_materialization(root, materialization_id):
     if not path.is_file():
         raise TargetNotFound('Target materialization is not published')
     raw_manifest=strict_json(stable_read(path))
+    if raw_manifest.get('schema_version')=='0.10.0':
+        from .fx_total import read as read_total
+        return read_total(root,materialization_id)
     if raw_manifest.get('schema_version')=='0.5.0':
         from .fx import read_materialization as read_fx
         return read_fx(root,materialization_id)
@@ -300,6 +303,10 @@ def list_targets(root):
         try:
             definition=get_definition(root,identifier,path.stem)
             body=definition['body']
+            if definition.get('schema_version')=='0.10.0':
+                from .fx_total import catalog_item
+                targets.append(catalog_item(definition,list_materializations(root,identifier)))
+                continue
             econ=store.resolve(next(source for source in body['sources'] if source['role']=='instrument')['economic_policy'])['body']
             manifests=list_materializations(root,identifier)
             mats=[{'id':item['id'],'state':item['state'],'research_readiness':item['research_readiness'],

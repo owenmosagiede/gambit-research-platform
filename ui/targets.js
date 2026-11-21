@@ -8,9 +8,10 @@
   // UI categories map to existing registry return_basis values. A selection
   // includes the whole five-horizon family, never one instrument or horizon.
   const familyHorizons = [1, 7, 21, 63, 252];
+  const totalHorizons = [1, 7, 21, 63];
   const returnCategories = [
     {value: "price", label: "Price Return"},
-    {value: "total_return", label: "Total Return"},
+    {value: "total_return", label: "Modelled Total Return + Spot"},
     {value: "benchmark_excess", label: "Excess Return"},
   ];
   let requestGeneration = 0;
@@ -160,6 +161,14 @@
     return familyHorizons.every(amount => members.some(({target}) => target.horizon.amount === amount)) ? members : [];
   }
 
+  function totalFamily() {
+    const members = entries.filter(target => target.return_basis === "total_return" &&
+      target.return_model === "modelled_total_return" && target.source_eligibility === "eligible" &&
+      target.definition_state === "valid" && scheduledWeekdays(target) && totalHorizons.includes(target.horizon.amount))
+      .map(target => ({target, saved: chosenMaterialization(target)})).filter(member => member.saved);
+    return totalHorizons.every(amount => members.some(({target}) => target.horizon.amount === amount)) ? members : [];
+  }
+
   function notifyTargetState() {
     if (typeof window.dispatchEvent === "function" && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("target-state-change"));
   }
@@ -172,7 +181,8 @@
     for (const category of returnCategories) {
       // Total and Excess Return stay visible until their implementation and
       // populated observations are explicitly supported by this interface.
-      select.append(option(category.label, category.value, category.value !== "price" || !available));
+      const supported = category.value === "price" ? available : category.value === "total_return" && totalFamily().length > 0;
+      select.append(option(category.label, category.value, !supported));
     }
     select.disabled = !available;
     select.value = "";
@@ -189,10 +199,10 @@
       if (detailController) detailController.abort();
       details.hidden = true;
     }
-    const members = select.value === "price" && !select.disabled ? priceFamily() : [];
+    const members = !select.disabled ? (select.value === "price" ? priceFamily() : select.value === "total_return" ? totalFamily() : []) : [];
     if (!members.length) { select.value = ""; notifyTargetState(); return; }
     select.dataset.returnBasis = select.value;
-    select.dataset.horizons = JSON.stringify(familyHorizons);
+    select.dataset.horizons = JSON.stringify(select.value === "total_return" ? totalHorizons : familyHorizons);
     select.dataset.horizonUnit = "scheduled_weekdays";
     select.dataset.targetBindings = JSON.stringify(members.map(({target, saved}) => ({
       target_id: target.target_id, definition_version: target.definition_version,
@@ -200,7 +210,9 @@
     })));
     notifyTargetState();
     const provisional = members.some(({saved}) => saved.research_readiness !== "historically_certified");
-    status.textContent = "Includes all five horizons: 1, 7, 21, 63 and 252 scheduled weekdays. " + (provisional ?
+    status.textContent = select.value === "total_return" ?
+      "Tests spot and modelled total return together, with separate P1/P2 decisions. Uses benchmark funding before execution costs. CNH is excluded. Active forecast horizons follow the frozen Research Spec." :
+      "Includes all five horizons: 1, 7, 21, 63 and 252 scheduled weekdays. " + (provisional ?
       "Provisional retrospective research; not certified historical replay. Historical timing and live use remain unverified." :
       "Stored labels available. Historical training must still check each label against its training cutoff.");
   }
@@ -211,7 +223,7 @@
     status.textContent = available ?
       "Select a return category. Includes all five horizons: 1, 7, 21, 63 and 252 scheduled weekdays." :
       "Price Return is not ready: verified stored observations are required for all five horizons (1, 7, 21, 63 and 252 scheduled weekdays).";
-    if (available && previous === "price") { select.value = previous; updateNote(); }
+    if (available && (previous === "price" || previous === "total_return" && totalFamily().length > 0)) { select.value = previous; updateNote(); }
   }
 
   async function load() {

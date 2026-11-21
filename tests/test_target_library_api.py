@@ -87,7 +87,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 
 HORIZONS = [1, 7, 21, 63, 252]
-CATEGORY_OPTIONS = [('price', 'Price Return'), ('total_return', 'Total Return'),
+CATEGORY_OPTIONS = [('price', 'Price Return'), ('total_return', 'Modelled Total Return + Spot'),
                     ('benchmark_excess', 'Excess Return')]
 
 
@@ -226,6 +226,25 @@ class TargetLibraryApiTests(unittest.TestCase):
             assert_categories(self, view)
             self.assertTrue(all(item['disabled'] for item in view['options']))
             self.assertEqual(view['dataset'],{})
+
+    def test_modelled_total_return_requires_its_complete_populated_family(self):
+        catalog=weekday_family_catalog(self.catalog())
+        totals=[]
+        for original in catalog['targets'][:4]:
+            target=deepcopy(original)
+            target.update(target_id='TARGET_'+hashlib.sha256(('total:'+str(original['horizon']['amount'])).encode()).hexdigest(),
+                          return_basis='total_return',return_model='modelled_total_return')
+            totals.append(target)
+        catalog['targets'].extend(totals);catalog['target_count']=len(catalog['targets'])
+        view=selector(catalog,selection='total_return')
+        self.assertFalse(view['options'][2]['disabled'])
+        self.assertEqual(view['dataset']['returnBasis'],'total_return')
+        self.assertEqual(json.loads(view['dataset']['horizons']),[1,7,21,63])
+        self.assertIn('Tests spot and modelled total return together',view['status'])
+        # A generic wealth return or a partial modelled family cannot authorize
+        # the FX funding option merely because its basis says "total_return".
+        for target in totals:target.pop('return_model')
+        self.assertTrue(selector(catalog)['options'][2]['disabled'])
 
     def test_unmaterialized_definition_keeps_all_categories_disabled(self):
         shutil.rmtree(self.root / 'storage/catalog/target_store')
