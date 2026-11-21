@@ -38,9 +38,10 @@ targets, repo/discount rates or spliced historical instruments. Negative rates
 are retained. No broker markup, spread, commission, slippage, leverage or
 portfolio-capital allocation is included. Execution-cost modelling is separate.
 
-Raw missing observations remain null. BIS rows explicitly marked “missing;
-data cannot exist” may carry the preceding fixing for at most seven calendar
-days. Other missing observations, missing calendar dates and longer gaps block
+Raw missing observations remain null. BIS series that omit Saturday/Sunday rows,
+and rows explicitly marked “missing; data cannot exist”, may carry the preceding
+fixing for at most seven calendar days. Other missing observations, missing
+ordinary weekdays and longer gaps block
 funding calculation. SORA applies from value date until the next fixing, with a
 seven-day maximum interval; publication date is retained separately. No earlier
 SGD history is fabricated before July 2005. Missing funding makes the affected

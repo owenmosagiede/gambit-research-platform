@@ -85,6 +85,16 @@ class FundingTests(TestCase):
         rows['SGD'][1]['date']='2024-01-16'
         self.assertEqual(fx_total.Rates(rows).factor('SGD','2024-01-05','2024-01-08'),(None,None))
 
+    def test_bis_omitted_weekend_rows_accrue_but_an_ordinary_missing_weekday_blocks(self):
+        rows={'GBP':[rate('2024-01-05','5'),rate('2024-01-08',None,'M: Missing value; data cannot exist'),
+                     rate('2024-01-09','5')]}
+        factor,_=fx_total.Rates(rows).factor('GBP','2024-01-05','2024-01-09')
+        with localcontext() as ctx:
+            ctx.prec=50;expected=(1+Decimal('.05')/365)**4
+        self.assertEqual(factor,expected)
+        rows['GBP'].pop(1)
+        self.assertEqual(fx_total.Rates(rows).factor('GBP','2024-01-05','2024-01-09'),(None,None))
+
     def test_financed_notional_pnl_formula_and_zero_rate_identity(self):
         source={'id':'TARGET_'+digest('spot'),'version':'1.0.0','body':{
             'instrument_id':'EURUSD','horizon':{'amount':1,'unit':'scheduled_bars'}}}

@@ -26,7 +26,7 @@ def policy():
         'rate_unit':'percent_per_year','borrow_lend':'same_benchmark',
         'formula':'spot_ratio_times_base_growth_minus_quote_growth',
         'normalization':'initial_quote_notional','short':'negative_long_under_symmetric_benchmark_model',
-        'missing':'retain_null_never_zero','bis_missing':'hold_previous_only_for_declared_no_observation_days_max_7_calendar_days',
+        'missing':'retain_null_never_zero','bis_missing':'hold_previous_on_weekends_or_declared_no_observation_days_max_7_calendar_days',
         'sora_accrual':'value_date_until_next_fixing_max_7_calendar_days',
         'source_timing':'retrospective_date_labels_publication_not_certified',
         'broker_markup':False,'execution_costs':False,'historical_pit_certified':False,
@@ -83,16 +83,20 @@ class Rates:
         self.exact={c:{r['date']:r for r in v} for c,v in rows.items()}
         self.accrual={}
         for currency,values in rows.items():
-            previous=None;last_date=None;days={}
-            for row in values:
-                when=date.fromisoformat(row['date'])
-                if last_date is not None and (when-last_date).days!=1:previous=None
-                if row['rate_pct'] is not None:previous=row
-                elif not row['observation_status'].startswith('M: Missing value; data cannot exist'):
-                    previous=None
-                days[row['date']]=(previous if previous is not None and
+            previous=None;days={}
+            if currency=='SGD':
+                self.accrual[currency]=days
+                continue
+            when=date.fromisoformat(values[0]['date']);last=date.fromisoformat(values[-1]['date'])
+            while when<=last:
+                row=self.exact[currency].get(when.isoformat())
+                if row is None:
+                    if when.weekday()<5:previous=None
+                elif row['rate_pct'] is not None:previous=row
+                elif not row['observation_status'].startswith('M: Missing value; data cannot exist'):previous=None
+                days[when.isoformat()]=(previous if previous is not None and
                     (when-date.fromisoformat(previous['date'])).days<=7 else None)
-                last_date=when
+                when+=timedelta(days=1)
             self.accrual[currency]=days
 
     def factor(self,currency,start,end):
