@@ -20,6 +20,105 @@ from test_research_runtime import Adapter, KernelSpy, intent, profile
 from runtime.research_jobs import ResearchJobs
 
 
+class TSMomentumCutoverTests(unittest.TestCase):
+    def setUp(self):
+        from uuid import UUID
+        from research.schedule import apply_schedule, resolved_periods
+        from test_research_policy_inputs import scheduled_profile
+        from test_research_schedule import SCHEDULE_PATH
+
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.schedule = json.loads(SCHEDULE_PATH.read_bytes())
+        base = scheduled_profile(profile())
+        base['exposure_classification'] = {'untouched_holdout_claim': False}
+        spec = apply_schedule(base, self.schedule, price_time_series=True)
+        config = self.root / 'config/research_execution.json'
+        config.parent.mkdir()
+        config.write_bytes(canonical(spec))
+
+        class PairAdapter(Adapter):
+            def resolve_plan(adapter, root, intent, spec):
+                from research.inputs import _plan_id
+                plan = super(PairAdapter, adapter).resolve_plan(root, dict(intent, scope={'id': 'SCOPE_TS', 'version': '1.0.0'}), spec)
+                plan['intent'] = intent
+                plan['scope'] = {'kind': 'instrument', 'id': intent['scope']['id'], 'members': ['AAA']}
+                plan['structural_common_start'] = '2010-01-04'
+                plan['members'][0]['structural_source_start'] = plan['structural_common_start']
+                plan['knowledge_cutoff'] = spec['target_selection']['knowledge_cutoff']
+                plan.update(resolved_periods(spec, plan['structural_common_start']))
+                plan['plan_id'] = _plan_id(plan)
+                return plan
+
+        self.jobs = ResearchJobs(self.root, adapter=PairAdapter())
+        self.addCleanup(self.jobs.close)
+        self.rows = [dict(intent(str(UUID(int=i * 43 + j + 1)), mode='TS'),
+                          feature={'id': f'FEATURE_{i}', 'version': '1.0.0'},
+                          scope={'id': f'PAIR_{j}', 'version': '1.0.0'}) for i in range(53) for j in range(43)]
+        self.roster = self.root / 'manifest.json'
+        self.roster.write_bytes(canonical({'program': 'GAMBIT_TS_MOMENTUM_20261111',
+                                           'schedule': ref(self.schedule), 'unresolved': [], 'entries': self.rows}))
+        self.checkpoint = self.root / 'checkpoint.json'
+        self.checkpoint.write_bytes(canonical({'next_index': 1, 'created': 1, 'existing': 0, 'blocked': [],
+                                               'manifest_sha256': cutover.sha(self.roster.read_bytes())}))
+        self.jobs.submit(self.rows[0])
+        installed = self.jobs._submission(self.rows[0]['request_id'])['implementation']
+        self.binding = {'schema': 'ts_momentum_cutover_v1', 'roster_sha256': cutover.sha(self.roster.read_bytes()),
+                        'checkpoint_sha256': cutover.sha(self.checkpoint.read_bytes()), 'global_pins': {
+                            'implementation_digest': digest(installed), 'implementation_fingerprint': installed['fingerprint']}}
+
+    def capture(self):
+        from runtime.research_jobs import implementation
+        from ts_momentum_cutover import capture
+        with patch('ts_momentum_cutover.load_schedule', return_value=self.schedule):
+            return capture(self.root, self.binding, roster_path=self.roster,
+                           checkpoint_path=self.checkpoint, installed=implementation())
+
+    def test_staged_suffix_is_preserved_without_creating_submissions(self):
+        snapshot = self.capture()
+        self.assertEqual((snapshot['accepted'], snapshot['staged']), (1, 2278))
+        self.assertEqual(snapshot['cohort'][0]['request_id'], self.rows[0]['request_id'])
+        self.assertEqual(len(list(self.jobs._submission_path(self.rows[0]['request_id']).parent.glob('*.json'))), 1)
+        self.assertEqual(snapshot, self.capture())
+
+    def test_moved_checkpoint_and_unexpected_staged_submission_are_rejected(self):
+        previous = self.checkpoint.read_bytes()
+        self.checkpoint.write_bytes(previous + b' ')
+        with self.assertRaisesRegex(RuntimeError, 'checkpoint bytes'):
+            self.capture()
+        self.checkpoint.write_bytes(previous)
+        self.jobs.submit(self.rows[1])
+        with self.assertRaisesRegex(RuntimeError, 'staged TS request'):
+            self.capture()
+
+    def test_active_attempt_requires_safe_drain(self):
+        self.jobs._update(self.rows[0]['request_id'], status='p1')
+        with self.assertRaisesRegex(RuntimeError, 'Drain active TS'):
+            self.capture()
+
+    def test_committed_63d_trial_is_bound_to_its_separate_discovery_window(self):
+        rid = self.rows[0]['request_id']
+        original = self.jobs._submission(rid)
+        plan = original['frozen_plan']
+        target = plan['members'][0]['targets']['63']
+        relation = {'recipe': plan['recipe'], 'scope': plan['scope'], 'mode': 'TS',
+                    'target_family': 'price_return', 'horizon': 63, 'horizon_unit': 'scheduled_weekdays',
+                    'members': ['AAA'], 'targets': [target['definition']], 'expected_direction': 'POSITIVE'}
+        relationship = self.jobs.store.put('relationship', relation, relation)
+        implementation = self.jobs.store.put('implementation', original['implementation'], original['implementation'])
+        period = plan['horizon_periods']['63']['P1']
+        key = {'relationship': ref(relationship), 'horizon': 63, 'stage': 'P1', 'period': period,
+               'research_spec': ref(original['research_spec']), 'implementation': ref(implementation),
+               'targets': [{'instrument': 'AAA', 'binding': target}]}
+        artifact = self.jobs.store.artifact(key, {'fixture': []})
+        trial = self.jobs.store.put('trial', key, {'artifact_manifests': [ref(artifact)]})
+        admission = self.jobs.store.put('admission', {'trial': ref(trial)}, {'relationship': ref(relationship)})
+        link = self.jobs._link(relationship, trial, admission)
+        self.jobs._update(rid, status='succeeded', results=[ref(link)])
+        self.assertEqual(self.capture()['cohort'][0]['committed_trials'], [ref(trial)])
+
+
 class StoppedMachine(FakeMachine):
     def __init__(self, base):
         super().__init__(base)
