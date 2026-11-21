@@ -18,7 +18,7 @@
   const integer = value => numeric(value) ? Number(value).toLocaleString() : "—";
   const words = value => String(value || "Unavailable").replaceAll("_", " ").toLowerCase().replace(/^./, c => c.toUpperCase());
   const fullMode = mode => mode === "CS" ? "Cross-sectional" : "Time-series";
-  const targetName = value => value === "price_return" ? "Price Return" : words(value);
+  const targetName = value => value === "price_return" ? "Price Return" : value === "total_return" ? "Modelled Total Return" : words(value);
   const exact = (a, b) => a && b && a.id === b.id && a.version === b.version && a.content_sha256 === b.content_sha256;
   const tone = value => ["pass", "validated", "admitted"].includes(String(value).toLowerCase()) ? "positive" :
     ["fail", "failed", "rejected"].includes(String(value).toLowerCase()) ? "negative" : "neutral";

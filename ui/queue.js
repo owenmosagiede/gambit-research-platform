@@ -46,7 +46,7 @@
     }
     return {Feature: "Saved experiment", Scope: item.intent?.scope.id || "Scope unavailable", Title: "Saved experiment",
       Subtitle: "Saved input labels could not be verified. Expand the record for its exact selections.",
-      Target: "Forward price return · five forecast horizons"};
+      Target: item.intent?.target_family === "total_return" ? "Spot + modelled total return" : "Forward price return · five forecast horizons"};
   }
   function references(card, item) {
     const details = node("details", undefined, "definition-panel");
@@ -86,7 +86,14 @@
     if (reasons.length) { const list = node("ul", undefined, "card-reasons"); for (const b of reasons) list.append(node("li", b.message)); card.append(list); }
     if (j.horizons.length) {
       const list = node("ul", undefined, "card-horizons");
-      for (const h of [...j.horizons].sort((a,b) => a.horizon-b.horizon)) list.append(node("li", `${h.horizon}-day forecast · P1: ${outcome(h.p1_status)}${h.discovery_direction ? " (" + h.discovery_direction.toLowerCase() + ")" : ""} · P2: ${outcome(h.p2_status)}`));
+      for (const h of [...j.horizons].sort((a,b) => a.horizon-b.horizon)) {
+        if (h.paired_targets) {
+          for (const family of ["price_return", "total_return"]) {
+            const result = h.paired_targets[family];
+            list.append(node("li", `${h.horizon}-day · ${family === "price_return" ? "Spot" : "Modelled total return"} · P1: ${outcome(result.p1_status)}${result.discovery_direction ? " (" + result.discovery_direction.toLowerCase() + ")" : ""} · P2: ${outcome(result.p2_status)}`));
+          }
+        } else list.append(node("li", `${h.horizon}-day forecast · P1: ${outcome(h.p1_status)}${h.discovery_direction ? " (" + h.discovery_direction.toLowerCase() + ")" : ""} · P2: ${outcome(h.p2_status)}`));
+      }
       card.append(list);
     }
     if (j.operational_failure) card.append(node("p", "Operational failure; this is not a statistical rejection. Saved evidence is preserved."));

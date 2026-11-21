@@ -49,9 +49,11 @@ def normalize_submission(value):
     if type(value) is not dict or set(value)!={'request_id','feature','target_family','scope','expected_direction'}:
         raise ResearchError('Submit requires request_id, Feature, Target family, Scope and Expected Direction')
     request_id(value['request_id'])
-    if value['target_family']!='price_return':raise ResearchError('Only the populated Price Return family is supported')
+    if value['target_family'] not in ('price_return','total_return'):raise ResearchError('Choose Price Return or paired modelled Total Return')
     if value['expected_direction'] not in (*DIRECTIONS, DISCOVERY_DIRECTION):
         raise ResearchError('Choose a fixed direction or the P1 discovery direction policy')
+    if value['target_family']=='total_return' and value['expected_direction']!=DISCOVERY_DIRECTION:
+        raise ResearchError('Paired modelled Total Return requires P1 to discover each Target direction')
     return {'request_id':value['request_id'],'feature':exact_selection(value['feature']),
         'target_family':value['target_family'],'scope':exact_selection(value['scope']),
         'expected_direction':value['expected_direction']}

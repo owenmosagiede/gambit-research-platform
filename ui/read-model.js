@@ -131,7 +131,7 @@
       const contextKey=row=>JSON.stringify([row.scope,row.mode,row.expected_direction,row.target_family]);
       const contexts=[...new Map(data.items.map(row=>[contextKey(row),row])).entries()];
       const context=node("select");context.setAttribute("aria-label","Scope · hypothesis · target");
-      for(const [key,row] of contexts) {const opt=node("option",`${row.scope_label || row.scope.id} · ${row.expected_direction === "DISCOVERY_SIGN_V1" ? "P1-selected direction" : words(row.expected_direction)} · ${words(row.target_family)}`);opt.value=key;context.append(opt);}
+      for(const [key,row] of contexts) {const opt=node("option",`${row.scope_label || row.scope.id} · ${row.expected_direction === "DISCOVERY_SIGN_V1" ? "P1-selected direction" : words(row.expected_direction)} · ${row.target_family === "total_return" ? "Modelled Total Return" : words(row.target_family)}`);opt.value=key;context.append(opt);}
       context.value=contexts[0]?.[0]||"";
       const contextLabel=node("label","Scope · hypothesis · target","research-control");contextLabel.append(context);
       const horizonButtons=node("div",undefined,"research-segments");

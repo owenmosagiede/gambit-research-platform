@@ -42,6 +42,9 @@ def materialization_path(identifier):
 
 
 def validate_manifest(record):
+    if record.get('schema_version')=='0.10.0':
+        from .fx_total import validate_manifest as validate_total_manifest
+        return validate_total_manifest(record)
     if record.get('schema_version')=='0.5.0':
         from .fx import validate_manifest as validate_fx_manifest
         return validate_fx_manifest(record)
@@ -95,7 +98,7 @@ class TargetStore(FeatureStore):
 
     def install_record(self, record):
         self._validate(record)
-        if record.get('schema_version') not in ('0.4.0','0.5.0') or (record.get('schema_version')=='0.5.0' and record.get('record_type')!='target_materialization_manifest'):
+        if record.get('schema_version') not in ('0.4.0','0.5.0','0.10.0') or (record.get('schema_version') in ('0.5.0','0.10.0') and record.get('record_type') not in ('target_definition','target_materialization_manifest','policy_definition')):
             return super().install_record(record)
         kind=record['record_type']
         if kind=='target_definition':
@@ -132,7 +135,7 @@ class TargetStore(FeatureStore):
         for relative in candidates:
             if self.path(relative).is_file():
                 record=strict_json(stable_read(self.path(relative)))
-                if record.get('schema_version') not in ('0.4.0','0.5.0'):
+                if record.get('schema_version') not in ('0.4.0','0.5.0','0.10.0'):
                     continue
                 self._validate(record)
                 if reference(record)!=binding:
