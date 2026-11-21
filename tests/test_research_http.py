@@ -176,6 +176,8 @@ class ResearchHTTPTests(unittest.TestCase):
     def test_body_shape_duplicate_keys_and_nonfinite_values_are_rejected(self):
         self.start(idle_worker=True)
         invalid = [[], {}, dict(submission(), horizon=21), dict(submission(), target_family='total_return'),
+                   dict(submission(), target_family='total_return', expected_direction='NEGATIVE'),
+                   dict(submission(), target_family='unsupported_return'),
                    dict(submission(), request_id='../escape'), dict(submission(), feature={'id': 'x', 'version': 'latest'}),
                    dict(submission(), expected_direction='positive')]
         for body in invalid:
@@ -185,6 +187,18 @@ class ResearchHTTPTests(unittest.TestCase):
             with self.subTest(raw=body):
                 self.assertEqual(self.request('/api/experiments', method='POST', raw=body)[0], 400)
         self.assertFalse((self.root/'storage/catalog/submissions').exists())
+
+    def test_paired_discovery_request_reaches_metadata_resolution_without_preparation(self):
+        from research.contracts import DISCOVERY_DIRECTION
+        self.start(idle_worker=True)
+        body=dict(submission(),target_family='total_return',expected_direction=DISCOVERY_DIRECTION)
+        code,_,value=self.request('/api/experiments',method='POST',value=body)
+        self.assertEqual(code,202,value)
+        self.adapter.resolve_plan.assert_called_once()
+        resolved=self.adapter.resolve_plan.call_args.args[1]
+        self.assertEqual(resolved['target_family'],'total_return')
+        self.assertEqual(resolved['expected_direction'],DISCOVERY_DIRECTION)
+        self.adapter.prepare_phase.assert_not_called()
 
     def test_body_content_type_and_size_are_bounded(self):
         self.start(idle_worker=True)
