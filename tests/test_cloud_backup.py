@@ -110,6 +110,31 @@ class CloudBackupTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): backup.restic('backup', str(self.output))
         self.assertTrue(all(v == 'active' for v in services.states.values()))
 
+    def test_sealing_checks_the_frozen_copy_after_services_restart(self):
+        services = FakeServices()
+        source = self.root / 'history.json'
+        original = source.read_bytes()
+        seal = backup.seal
+
+        def verify_copy(destination):
+            self.assertTrue(all(v == 'active' for v in services.states.values()))
+            source.write_text('{"id":"new-live-record"}\n')
+            self.assertEqual((destination / 'research_platform/history.json').read_bytes(), original)
+            return seal(destination)
+
+        with patch.object(backup, 'seal', side_effect=verify_copy):
+            manifest = backup.stage(self.sources, self.output, services)
+        self.assertEqual(manifest['sqlite_checked'], ['auth/auth.sqlite3'])
+        self.assertEqual(backup.verify(self.output)['files_verified'], 2)
+
+    def test_failed_sealing_never_stops_restarted_services(self):
+        services = FakeServices()
+        with patch.object(backup, 'seal', side_effect=RuntimeError('Invalid staged copy')):
+            with self.assertRaisesRegex(RuntimeError, 'Invalid staged copy'):
+                backup.stage(self.sources, self.output, services)
+        self.assertTrue(all(v == 'active' for v in services.states.values()))
+        self.assertFalse((self.output / 'backup-manifest.json').exists())
+
     def test_low_staging_capacity_fails_before_stopping_services(self):
         volume = self.base / 'volume'; root = volume / 'research_platform'; root.mkdir(parents=True)
         (root / 'migration-manifest.json').write_text('{}')
