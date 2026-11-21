@@ -130,6 +130,33 @@ class BranchProjectionTests(unittest.TestCase):
         self.assertEqual(card['research']['p2_counts'],{'not_run':1})
         self.assertFalse(page(self.output,'recipes')['freshness']['complete'])
 
+    def test_projection_timeout_keeps_the_previous_signal_catalog(self):
+        from read_model.extract import Extractor
+
+        self.fixture.record_research(horizons=(21,))
+        first = build(self.root, self.output)
+        prior_catalog = page(self.output, 'recipes')
+        self.assertEqual(prior_catalog['total'], 1)
+        self.fixture.record_research(horizons=(7,))
+        original_budget = Extractor.budget
+
+        def expire_in_branch(extractor):
+            if any(kind == 'branch' for kind, _ in extractor.live_units):
+                extractor.deadline = 0
+            original_budget(extractor)
+
+        with patch.object(Extractor, 'budget', expire_in_branch):
+            with self.assertRaisesRegex(TimeoutError, 'Metadata projection budget exhausted'):
+                build(self.root, self.output)
+        catalog = page(self.output, 'recipes')
+        self.assertEqual(catalog['freshness']['generation'], first['generation'])
+        self.assertEqual(catalog['items'], prior_catalog['items'])
+        self.assertEqual(catalog['issue_count'], 0)
+
+        latest = build(self.root, self.output)
+        self.assertEqual(latest['counts']['branches'], 2)
+        self.assertEqual(page(self.output, 'recipes')['freshness']['generation'], latest['generation'])
+
     def test_metadata_append_is_incremental_and_unrelated_payload_not_scanned(self):
         self.fixture.record_research(horizons=(21,)); build(self.root,self.output)
         (self.root/'storage/payloads/irrelevant').write_text('not research metadata')
