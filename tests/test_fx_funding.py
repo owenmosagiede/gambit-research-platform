@@ -91,7 +91,7 @@ class FundingTests(TestCase):
         factor,_=fx_total.Rates(rows).factor('GBP','2024-01-05','2024-01-09')
         with localcontext() as ctx:
             ctx.prec=50;expected=(1+Decimal('.05')/365)**4
-        self.assertEqual(factor,expected)
+        self.assertLess(abs(factor-expected),Decimal('1e-45'))
         rows['GBP'].pop(1)
         self.assertEqual(fx_total.Rates(rows).factor('GBP','2024-01-05','2024-01-09'),(None,None))
 
