@@ -164,15 +164,21 @@ class Machine:
         subprocess.run(['systemctl', 'start', unit], check=True)
 
     def health(self):
-        subprocess.run(['systemctl', 'start', 'gambit-health.service'], check=True)
-        deadline = time.monotonic()+45
+        # The worker first verifies the saved queue before reporting idle.
+        # Keep the same health requirements while allowing bounded startup.
+        deadline = time.monotonic()+600
+        refresh_at = time.monotonic()
         while time.monotonic() < deadline:
+            if time.monotonic() >= refresh_at:
+                subprocess.run(['systemctl', 'start', 'gambit-health.service'], check=True)
+                # Starting this oneshot every second can hit systemd's start
+                # limit and abort a release before the worker finishes warming.
+                refresh_at = time.monotonic()+10
             if all(self.status(u) == 'active' for u in UNITS):
                 result = subprocess.run(['curl', '--fail', '--silent', '--max-time', '5',
                     'https://gambitsystems.xyz/healthz'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if result.returncode == 0: return
             time.sleep(1)
-            subprocess.run(['systemctl', 'start', 'gambit-health.service'], check=True)
         raise RuntimeError('Application health check failed')
 
     def write(self, path, data):

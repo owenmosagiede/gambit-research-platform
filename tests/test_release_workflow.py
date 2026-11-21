@@ -191,6 +191,60 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(before,{str(p):p.read_bytes() for p in (self.m.root/'storage').rglob('*') if p.is_file()})
 
 
+class ReleaseHealthTests(unittest.TestCase):
+    def exercise(self, *, ready_after=200, active=True, monitor_error=False):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        machine=server.Machine()
+        clock=[0.0];refreshes=[];probes=[]
+        def sleep(seconds):clock[0]+=seconds
+        def run(command,**kwargs):
+            if command[0]=='systemctl':
+                if monitor_error:
+                    raise server.subprocess.CalledProcessError(1,command)
+                # Model the oneshot rate limit that caused the live failure.
+                if refreshes and clock[0]-refreshes[-1]<10:
+                    raise server.subprocess.CalledProcessError(1,command)
+                refreshes.append(clock[0])
+                return SimpleNamespace(returncode=0)
+            self.assertEqual(command[0],'curl')
+            probes.append(clock[0])
+            return SimpleNamespace(returncode=0 if clock[0]>=ready_after else 22)
+        with patch.object(server.time,'monotonic',side_effect=lambda:clock[0]), \
+             patch.object(server.time,'sleep',side_effect=sleep), \
+             patch.object(server.subprocess,'run',side_effect=run), \
+             patch.object(machine,'status',return_value='active' if active else 'inactive'):
+            try:machine.health()
+            except BaseException as exc:return clock[0],refreshes,probes,exc
+        return clock[0],refreshes,probes,None
+
+    def test_worker_warmup_can_pass_without_tripping_oneshot_start_limit(self):
+        elapsed,refreshes,probes,error=self.exercise()
+        self.assertIsNone(error)
+        self.assertGreater(elapsed,45)
+        self.assertLess(elapsed,600)
+        self.assertTrue(probes)
+        self.assertTrue(all(b-a>=10 for a,b in zip(refreshes,refreshes[1:])))
+
+    def test_persistent_unhealthy_endpoint_still_fails_with_bounded_wait(self):
+        elapsed,refreshes,probes,error=self.exercise(ready_after=float('inf'))
+        self.assertIsInstance(error,RuntimeError)
+        self.assertIn('health check failed',str(error))
+        self.assertLessEqual(elapsed,600)
+        self.assertTrue(refreshes and probes)
+
+    def test_inactive_service_cannot_pass_even_if_endpoint_would_be_healthy(self):
+        elapsed,refreshes,probes,error=self.exercise(ready_after=0,active=False)
+        self.assertIsInstance(error,RuntimeError)
+        self.assertLessEqual(elapsed,600)
+        self.assertEqual(probes,[])
+
+    def test_health_monitor_execution_error_is_not_ignored(self):
+        elapsed,refreshes,probes,error=self.exercise(ready_after=0,monitor_error=True)
+        self.assertIsInstance(error,server.subprocess.CalledProcessError)
+        self.assertEqual(probes,[])
+
+
 if __name__=='__main__':unittest.main()
 
 class BatchReleaseGateTests(unittest.TestCase):
