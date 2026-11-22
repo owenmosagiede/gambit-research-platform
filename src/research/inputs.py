@@ -399,6 +399,8 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     frozen_scope = {key: deepcopy(scope[key]) for key in ('id', 'version', 'kind', 'reference', 'membership_snapshot', 'members')}
     if oriented:
         frozen_scope.update({k:deepcopy(scope[k]) for k in ('research_basis','reference_currency','price_catalog')})
+        if 'funding_eligibility' in scope:
+            frozen_scope['funding_eligibility'] = deepcopy(scope['funding_eligibility'])
     schedule = resolved_periods(profile, max(starts))
     if value_source:
         from research.value_inputs import restrict_horizons

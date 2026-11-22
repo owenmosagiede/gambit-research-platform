@@ -170,6 +170,32 @@ class ResearchContractUITests(unittest.TestCase):
         self.assertEqual(json.loads(state['example'])['expected_direction'], 'NEGATIVE')
         self.assert_read_only(state)
 
+    def test_paired_currency_cs_requires_the_matched_membership_and_discovery(self):
+        selected={'id':'FX_CCY_FUNDED_VS_USD','version':'1.0.0'}
+        binding=scope_binding('universe')
+        binding.update(selected,reference=exact(selected,'b'),definition_binding=exact(selected,'b'),
+            members=[c+'USD' for c in 'AUD CAD CHF CZK EUR GBP HKD HUF ILS JPY MXN NOK NZD PLN SEK SGD ZAR'.split()],
+            member_count=17,research_basis='currency_against_quote_reference',reference_currency='USD',
+            funding_eligibility={'paired_membership':'same_fixed_members_for_both_return_families'})
+        resolution=feature_resolution('currency_quote_input',scope=dict(selected,
+            reference=binding['reference'],membership_snapshot=binding['membership_snapshot']))
+        initial={'scope':{'value':selected,'dataset':{'scopeReference':binding['reference'],
+            'membershipSnapshot':binding['membership_snapshot'],'scopeResolution':binding}},
+            'feature':{'dataset':{'featureResolution':resolution}},
+            'target':{'value':'total_return','dataset':{'returnBasis':'total_return'}},
+            'expected-direction':{'value':'DISCOVERY_SIGN_V1'}}
+        state=ui(initial=initial)[-1]
+        self.assertIn('Example for the selected inputs',state['selection'])
+        self.assertIn('CS: 17 currencies against USD',state['method'])
+        self.assertEqual(json.loads(state['example'])['target_family'],'total_return')
+        self.assert_read_only(state)
+        unmatched=deepcopy(initial);unmatched['scope']['dataset']['scopeResolution']['member_count']=18
+        state=ui(initial=unmatched)[-1]
+        self.assertIn('matched 17-currency universe',state['selection'])
+        self.assert_read_only(state)
+        wrong_direction=deepcopy(initial);wrong_direction['expected-direction']['value']='POSITIVE'
+        self.assertIn('direction discovery',ui(initial=wrong_direction)[-1]['selection'])
+
     def test_missing_changed_or_disabled_exact_binding_cannot_appear_current(self):
         steps = [
             {'action': 'dataset', 'id': 'feature', 'key': 'featureReference', 'value': None},

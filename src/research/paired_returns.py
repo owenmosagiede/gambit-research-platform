@@ -22,45 +22,72 @@ def resolve_plan(root,intent,profile,*,feature_manifest_index=None):
         raise inputs.InputsBlocked('Paired total-return tests require P1 to discover each Target direction independently')
     original=dict(intent,target_family='price_return')
     plan=inputs.resolve_plan(root,original,profile,feature_manifest_index=feature_manifest_index)
-    if plan['mode']!='TS' or len(plan['members'])!=1:
-        raise inputs.InputsBlocked('The benchmark total-return option currently supports individual FX-pair TS Scopes')
-    pair=plan['members'][0]['instrument_id']
-    if 'CNH' in (pair[:3],pair[3:]):raise inputs.InputsBlocked('CNH is excluded from modelled financing; spot-only testing remains available')
-    config=read_json(inside(root,CONFIG))
-    if set(config)!={'schema','funding_model','funding_snapshot','materializations'} or config['schema']!='fx_total_return_release_v1':
-        raise inputs.InputsBlocked('Modelled total-return release is not configured')
+    cs=plan['mode']=='CS'
+    if cs:
+        from data.fx_funded_scopes import validate_basis
+        from data.fx_total_return_cs import load_release
+        try:
+            validate_basis(plan['scope'])
+            config=load_release(root)
+        except (ValueError, KeyError, OSError, TypeError) as exc:
+            raise inputs.InputsBlocked('Choose an activated matched seventeen-member currency universe for Spot + Total Return: '+str(exc)) from exc
+        if (config['scopes'].get(plan['scope']['id'])!=plan['scope']['reference']
+                or config['price_catalog']!=plan['scope']['price_catalog']):
+            raise inputs.InputsBlocked('The financed currency universe and frozen spot price catalog differ')
+    else:
+        if plan['mode']!='TS' or len(plan['members'])!=1:
+            raise inputs.InputsBlocked('Paired return tests require an individual pair or a financed currency-reference CS universe')
+        config=read_json(inside(root,CONFIG))
+        if set(config)!={'schema','funding_model','funding_snapshot','materializations'} or config['schema']!='fx_total_return_release_v1':
+            raise inputs.InputsBlocked('Modelled total-return release is not configured')
     if config['funding_model']!=reference(fx_total.policy()):raise inputs.InputsBlocked('Approved benchmark funding model differs')
-    bindings=config['materializations'].get(pair,{})
-    selected={str(h):bindings.get(str(h)) for h in plan['horizons']}
     store=TargetStore(root)
     # Metadata-only acceptance. Observation values stay behind phase loading.
     snapshot=store.resolve(config['funding_snapshot'])
     from data.fx_funding import validate_record
     validate_record(snapshot)
-    for h,binding in selected.items():
-        if not isinstance(binding,dict) or set(binding)!={'definition','materialization'}:
-            raise inputs.InputsBlocked('A frozen modelled total-return Target is required for every active horizon')
-        manifest=fx_total.validate_manifest(read_json(store.path(materialization_path(binding['materialization']['id']))))
-        if (reference(manifest)!=binding['materialization'] or manifest['definition']!=binding['definition']
-                or manifest['funding_model']!=config['funding_model'] or manifest['funding_snapshot']!=config['funding_snapshot']
-                or manifest['spot_materialization']!=plan['members'][0]['targets'][h]['materialization']):
-            raise inputs.InputsBlocked('Paired Targets do not share the exact frozen spot inputs and funding release')
-        definition=store.resolve(binding['definition']);fx_total.validate_record(definition)
-        if definition['body']['spot_target']!=plan['members'][0]['targets'][h]['definition'] or definition['body']['horizon']['amount']!=int(h):
-            raise inputs.InputsBlocked('Paired Target horizon or underlying spot definition differs')
+    selected={}
+    for member in plan['members']:
+        pair=member['instrument_id']
+        if 'CNH' in (pair[:3],pair[3:]):
+            raise inputs.InputsBlocked('CNH is excluded from modelled financing; spot-only testing remains available')
+        bindings=config['materializations'].get(pair,{})
+        selected[pair]={str(h):bindings.get(str(h)) for h in plan['horizons']}
+        for h,binding in selected[pair].items():
+            if not isinstance(binding,dict) or set(binding)!={'definition','materialization'}:
+                raise inputs.InputsBlocked('A frozen modelled total-return Target is required for every member and active horizon')
+            manifest=fx_total.validate_manifest(read_json(store.path(materialization_path(binding['materialization']['id']))))
+            if (reference(manifest)!=binding['materialization'] or manifest['definition']!=binding['definition']
+                    or manifest['funding_model']!=config['funding_model'] or manifest['funding_snapshot']!=config['funding_snapshot']
+                    or manifest['spot_materialization']!=member['targets'][h]['materialization']):
+                raise inputs.InputsBlocked('Paired Targets do not share the exact frozen spot inputs and funding release')
+            definition=store.resolve(binding['definition']);fx_total.validate_record(definition)
+            if (definition['body']['spot_target']!=member['targets'][h]['definition']
+                    or definition['body']['instrument_id']!=pair or definition['body']['horizon']['amount']!=int(h)):
+                raise inputs.InputsBlocked('Paired Target member, horizon or underlying spot definition differs')
     plan['intent']=deepcopy(intent)
     plan['paired_returns']={'families':list(FAMILIES),'funding_model':config['funding_model'],
-        'funding_snapshot':config['funding_snapshot'],'total_targets':selected,
+        'funding_snapshot':config['funding_snapshot'],
+        'total_targets':selected if cs else selected[plan['members'][0]['instrument_id']],
         'selection_rule':'report_both_no_best_target_selection_v1'}
+    if cs:
+        plan['paired_returns']['comparison_membership']=plan['scope']['membership_snapshot']
     plan['plan_id']=inputs._plan_id(plan)
     return plan
+
+def _targets(plan,member):
+    targets=plan['paired_returns']['total_targets']
+    return targets[member['instrument_id']] if plan['mode']=='CS' else targets
+
 
 def branch_plan(plan,family):
     from research.inputs import _plan_id
     result=deepcopy(plan);result['intent']['target_family']=family
     result['paired_execution']={'parent_plan_id':plan['plan_id'],'family':family,
         'selection_rule':plan['paired_returns']['selection_rule']}
-    if family=='total_return':result['members'][0]['targets']=deepcopy(plan['paired_returns']['total_targets'])
+    if family=='total_return':
+        for member in result['members']:
+            member['targets']=deepcopy(_targets(plan,member))
     result['plan_id']=_plan_id(result)
     return result
 
@@ -68,16 +95,24 @@ def branch_data(root,plan,data,family,phase,horizon):
     result=deepcopy(data)
     if family=='price_return':return result
     from research.inputs import _load_target
-    member=plan['members'][0];period=period_for(plan,phase,horizon)
-    spot,_=_load_target(root,member,plan,period,horizon)
-    binding=plan['paired_returns']['total_targets'][str(horizon)]
-    materialized=fx_total.read(root,binding['materialization']['id'],period=period,spot_rows=spot)
-    if reference(materialized['manifest'])!=binding['materialization']:
-        raise ResearchError('Frozen financing Target changed')
-    lookup={r['spot_target_row_id']:r for r in materialized['observations']}
-    if len(lookup)!=len(materialized['observations']):raise ResearchError('Duplicate paired spot operand')
+    from data.verified_inputs import phase_inputs
+    period=period_for(plan,phase,horizon);lookup={}
+    bindings={m['instrument_id']:_targets(plan,m)[str(horizon)] for m in plan['members']}
+    with phase_inputs(root,plan,phase,period=period):
+        for member in plan['members']:
+            spot,_=_load_target(root,member,plan,period,horizon)
+            binding=bindings[member['instrument_id']]
+            materialized=fx_total.read(root,binding['materialization']['id'],period=period,spot_rows=spot)
+            if reference(materialized['manifest'])!=binding['materialization']:
+                raise ResearchError('Frozen financing Target changed')
+            rows=materialized['observations']
+            matched={r['spot_target_row_id']:r for r in rows}
+            if len(matched)!=len(rows) or set(matched)!={r['id'] for r in spot}:
+                raise ResearchError('Financing Target must preserve every exact paired spot operand once')
+            lookup.update({(member['instrument_id'],identifier):row for identifier,row in matched.items()})
     for row in result['rows']:
-        target=lookup[row['lineage']['target_row_id']]
+        target=lookup[(row['instrument'],row['lineage']['target_row_id'])]
+        binding=bindings[row['instrument']]
         row['target']=target['value'] if target['status']=='valid' else None
         row['valid']=row['valid'] and target['status']=='valid'
         row['status']='valid' if row['valid'] else 'unavailable'

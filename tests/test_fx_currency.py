@@ -172,6 +172,205 @@ class CurrencyReleaseTests(unittest.TestCase):
         activate(self.root,bad_release)
         with self.assertRaisesRegex(ValueError,'Incomplete currency Feature family'):records(self.root)
 
+    def _funded_fixture(self):
+        """One real, small persisted CS release reused by these adapter checks."""
+        import csv,io,json,sys
+        from zipfile import ZipFile,ZIP_DEFLATED
+        from unittest.mock import patch
+        from data import fx_funding
+        from data.fx_currency_catalog import activate
+        from data.targets import fx_total
+        from research.contracts import canonical,ref
+        from test_fx_funding import captures
+        from test_research_schedule import SCHEDULE_PATH
+        activate(self.root,self.release)
+        schedule=json.loads(SCHEDULE_PATH.read_bytes())
+        (self.root/'config/research_schedule.json').write_bytes(canonical(ref(schedule))+b'\n')
+        if not hasattr(type(self),'funded_config'):
+            raw,sora=captures('2020-01-01','2020-01-15')
+            with ZipFile(io.BytesIO(raw)) as archive:
+                rows=list(csv.reader(io.StringIO(archive.read(archive.namelist()[0]).decode())))
+            for row in rows[1:]:
+                if row[1].split(':')[0]==fx_funding.CURRENCIES['EUR'] and row[2]=='2020-01-09':
+                    row[3]='';row[6]='L: Missing value; not collected'
+            text=io.StringIO();csv.writer(text).writerows(rows);blob=io.BytesIO()
+            with ZipFile(blob,'w',ZIP_DEFLATED) as archive:archive.writestr('WS_CBPOL_csv_flat.csv',text.getvalue())
+            funding=fx_funding.install(self.root,blob.getvalue(),sora)
+            ts={'schema':'fx_total_return_release_v1','funding_model':reference(fx_total.policy()),
+                'funding_snapshot':funding,'materializations':{}}
+            (self.root/'config/fx_total_return.json').write_text(json.dumps(ts))
+            request={'currency_release':reference(self.release),'funding_snapshot':funding,
+                'funding_model':reference(fx_total.policy()),
+                'request_text':'ISOLATED TEST: matched seventeen-member Spot and Total Return currency universes; preserve the original eighteen-member universes.'}
+            sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
+            import fx_total_return_cs_release as tool
+            preview=tool.migrate(self.root,request)
+            original=(self.root/'config/fx_total_return.json').read_bytes()
+            with self.assertRaisesRegex(ValueError,'reviewed'):
+                tool.migrate(self.root,request,apply=True,expected_plan_sha256='0'*64)
+            with patch.object(tool,'admissions_closed',return_value=False):
+                with self.assertRaisesRegex(ValueError,'admissions'):
+                    tool.migrate(self.root,request,apply=True,expected_plan_sha256=preview['plan_sha256'])
+            self.assertFalse((self.root/'config/fx_total_return_cs.json').exists())
+            with patch.object(tool,'admissions_closed',return_value=True):
+                installed=tool.migrate(self.root,request,apply=True,expected_plan_sha256=preview['plan_sha256'])
+            self.assertEqual(installed['research_jobs_created'],0)
+            self.assertEqual((self.root/'config/fx_total_return.json').read_bytes(),original)
+            type(self).funded_config=(self.root/'config/fx_total_return_cs.json').read_bytes()
+        (self.root/'config/fx_total_return_cs.json').write_bytes(type(self).funded_config)
+        from data.fx_currency_features import records
+        recipe=next(r for r in records(self.root).values() if r['body']['steps'][-1]['operator']['id']=='TR_BASE_change_diff'
+            and r['body']['steps'][-1]['parameters']==[{'name':'k','unit':'observations','value':{'kind':'integer','value':'5'}}])
+        from research.contracts import DISCOVERY_DIRECTION
+        intent={'feature':{k:recipe[k] for k in ('id','version')},
+            'scope':{'id':'FX_CCY_FUNDED_VS_USD','version':'1.0.0'},
+            'target_family':'total_return','expected_direction':DISCOVERY_DIRECTION}
+        self.addCleanup((self.root/'config/research_schedule.json').unlink,missing_ok=True)
+        return intent
+
+    def test_total_return_fixed_companions_and_metadata_freeze(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from data.scopes import resolve_scope,list_scopes
+        from data.fx_total_return_cs import load_release
+        from runtime.experiment_identity import freeze
+        from runtime.research_jobs import implementation
+        intent=self._funded_fixture();config=load_release(self.root)
+        self.assertEqual(len(config['materializations']),119)
+        self.assertEqual(sum(map(len,config['materializations'].values())),476)
+        for quote in currency.REFERENCES:
+            original=resolve_scope(self.root,'FX_CCY_VS_'+quote,'1.0.0')
+            funded=resolve_scope(self.root,'FX_CCY_FUNDED_VS_'+quote,'1.0.0')
+            self.assertEqual(len(original['members']),18)
+            self.assertEqual(funded['members'],[s for s in original['members'] if not s.startswith('CNH')])
+            self.assertEqual(funded['member_count'],17)
+            self.assertEqual(funded['price_catalog'],original['price_catalog'])
+        self.assertEqual(list_scopes(self.root)['scope_count'],57)
+        with patch('data.fx_funding.load',side_effect=AssertionError('Acceptance decoded funding values')):
+            packet=freeze(SimpleNamespace(root=self.root,adapter=None),intent,implementation())
+        plan=packet['frozen_plan']
+        self.assertEqual(plan['mode'],'CS');self.assertEqual(plan['horizons'],[1,7,21,63])
+        self.assertEqual(len(plan['members']),17)
+        self.assertEqual(plan['paired_returns']['comparison_membership'],plan['scope']['membership_snapshot'])
+        from research.paired_returns import branch_plan
+        total=branch_plan(plan,'total_return')
+        self.assertEqual(total['scope'],plan['scope'])
+        for member in total['members']:
+            self.assertEqual(member['targets'],config['materializations'][member['instrument_id']])
+        # USD against EUR must earn USD funding and pay EUR funding, using its
+        # reciprocal spot Target rather than a sign-flipped EURUSD return.
+        from data.targets.fx_total import read as read_total
+        from decimal import localcontext
+        from datetime import date
+        sample=read_total(self.root,config['materializations']['USDEUR']['1']['materialization']['id'])
+        row=next(r for r in sample['observations'] if r['status']=='valid')
+        days=(date.fromisoformat(row['exit_time'])-date.fromisoformat(row['entry_time'])).days
+        with localcontext() as context:
+            context.prec=50
+            expected=(1+Decimal(row['spot_return']))*(1+Decimal('.05')/365)**days-(1+Decimal('.04')/365)**days
+        self.assertLess(abs(Decimal(row['value'])-expected),Decimal('1e-45'))
+        self.assertEqual(row['currency'],'EUR')
+        from research import inputs
+        wrong=dict(intent,scope={'id':'FX_CCY_VS_USD','version':'1.0.0'})
+        with self.assertRaisesRegex(inputs.InputsBlocked,'seventeen-member'):
+            freeze(SimpleNamespace(root=self.root,adapter=None),wrong,implementation())
+        import json
+        changed=deepcopy(config);changed['materializations']['EURUSD']['1']=changed['materializations']['AUDUSD']['1']
+        path=self.root/'config/fx_total_return_cs.json';path.write_text(json.dumps(changed))
+        try:
+            with self.assertRaisesRegex(inputs.InputsBlocked,'frozen spot'):
+                freeze(SimpleNamespace(root=self.root,adapter=None),intent,implementation())
+        finally:path.write_bytes(type(self).funded_config)
+
+    def test_total_return_all_members_phase_boundaries_and_missing_funding(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from data import fx_funding
+        from data.targets import fx_total
+        from data.verified_inputs import execution_inputs
+        from runtime.experiment_identity import freeze
+        from runtime.research_jobs import implementation
+        from research.inputs import _load_target
+        from research.paired_returns import branch_data
+        intent=self._funded_fixture()
+        plan=freeze(SimpleNamespace(root=self.root,adapter=None),intent,implementation())['frozen_plan']
+        period=plan['periods']['P1'];rows=[];coverage=[]
+        for index,member in enumerate(plan['members']):
+            spots,_=_load_target(self.root,member,plan,period,1)
+            for spot in spots:
+                rows.append({'date':spot['prediction_anchor'],'instrument':member['instrument_id'],
+                    'feature':str(index),'target':spot['value'],'target_end':spot['exit_time'],
+                    'valid':spot['status']=='valid','status':spot['status'],'reason_codes':[],
+                    'lineage':{'target_row_id':spot['id']}})
+            coverage.append({'instrument_id':member['instrument_id'],'scheduled_rows':len(spots)})
+        common={'members':plan['scope']['members'][:],'rows':rows,'coverage':coverage,'lineage':{}}
+        before=deepcopy(common)
+        with execution_inputs(self.root,{'test':'matched-CS'},max_bytes=32*1024*1024):
+            with patch('data.fx_funding._load',wraps=fx_funding._load) as funding_reads:
+                total=branch_data(self.root,plan,common,'total_return','P1',1)
+                self.assertEqual(funding_reads.call_count,1)
+        self.assertEqual(common,before)
+        self.assertEqual(total['members'],common['members']);self.assertEqual(len(total['rows']),len(rows))
+        self.assertEqual(len(total['coverage']),17)
+        selected=lambda data:[r for r in data['rows'] if r['date']=='2020-01-09']
+        self.assertEqual(len(selected(total)),17)
+        self.assertTrue(all(r['valid'] for r in selected(common)))
+        self.assertEqual([r['instrument'] for r in selected(total) if not r['valid']],['EURUSD'])
+        self.assertEqual(next(r for r in selected(total) if not r['valid'])['reason_codes'],['FUNDING_NOT_AVAILABLE'])
+        self.assertTrue(all(r['lineage']['target_materialization']==
+            plan['paired_returns']['total_targets'][r['instrument']]['1']['materialization'] for r in total['rows']))
+        # An otherwise usable CS date loses completeness; no member disappears.
+        complete=lambda data:{d for d in {r['date'] for r in data['rows']}
+            if len([r for r in data['rows'] if r['date']==d and r['valid']])==17}
+        self.assertEqual(complete(total),complete(common)-{'2020-01-09'})
+        # P1 must not decode P2 values sharing the same stored year partition.
+        bounded=deepcopy(plan);bounded['periods']['P1']['end_exclusive']='2020-01-08'
+        from research.inputs import _plan_id
+        bounded['plan_id']=_plan_id(bounded)
+        bounded_common=deepcopy(common);bounded_common['rows']=[r for r in rows if r['date']<'2020-01-07']
+        from data.alfred_onboarding import strict_json
+        def guarded(raw):
+            if isinstance(raw,bytes) and b'"record_type":"target_observation"' in raw and b'"schema_version":"0.10.0"' in raw:
+                import re
+                when=re.search(rb'"prediction_anchor":"([^"]+)"',raw).group(1).decode()
+                self.assertLess(when,'2020-01-08')
+            return strict_json(raw)
+        with patch('data.targets.fx_total.strict_json',side_effect=guarded):
+            limited=branch_data(self.root,bounded,bounded_common,'total_return','P1',1)
+        self.assertEqual(limited['members'],common['members'])
+
+    def test_total_return_cs_orchestration_keeps_independent_decisions(self):
+        from unittest.mock import patch
+        from uuid import uuid4
+        from runtime.research_jobs import ResearchJobs
+        from research import inputs
+        from test_research_runtime import KernelSpy
+        intent=self._funded_fixture()
+        class Kernels(KernelSpy):
+            def run_p1(self,rows,**kw):
+                self_mode=kw['mode'];assert self_mode=='CS'
+                total=len([c for c in self.calls if c[0]=='P1'])%2==1
+                value=super().run_p1(rows,**kw);value['metrics']['primary_effect']=-.5 if total else .5
+                value['admission']='admitted' if kw['horizon']==1 or total and kw['horizon']==7 else 'rejected'
+                return value
+            def run_p2(self,rows,**kw):
+                value=super().run_p2(rows,**kw);value['expected_direction']=kw['expected_direction'];return value
+        kernel=Kernels();jobs=ResearchJobs(self.root,kernels=kernel);self.addCleanup(jobs.close)
+        request=dict(intent,request_id=str(uuid4()));calls=[];prepare=inputs.prepare_phase
+        def wrapped(*args,**kwargs):calls.append(args[2]);return prepare(*args,**kwargs)
+        with patch('research.inputs.prepare_phase',side_effect=wrapped):
+            jobs.submit(request);jobs.run_pending_once()
+        job=jobs.get(request['request_id']);self.assertEqual(job['status'],'succeeded',job)
+        self.assertEqual(job['mode'],'CS');self.assertEqual(calls,['P1','P2'])
+        self.assertEqual(kernel.calls[:8],[('P1',h) for h in (1,7,21,63) for _ in range(2)])
+        self.assertEqual(kernel.calls[8:],[('P2',1),('P2',1),('P2',7)])
+        results=jobs.store.results_for_recipe(intent['feature']['id'])
+        signs={(r['horizon'],r['target_family']):r['validation_direction'] for r in results}
+        self.assertEqual(signs[(1,'price_return')],'POSITIVE')
+        self.assertEqual(signs[(1,'total_return')],'NEGATIVE')
+        again,created=jobs.submit(request);self.assertFalse(created)
+        self.assertEqual(again['request_id'],request['request_id'])
+
 class CurrencySemanticsTests(unittest.TestCase):
     def test_downside_is_recomputed_on_inverse_price_not_sign_flipped(self):
         from data.transformations.numeric import calculate

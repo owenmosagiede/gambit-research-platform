@@ -1,7 +1,8 @@
 # FX spot and modelled total-return targets
 
 The `total_return` submission option requests both spot and modelled total-return
-tests for one individual FX-pair TS Scope. The existing `price_return` option
+tests for an individual FX-pair TS Scope or an activated matched currency-universe
+CS Scope. The existing `price_return` option
 continues to request spot only. The new option requires `DISCOVERY_SIGN_V1`.
 It supports the four prospective horizons: 1, 7, 21 and 63 scheduled weekdays.
 It does not add a new production worker or reopen research admissions.
@@ -100,6 +101,38 @@ outside the live research catalog. Staging does not deploy code, install live
 definitions, restart services or admit research. No new carry Feature recipe,
 forecast model, P4 cost model or broker execution integration is introduced.
 
-Currency-universe CS requests are deliberately rejected by this first paired
-execution adapter; they require a declared funding reference and capital basis.
-They are never silently reduced to a supported subset.
+## Currency-universe CS comparisons
+
+The seven additive `FX_CCY_FUNDED_VS_{USD,EUR,GBP,JPY,CHF,CAD,AUD}` Scopes each
+freeze seventeen currencies: exclude their own reference and the prespecified
+unsupported CNH currency. The original eighteen-member `FX_CCY_VS_*` Spot
+Scopes and their historical records retain their existing identities.
+Both paired branches use exactly the same new seventeen-member membership.
+Missing rates never shrink that membership or substitute zero financing.
+The existing complete-date CS missing-data and inference rules apply separately
+to each branch, so funding gaps can reduce usable total-return dates.
+
+Each exposure already prices base currency C in reference currency R. Finance
+the C balance at C's benchmark and borrow the initial R notional at R's benchmark,
+using the same formula and initial-reference-notional normalization as TS. Inverse
+and triangulated exposures use their own frozen oriented spot Targets, rather
+than another canonical pair's Target or a sign-flipped return. This is a per-member
+research label; it is not a portfolio weighting, leverage or capital-allocation
+model. The CS statistical policy and historical windows remain unchanged.
+
+All P1 branches finish before P2. Spot and total return discover their own signs,
+admit independently, and validate only their own P1 direction. Shared preparation
+and bounded verified input reuse do not merge their scientific decisions.
+
+`tools/fx_total_return_cs_release.py` produces a hash-bound plan from an exact
+active currency-release reference and the existing funding snapshot/model. Apply
+requires that reviewed hash, closed admissions and the native idle/executor/writer
+guards, in addition to the operator's code/backup controls. It adds 119 oriented
+exposures × four horizons and publishes `config/fx_total_return_cs.json` last.
+The TS funding config and its existing 168 targets are untouched. New Scope
+definitions remain staged until the complete CS funding pointer exists.
+
+The data-publication cache scope covers the full pinned input histories declared
+in its reviewed plan. It retains only independently verified inputs under the
+existing byte bound and dependency-witness checks; changed inputs invalidate
+reuse. P1/P2 reads continue to use their separate, strictly bounded stage windows.

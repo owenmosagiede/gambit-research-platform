@@ -58,12 +58,15 @@
       scope: scope || {id: '<registered Scope ID>', version: '<exact version>'},
       expected_direction: direction || '<DISCOVERY_SIGN_V1, POSITIVE or NEGATIVE>'
     }, null, 2);
+    const pairedScope = resolvedScope?.kind === 'instrument' ||
+      resolvedScope?.kind === 'universe' && resolvedScope.research_basis === 'currency_against_quote_reference' &&
+      resolvedScope.member_count === 17 && resolvedScope.funding_eligibility?.paired_membership === 'same_fixed_members_for_both_return_families';
     const complete = feature && scope && resolvedScope && target && direction && fields.every(valid) &&
-      ($('target').value !== 'total_return' || direction === 'DISCOVERY_SIGN_V1' && resolvedScope.kind === 'instrument');
+      ($('target').value !== 'total_return' || direction === 'DISCOVERY_SIGN_V1' && pairedScope);
     const pairedUnsupported = $('target').value === 'total_return' &&
-      (direction !== 'DISCOVERY_SIGN_V1' || resolvedScope?.kind !== 'instrument');
+      (direction !== 'DISCOVERY_SIGN_V1' || !pairedScope);
     $('contract-selection-status').textContent = pairedUnsupported
-      ? 'Paired modelled total-return tests require an individual FX pair and direction discovery in P1. This page never submits a request.'
+      ? 'Spot + Total Return requires an individual FX pair or a matched 17-currency universe, with direction discovery in P1. This page never submits a request.'
       : resolution?.submission_compatible === false
       ? `This combination is unsupported. ${resolution.source_application_note || 'Choose compatible registered inputs.'} This page never submits a request.`
       : complete && resolution?.submission_compatible === true
