@@ -163,7 +163,7 @@ def resolve(root, selection, scope):
     mode = value["scope_modes"].get(scope.get("kind"))
     if value["adapter"] is None or mode is None:
         if value["kind"]==CURRENCY_QUOTE:
-            raise ApplicationBlocked("UNSUPPORTED_FEATURE_SCOPE","Currency-reference Features require one of the seven currency CS universes.")
+            raise ApplicationBlocked("UNSUPPORTED_FEATURE_SCOPE","Currency-reference Features require a registered currency CS universe.")
         raise ApplicationBlocked("UNSUPPORTED_FEATURE_SCOPE", "Selected single-series Features support individual instrument TS only; universe broadcasting is unsupported")
     _basis(value,scope)
     return {"binding": deepcopy(binding), "contract": value, "mode": mode,
@@ -175,7 +175,11 @@ def _basis(value,scope):
     if currency:
         from data.transformations.fx_currency import members,REFERENCES
         quote=scope.get('reference_currency')
-        if quote not in REFERENCES or scope.get('members')!=members(quote):
+        from data.fx_funded_scopes import SCOPE_IDS as FUNDED_IDS, validate_basis
+        if 'funding_eligibility' in scope or scope.get('id') in FUNDED_IDS:
+            try:validate_basis(scope)
+            except ValueError as exc:raise ApplicationBlocked('ORIENTATION_MISMATCH',str(exc)) from exc
+        elif quote not in REFERENCES or scope.get('members')!=members(quote):
             raise ApplicationBlocked('ORIENTATION_MISMATCH','Currency Scope must freeze all currencies against its declared quote')
         normalize_reference(scope['price_catalog'])
     if (value['kind']==CURRENCY_QUOTE)!=currency:

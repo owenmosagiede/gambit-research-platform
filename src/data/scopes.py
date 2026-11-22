@@ -330,6 +330,10 @@ def _readiness(members, current):
 
 
 def _resolve(store, definition, index, current):
+    from data.fx_funded_scopes import SCOPE_IDS as FUNDED_IDS
+    if definition.get('id') in FUNDED_IDS:
+        from data.fx_funded_scopes import resolve
+        return resolve(store, definition, index)
     from data.transformations.fx_currency import SCOPE_IDS
     if definition.get('id') in SCOPE_IDS:
         from data.fx_currency_scopes import resolve
@@ -408,11 +412,16 @@ def list_scopes(root):
     store = FeatureStore(root)
     from data.fx_currency_catalog import active_release
     from data.transformations.fx_currency import SCOPE_IDS
+    from data.fx_funded_scopes import SCOPE_IDS as FUNDED_IDS
+    from data.fx_total_return_cs import CONFIG as FUNDED_CONFIG
+    funded = store.path(FUNDED_CONFIG).is_file()
     active = active_release(root)
     index = _snapshot_index(store)
     current = {item['instrument_id']: item for item in list_instruments(root)}
     scopes, issues = [], []
     for path in sorted(store.path('definitions/scopes').glob('*/*.json')):
+        if (not funded or active is None) and path.parent.name in FUNDED_IDS:
+            continue
         if active is None and path.parent.name in SCOPE_IDS:
             continue  # Staged definitions are not selectable before activation.
         if active is not None and path.parent.name in {row[0] for row in UNIVERSES}:
