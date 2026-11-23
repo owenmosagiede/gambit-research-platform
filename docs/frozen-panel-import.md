@@ -41,6 +41,10 @@ the pinned database hash and resolve the exact source row/field. Execution-local
 reuse obeys the existing file-witness rules. No process-global verification cache
 or new PIT certification is introduced.
 
+UI metadata readers share verified directory membership only within one request.
+File and directory witnesses invalidate cached lists on changes, including new
+research outcomes. Capture-only fields stay out of historical research menus.
+
 ## Timing and application
 
 `archive`, `capture`, and `retrospective` are separate Feature identities. Macro

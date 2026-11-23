@@ -9,6 +9,7 @@ import math
 import re
 
 from data.alfred_onboarding import stable_read, strict_json
+from data.catalog_reads import catalog_glob
 from data.feature_store import FeatureStore, retrieve_signal
 from data.feature_store_contracts import normalize_library_entry
 from data.transformations.identity import digest, reference
@@ -74,7 +75,7 @@ def _load_signal(root, identifier, *, metadata_only=False, include_capture=True,
     entries = []
     bindings = {}
     feature = None
-    for path in sorted(folder.glob('*.json')):
+    for path in sorted(catalog_glob(folder,'*.json')):
         path = store.path(str(path.relative_to(store.root)))
         entry = normalize_library_entry(strict_json(stable_read(path)))
         if entry['signal_id'] != identifier or path.name != digest(entry) + '.json':
@@ -165,8 +166,12 @@ def list_signal_library(root):
     """List one selectable Feature per verified logical Signal, without writes."""
     store = FeatureStore(root)
     folder = store.path(ENTRIES)
+    # Authoritative outcomes may be published independently of link-only input
+    # entries. New relationships/links must invalidate metadata-only UI views.
+    tuple(catalog_glob(store.path('storage/catalog/signal_library/relationships'),'RELATIONSHIP_*.json'))
+    tuple(catalog_glob(store.path('storage/catalog/signal_library/research_links'),'RESEARCHLINK_*.json'))
     signals, issues = [], []
-    for path in sorted(folder.iterdir()) if folder.exists() else []:
+    for path in sorted(catalog_glob(folder,'*')):
         if path.name.startswith('.'):
             continue
         identifier = path.name if SIGNAL_ID.fullmatch(path.name) else None

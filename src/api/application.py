@@ -295,7 +295,7 @@ class ApplicationRoutes:
                 self.error(503,'LIBRARY_UNAVAILABLE','The Scope Library could not be loaded.',head);return
             self.send_json(200,value,head);return
         if target.path=='/api/signal-library':
-            try:value=catalogs.get("list_signal_library",lambda:list_signal_library(root))
+            try:value=catalogs.get_verified("list_signal_library",root,lambda:list_signal_library(root))
             except Exception:
                 self.error(503,'LIBRARY_UNAVAILABLE','The Signal Library could not be loaded.',head);return
             self.send_json(200,value,head);return

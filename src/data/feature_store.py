@@ -138,6 +138,16 @@ class FeatureStore:
         # Existing identifiers still take the ordinary version/file checks.
         names=(compact_memo(self.root,'definition_directory_membership',{},inventory,within_capture=True)
                if phase_active(self.root) else None)
+        if names is None:
+            from data.catalog_reads import catalog_read_active, memo as ui_memo, catalog_glob
+            if catalog_read_active():
+                def ui_inventory():
+                    return {folder:{p.name:True for p in catalog_glob(self.path('definitions/'+folder),'*')
+                                    if p.is_dir()} for folder in folders}
+                # Request-local directory witnesses prove negative lookups.
+                # CatalogCache rechecks membership before accepting/reusing a
+                # projection. Scientific resolution keeps its existing path.
+                names=ui_memo(self.root,'feature_definition_directory_membership',ui_inventory)
         for folder in folders:
             if names is not None and identifier not in names[folder]:continue
             candidate=f'definitions/{folder}/{identifier}/{version}.json'

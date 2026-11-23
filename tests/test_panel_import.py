@@ -195,6 +195,18 @@ class PanelImportTests(unittest.TestCase):
         with patch.dict(os.environ,GAMBIT_ISOLATED_TEST='1'),self.assertRaisesRegex(ValueError,'fingerprint drift'):
             panels.install(self.root,self.plan,self.plan['plan_sha256'],isolated=True)
 
+    def test_UI_membership_reuse_does_not_hide_new_definition_ambiguity(self):
+        from data.catalog_reads import catalog_reads
+        from data.feature_store import PublicationError
+        feature=self.chosen('expansion');store=FeatureStore(self.root)
+        with catalog_reads(self.root) as dependencies:
+            self.assertEqual(store.resolve(reference(feature)),feature)
+            duplicate=self.root/'definitions/providers'/feature['id']/'1.0.0.json'
+            duplicate.parent.mkdir(parents=True);duplicate.write_bytes(canonical_bytes(feature)+b'\n')
+            self.assertFalse(dependencies.unchanged())
+        with catalog_reads(self.root),self.assertRaisesRegex(PublicationError,'Ambiguous definition'):
+            FeatureStore(self.root).resolve(reference(feature))
+
     def test_unit_regime_boundary_never_carries_an_old_unit_forward(self):
         folder=self.base/'common'
         db=sqlite3.connect(folder/'common.sqlite');db.row_factory=sqlite3.Row
