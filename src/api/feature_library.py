@@ -27,6 +27,9 @@ def _legacy_non_fx(store, record):
     if record.get('schema_version') == '0.11.0':
         from data.panel_import import validate_record
         validate_record(record)
+        # Capture fields remain native stored context, addressable by exact ID.
+        # They have no historical TS eligibility and are not research choices.
+        if record['body']['projection']['layer'] == 'capture':return False
         store.verify_closure([record])
         return True
     recipe=record['body']['recipe']

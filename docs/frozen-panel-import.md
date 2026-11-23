@@ -60,8 +60,9 @@ decoded; at most one prevailing preperiod state is retained. A frozen package
 cannot serve future anchors without an explicit refreshed publication.
 
 Capture is one current context state per selector, not a history assigned an
-earlier availability date. Capture Features remain stored/visible but are blocked
-from historical TS planning. Their existence does not imply discovery coverage.
+earlier availability date. Capture Features remain stored and inspectable by exact
+identity, but are not offered in research selection lists and are blocked from
+historical TS planning. Their existence does not imply discovery coverage.
 
 The explicit application contract is individual-instrument TS only. A canonical
 macro pair field may be used only for the same two currencies; it is negated when

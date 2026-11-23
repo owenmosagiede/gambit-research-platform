@@ -515,9 +515,11 @@ def snapshot_operands(root,snapshot):
     return result
 
 
-def resolved(root, feature, *, verify_database=True):
+def resolved(root, feature, *, verify_database=True, store=None):
     from data.feature_store import FeatureStore
-    store = FeatureStore(root); validate_record(feature)
+    store = store or FeatureStore(root)
+    if store.root != Path(root).resolve(): fail('reader store belongs to another root')
+    validate_record(feature)
     snapshot = store.resolve(feature['body']['snapshot']); validate_record(snapshot)
     p = feature['body']['projection']
     if snapshot['body']['package'] != p['package']: fail('package selection differs')

@@ -3,8 +3,8 @@ from data import panel_import as panels
 from data.transformations.identity import reference
 
 
-def item(root, feature, *, metadata_only=False):
-    store,snapshot,manifest,view,dataset = panels.resolved(root,feature,verify_database=False)
+def item(root, feature, *, metadata_only=False, store=None):
+    store,snapshot,manifest,view,dataset = panels.resolved(root,feature,verify_database=False,store=store)
     if metadata_only:
         rows = [dict(feature['body']['projection']['summary']['latest'],value=None)]
         result = {'feature':feature,'manifest':manifest,'observations':rows,

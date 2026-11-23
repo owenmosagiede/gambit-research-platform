@@ -171,10 +171,14 @@ class PanelImportTests(unittest.TestCase):
         from data.reusable_features import ReusableRecipeNotFound
         with patch('data.reusable_features.list_reusable_fx_recipes',side_effect=ReusableRecipeNotFound('fixture')):
             result=list_feature_library(self.root)
-        self.assertEqual(result['feature_count'],len(self.features),result['issues'])
+        historical=sum(f['body']['projection']['layer']!='capture' for f in self.features)
+        self.assertEqual(result['feature_count'],historical,result['issues'])
         with patch('data.panel_import.read',side_effect=AssertionError('List decoded history')):
             result=list_signal_library(self.root)
-        self.assertEqual(result['signal_count'],len(self.features),result['issues'])
+        self.assertEqual(result['signal_count'],historical,result['issues'])
+        context=self.chosen('etf','capture')
+        context_detail=get_signal_detail(self.root,context['body']['signal_id'])
+        self.assertEqual(context_detail['signal']['source_layer'],'capture')
         f=self.chosen('expansion');detail=get_signal_detail(self.root,f['body']['signal_id'])
         self.assertEqual(detail['statistics']['valid_count'],1)
         self.assertEqual(detail['research']['state'],'untested')

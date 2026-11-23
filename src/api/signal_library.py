@@ -63,11 +63,11 @@ def descriptive_statistics(rows, unit):
     return result
 
 
-def _load_signal(root, identifier, *, metadata_only=False):
+def _load_signal(root, identifier, *, metadata_only=False, include_capture=True, store=None):
     """Verify every linked materialization; stale projections cannot duplicate rows."""
     if not SIGNAL_ID.fullmatch(identifier):
         raise SignalNotFound('Unknown Signal')
-    store = FeatureStore(root)
+    store = store or FeatureStore(root)
     folder = store.path(ENTRIES + '/' + identifier)
     if not folder.is_dir():
         raise SignalNotFound('Unknown Signal')
@@ -93,8 +93,10 @@ def _load_signal(root, identifier, *, metadata_only=False):
     for materialization_id in sorted(bindings):
         selected = store.resolve(feature)
         if selected.get('schema_version') == '0.11.0':
+            if not include_capture and selected['body']['projection']['layer'] == 'capture':
+                return store,[]
             from api.panel_library import item as panel_item
-            item = panel_item(root,selected,metadata_only=metadata_only)
+            item = panel_item(root,selected,metadata_only=metadata_only,store=store)
         else:
             item = retrieve_signal(store.root, identifier, materialization_id)
         if reference(item['manifest']) != bindings[materialization_id] or reference(item['feature']) != feature:
@@ -171,7 +173,9 @@ def list_signal_library(root):
         try:
             if identifier is None or not path.is_dir():
                 raise ValueError('Unsupported library location')
-            loaded_store, loaded = _load_signal(store.root, identifier,metadata_only=True)
+            loaded_store, loaded = _load_signal(store.root, identifier,metadata_only=True,
+                                                include_capture=False,store=store)
+            if not loaded:continue
             signals.append(_summary(loaded_store, loaded))
         except Exception:
             issues.append({'code': 'UNAVAILABLE_SIGNAL', 'signal_id': identifier,
