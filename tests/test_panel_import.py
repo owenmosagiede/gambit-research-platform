@@ -115,6 +115,15 @@ class PanelImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'frozen capture'):
             panels.read(self.root,self.chosen('expansion'),end='2022-01-01T00:00:00Z')
 
+    def test_macro_integer_lookup_preserves_between_cutoff_eligibility(self):
+        f=self.chosen('macro',pair=True)
+        rows=panels.read(self.root,f,start='2020-01-02T00:00:00Z',end='2020-01-02T13:00:00Z')['observations']
+        self.assertEqual([r['available_at'] for r in rows],['2020-01-01T12:00:00Z','2020-01-02T12:00:00Z'])
+        state,_,reason=panel_features.state_at(rows,'2020-01-02',panel_features.policy())
+        self.assertEqual(state['value'],'1.0');self.assertIsNone(reason)
+        state,_,reason=panel_features.state_at(rows,'2020-01-03',panel_features.policy())
+        self.assertIsNone(state['value']);self.assertEqual(reason,'SOURCE_MISSING_OR_HELD')
+
     def test_ETF_capture_is_latest_only_and_filed_rows_are_not_retrospective(self):
         capture=panels.read(self.root,self.chosen('etf','capture'))['observations']
         retro=panels.read(self.root,self.chosen('etf','retrospective'))['observations']

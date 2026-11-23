@@ -243,19 +243,42 @@ def _latest_header(row):
     return {k:row[k] for k in ('evaluation_cutoff','available_at','reference_time','status','reason_code')}
 
 
+def macro_groups(db,table,dims):
+    """Sequential bounded-memory inventory; avoid millions of random row reads.
+
+    Existing selector indexes are ideal for a selected history but are not
+    covering aggregate indexes. Grouping the entire as-of-major table through
+    them thrashes a small server's page cache. There are only a few thousand
+    selector groups, so accumulate their metadata in one ordinary table scan.
+    """
+    ordered=list(db.execute('SELECT asof_id,asof_utc FROM asofs ORDER BY asof_id'))
+    if [r[1] for r in ordered] != sorted({r[1] for r in ordered}):
+        fail('macro integer cutoff index is not in unique chronological order')
+    keys=['mode_id','feature_id']+dims
+    query='SELECT '+','.join(keys+['asof_id','model_value','blocker_mask'])+' FROM '+table+' NOT INDEXED'
+    cursor=db.cursor();cursor.row_factory=None
+    states={}
+    for row in cursor.execute(query):
+        key=row[:-3];when,value,block=row[-3:]
+        if key not in states:states[key]={'n':0,'valid':0,'lo':when,'hi':when,'first':None}
+        s=states[key];s['n']+=1;s['lo']=min(s['lo'],when);s['hi']=max(s['hi'],when)
+        if value is not None and not block:
+            s['valid']+=1;s['first']=when if s['first'] is None else min(s['first'],when)
+    asofs=dict(ordered)
+    for key,s in sorted(states.items()):
+        if not s['valid']:continue
+        yield dict(zip(keys,key)),dict(s,**{k:asofs[s[k]] for k in ('lo','hi','first')})
+
+
 def projections(db, package, cap):
     """Inventory each source once in grouped SQL; no per-feature full-table scans."""
     if package == 'macro':
         features = {r['feature_id']: dict(r) for r in db.execute('SELECT * FROM features')}
         currencies = dict(db.execute('SELECT currency_id,currency FROM currencies'))
         modes = dict(db.execute('SELECT mode_id,name FROM modes'))
-        for table, dims in [('country_features', 'currency_id'), ('pair_features_data', 'base_id,quote_id')]:
-            sql = f'''SELECT mode_id,feature_id,{dims},COUNT(*) n,
-                SUM(model_value IS NOT NULL AND blocker_mask=0) valid,MIN(a.asof_utc) lo,MAX(a.asof_utc) hi,
-                MIN(CASE WHEN model_value IS NOT NULL AND blocker_mask=0 THEN a.asof_utc END) first
-                FROM {table} JOIN asofs a USING(asof_id) GROUP BY mode_id,feature_id,{dims}'''
-            for r in db.execute(sql):
-                if not r['valid']: continue
+        for table, dims in [('country_features', ['currency_id']), ('pair_features_data', ['base_id','quote_id'])]:
+            for key,stats in macro_groups(db,table,dims):
+                r=dict(key,**stats)
                 f = features[r['feature_id']]; pair = None
                 selector = {'table': table, 'mode_id': r['mode_id'], 'feature_id': r['feature_id']}
                 if table == 'country_features':
@@ -353,13 +376,20 @@ def source_rows(db, p, start=None, end=None):
     """
     package, layer, sel, field = p['package'], p['layer'], p['selector'], p['field']
     params = []; where = []; time = 'available_from'; table = 'feature_states'
+    lower,upper=start,end
     if package == 'macro':
         table = sel['table']
         if table not in ('country_features','pair_features_data'): fail('unknown macro selector')
         view = 'country_feature_values' if table == 'country_features' else 'pair_feature_values'
         keys = ['mode_id','feature_id'] + (['currency_id'] if table == 'country_features' else ['base_id','quote_id'])
         where = ['p.'+k+'=?' for k in keys]; params = [sel[k] for k in keys]
-        time = 'a.asof_utc'
+        time = 'p.asof_id'
+        if start:
+            found=db.execute('SELECT asof_id FROM asofs WHERE asof_utc>=? ORDER BY asof_utc LIMIT 1',(start,)).fetchone()
+            lower=found[0] if found else db.execute('SELECT MAX(asof_id)+1 FROM asofs').fetchone()[0]
+        if end:
+            found=db.execute('SELECT asof_id FROM asofs WHERE asof_utc<=? ORDER BY asof_utc DESC LIMIT 1',(end,)).fetchone()
+            upper=found[0] if found else -1
         # Use integer lookup indices before joining the descriptive view.
         query = 'SELECT p.*,a.asof_utc FROM '+table+' p JOIN asofs a USING(asof_id)'
     elif package in ('common','expansion'):
@@ -376,10 +406,10 @@ def source_rows(db, p, start=None, end=None):
     else:
         raw = []
         if start:
-            raw.extend(db.execute(base+' AND '+time+'<? ORDER BY '+time+' DESC LIMIT 1',params+[start]))
+            raw.extend(db.execute(base+' AND '+time+'<? ORDER BY '+time+' DESC LIMIT 1',params+[lower]))
         bounded = base; args = list(params)
-        if start: bounded += ' AND '+time+'>=?'; args.append(start)
-        if end: bounded += ' AND '+time+'<=?'; args.append(end)
+        if start: bounded += ' AND '+time+'>=?'; args.append(lower)
+        if end: bounded += ' AND '+time+'<=?'; args.append(upper)
         raw.extend(db.execute(bounded+' ORDER BY '+time,args))
     for item in raw:
         r = dict(item); evidence = {}; until = None; block = 0
