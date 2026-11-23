@@ -83,7 +83,7 @@ def resolution(root, definition, scope):
             'reference_start':None,'reference_end':None},'readiness_capabilities':{}}]
     issues=[]
     try:
-        profile=apply_schedule(panel_features.load_profile(root),load_schedule(root),price_time_series=False)
+        profile=apply_schedule(panel_features.load_profile(root),load_schedule(root),price_time_series=True)
         plan=inputs.resolve_plan(root,{'feature':{k:definition[k] for k in ('id','version')},
             'scope':{k:scope[k] for k in ('id','version')},'target_family':'price_return',
             'expected_direction':'DISCOVERY_SIGN_V1'},profile)

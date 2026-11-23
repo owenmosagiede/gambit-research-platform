@@ -83,3 +83,8 @@ Spec under `config/frozen_panel_alignment.json`, separately from application
 deployment. Existing policies and prospective scheduling remain unchanged.
 Admissions remain closed. Verify source hashes, sample native reads, read-only
 TS plans, library health and the absence of jobs before reporting completion.
+
+Panel applications use the existing approved individual-pair TS schedule:
+1/7/21D validation is 2022–2024; 63D discovery ends before 2017 and validation is
+2017–2024. Features without pre-2017 discovery history have 63D excluded. The
+2025-onward strategy-test period is not included in these validation windows.
