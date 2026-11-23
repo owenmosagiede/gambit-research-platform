@@ -24,6 +24,11 @@ class FeatureNotFound(ValueError):
 
 
 def _legacy_non_fx(store, record):
+    if record.get('schema_version') == '0.11.0':
+        from data.panel_import import validate_record
+        validate_record(record)
+        store.verify_closure([record])
+        return True
     recipe=record['body']['recipe']
     # Known FX capture-specific recipes are immutable compatibility records.
     if recipe.get('evaluation_policy',{}).get('id')=='POL_TRANSFORM_EVALUATION_FX_SNAPSHOT':
@@ -186,7 +191,10 @@ def get_feature_resolution(root, identifier, version, scope_id, scope_version):
     selection={'id':identifier,'version':version}
     try:definition=feature_applications.load_definition(root,selection)
     except (ValueError,OSError) as exc:raise FeatureNotFound(str(exc)) from exc
-    if definition.get('schema_version') == '0.9.0':
+    if definition.get('schema_version') == '0.11.0':
+        from api.panel_library import resolution
+        result=resolution(root,definition,resolve_scope(root,scope_id,scope_version))
+    elif definition.get('schema_version') == '0.9.0':
         result = _value_resolution(root, definition, resolve_scope(root, scope_id, scope_version))
     elif definition['record_type']=='feature_recipe_definition':
         from data.feature_resolution import resolve_feature_scope

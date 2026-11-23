@@ -63,7 +63,7 @@ def descriptive_statistics(rows, unit):
     return result
 
 
-def _load_signal(root, identifier):
+def _load_signal(root, identifier, *, metadata_only=False):
     """Verify every linked materialization; stale projections cannot duplicate rows."""
     if not SIGNAL_ID.fullmatch(identifier):
         raise SignalNotFound('Unknown Signal')
@@ -91,7 +91,12 @@ def _load_signal(root, identifier):
         raise SignalNotFound('Unknown Signal')
     loaded = []
     for materialization_id in sorted(bindings):
-        item = retrieve_signal(store.root, identifier, materialization_id)
+        selected = store.resolve(feature)
+        if selected.get('schema_version') == '0.11.0':
+            from api.panel_library import item as panel_item
+            item = panel_item(root,selected,metadata_only=metadata_only)
+        else:
+            item = retrieve_signal(store.root, identifier, materialization_id)
         if reference(item['manifest']) != bindings[materialization_id] or reference(item['feature']) != feature:
             raise ValueError('Resolved Signal reference mismatch')
         loaded.append(item)
@@ -131,6 +136,9 @@ def _source(store, item):
 def _summary(store, loaded):
     item = loaded[0]
     feature, manifest = item['feature'], item['manifest']
+    if feature.get('schema_version') == '0.11.0':
+        from api.panel_library import summary
+        return summary(store,item,research=_authoritative_research(store.root,feature['id']))
     source, _ = _source(store, item)
     transformations = []
     for step in feature['body']['recipe']['steps']:
@@ -163,7 +171,7 @@ def list_signal_library(root):
         try:
             if identifier is None or not path.is_dir():
                 raise ValueError('Unsupported library location')
-            loaded_store, loaded = _load_signal(store.root, identifier)
+            loaded_store, loaded = _load_signal(store.root, identifier,metadata_only=True)
             signals.append(_summary(loaded_store, loaded))
         except Exception:
             issues.append({'code': 'UNAVAILABLE_SIGNAL', 'signal_id': identifier,
@@ -197,6 +205,9 @@ def _detail(store, loaded, identifier, materialization_id=None, *, research=None
     if selected is None:
         raise SignalNotFound('Materialization is not linked to this Signal')
     manifest, feature = selected['manifest'], selected['feature']
+    if feature.get('schema_version') == '0.11.0':
+        from api.panel_library import detail
+        return detail(store,loaded,identifier,materialization_id,research)
     recipe = feature['body']['recipe']
     _, provider = _source(store, selected)
     evaluation = store.resolve(recipe['evaluation_policy']) if recipe.get('evaluation_policy') else None

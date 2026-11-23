@@ -73,6 +73,9 @@ class FeatureStore:
 
     def _validate(self, record):
         version=record.get('schema_version')
+        if version=='0.11.0':
+            from data.panel_import import validate_record as validate_panel
+            return validate_panel(record)
         if version=='0.10.0':
             from data.fx_funding import validate_record as validate_funding
             return validate_funding(record)
@@ -427,6 +430,9 @@ def read_materialization(root, identifier, *, research=False):
     """Fresh independent read, with payload/schema/reference/operand verification."""
     store=FeatureStore(root)
     manifest=strict_json(stable_read(store.path(materialization_path(identifier))))
+    if manifest.get('schema_version')=='0.11.0':
+        from data.panel_import import read_materialization as read_panel
+        return read_panel(root,identifier)
     if manifest.get('schema_version')=='0.6.0':
         from data.fx_feature_store import read_fx_materialization
         return read_fx_materialization(root,identifier,research=research)
