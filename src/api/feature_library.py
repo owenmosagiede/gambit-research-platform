@@ -52,7 +52,7 @@ def _item(store, record, kind):
     for step in recipe['steps']:
         operator=store.resolve(step['operator'])
         transformations.append({'operator':step['operator'],'label':operator['display_name'],
-                                'parameters':step['parameters']})
+                                'parameters':[] if record.get('schema_version')=='0.11.0' else step['parameters']})
     return {'id':record['id'],'version':record['version'],'reference':reference(record),
         'name':record['display_name'],'kind':kind,'registration_state':'registered',
         'transformations':transformations,'signal_id':None if kind=='reusable_fx_recipe' else body['signal_id']}
