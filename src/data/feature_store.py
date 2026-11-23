@@ -138,6 +138,7 @@ class FeatureStore:
         # Existing identifiers still take the ordinary version/file checks.
         names=(compact_memo(self.root,'definition_directory_membership',{},inventory,within_capture=True)
                if phase_active(self.root) else None)
+        ui_membership=False
         if names is None:
             from data.catalog_reads import catalog_read_active, memo as ui_memo, catalog_glob
             if catalog_read_active():
@@ -148,12 +149,18 @@ class FeatureStore:
                 # CatalogCache rechecks membership before accepting/reusing a
                 # projection. Scientific resolution keeps its existing path.
                 names=ui_memo(self.root,'feature_definition_directory_membership',ui_inventory)
+                ui_membership=True
         for folder in folders:
             if names is not None and identifier not in names[folder]:continue
             candidate=f'definitions/{folder}/{identifier}/{version}.json'
             candidate_path=self.path(candidate)
             probe_definition(candidate_path)
             if candidate_path.is_file():matches.append(candidate)
+            elif ui_membership:
+                # The ID may already exist in another namespace while this
+                # exact version does not. Watch that directory too: adding a
+                # version inside it must not hide a newly ambiguous reference.
+                tuple(catalog_glob(candidate_path.parent,'*'))
         if len(matches)>1:raise PublicationError('Ambiguous definition identity')
         if matches:relative=matches[0]
         if relative is None:

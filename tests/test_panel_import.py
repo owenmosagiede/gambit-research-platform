@@ -199,10 +199,11 @@ class PanelImportTests(unittest.TestCase):
         from data.catalog_reads import catalog_reads
         from data.feature_store import PublicationError
         feature=self.chosen('expansion');store=FeatureStore(self.root)
+        duplicate=self.root/'definitions/providers'/feature['id']/'1.0.0.json'
+        duplicate.parent.mkdir(parents=True)
         with catalog_reads(self.root) as dependencies:
             self.assertEqual(store.resolve(reference(feature)),feature)
-            duplicate=self.root/'definitions/providers'/feature['id']/'1.0.0.json'
-            duplicate.parent.mkdir(parents=True);duplicate.write_bytes(canonical_bytes(feature)+b'\n')
+            duplicate.write_bytes(canonical_bytes(feature)+b'\n')
             self.assertFalse(dependencies.unchanged())
         with catalog_reads(self.root),self.assertRaisesRegex(PublicationError,'Ambiguous definition'):
             FeatureStore(self.root).resolve(reference(feature))
