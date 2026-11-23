@@ -52,7 +52,7 @@ def fixture(folder,kind):
         (folder/'input-freeze.json').write_text(json.dumps({'capture_at':CAP}))
     else:
         db.executescript('''CREATE TABLE features(feature_id INTEGER PRIMARY KEY,name TEXT,panel_id TEXT,metric TEXT,description TEXT);
-            INSERT INTO features VALUES(0,'inflation_gap','C06','yoy','Inflation');
+            INSERT INTO features VALUES(0,'inflation_gap','C06','yoy','Inflation differential');
             CREATE TABLE currencies(currency_id INTEGER PRIMARY KEY,currency TEXT);
             INSERT INTO currencies VALUES(0,'JPY'),(1,'USD');
             CREATE TABLE modes(mode_id INTEGER PRIMARY KEY,name TEXT);INSERT INTO modes VALUES(0,'archive'),(1,'capture');
@@ -123,6 +123,8 @@ class PanelImportTests(unittest.TestCase):
         self.assertEqual(state['value'],'1.0');self.assertIsNone(reason)
         state,_,reason=panel_features.state_at(rows,'2020-01-03',panel_features.policy())
         self.assertIsNone(state['value']);self.assertEqual(reason,'SOURCE_MISSING_OR_HELD')
+        self.assertNotIn('differential',self.chosen('macro')['display_name'])
+        self.assertIn('differential',f['display_name'])
 
     def test_ETF_capture_is_latest_only_and_filed_rows_are_not_retrospective(self):
         capture=panels.read(self.root,self.chosen('etf','capture'))['observations']

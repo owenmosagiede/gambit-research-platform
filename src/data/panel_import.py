@@ -476,8 +476,13 @@ def make_feature(snapshot, view, p):
                      'dimensions':[{'name':'layer','value':p['layer']}]},
         'history_mode':'emitted_history','history_policy':policy,'execution_policy':policy,
         'evaluation_policy':policy},execution=False)
+    name=p['name']
+    if p['selector'].get('table') == 'country_features':
+        # The package's shared feature table describes the downstream pair gap;
+        # this projection is its domestic operand, before any pair subtraction.
+        name=name.replace(' differential','')
     return {'schema_version':SCHEMA,'record_type':'feature_definition','id':feature_id(recipe),'version':VERSION,
-        'display_name':p['name']+' ['+p['layer']+']','body':{'recipe':recipe,'signal_id':signal_id(recipe),
+        'display_name':name+' ['+p['layer']+']','body':{'recipe':recipe,'signal_id':signal_id(recipe),
         'snapshot':reference(snapshot),'projection':p}}
 
 
@@ -520,7 +525,7 @@ def resolved(root, feature, *, verify_database=True):
     dataset = store.resolve(view['body']['dataset'])
     if dataset['body']['snapshot'] != reference(snapshot): fail('source view snapshot differs')
     expected = make_feature(snapshot, view, p)
-    if expected != feature: fail('stored projection differs from implemented recipe')
+    if reference(expected) != reference(feature): fail('stored projection differs from implemented recipe')
     store.verify_closure([feature])
     manifest = manifest_for(feature)
     actual = store.resolve(reference(manifest))
