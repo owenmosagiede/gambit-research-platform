@@ -112,6 +112,11 @@ def _validate_plan(plan):
                 or source['alignment_policy'] != plan['profile'].get('external_alignment_policy')
                 or policy_ref(source['policy']) != source['alignment_policy']):
             raise InputsBlocked('Frozen external application contract differs')
+        if source.get('native_panel_profile') == 'frozen_panel_v1':
+            from research.feature_applications import PANEL_SERIES
+            if (source['target_pair'] != plan['scope']['members'][0]
+                    or plan['feature_application']['contract']['kind'] != PANEL_SERIES):
+                raise InputsBlocked('Frozen panel application orientation differs')
     if not plan['members'] or plan['structural_common_start']!=max(member['structural_source_start'] for member in plan['members']):
         raise InputsBlocked('Frozen research structural start differs from member source coverage')
     expected = resolved_periods(plan['profile'], plan['structural_common_start'])
@@ -286,7 +291,7 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
         application = feature_applications.resolve(root, intent['feature'], scope)
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise InputsBlocked(str(exc), reasons=getattr(exc, 'blockers', None)) from exc
-    external_selection = application['contract']['kind'] == feature_applications.SINGLE_SERIES
+    external_selection = application['contract']['kind'] in (feature_applications.SINGLE_SERIES,feature_applications.PANEL_SERIES)
     value_selection = application['contract']['kind'] == feature_applications.VALUE_PAIR
     try:
         if value_selection:
@@ -305,7 +310,11 @@ def resolve_plan(root, intent, profile, *, feature_manifest_index=None):
     if external_selection:
         if scope['kind'] != 'instrument':
             raise InputsBlocked('External stored Features support individual instrument TS only; universe broadcasting is unsupported')
-        external_source = external.resolve_source(root, recipe, profile)
+        if application['contract']['kind'] == feature_applications.PANEL_SERIES:
+            from research.panel_features import resolve_source as panel_source
+            external_source = panel_source(root,recipe,profile,scope['members'][0])
+        else:
+            external_source = external.resolve_source(root, recipe, profile)
     if value_selection:
         from data.fx_value import source as value_inputs
         if scope['kind'] != 'instrument':

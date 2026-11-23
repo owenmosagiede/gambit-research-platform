@@ -25,6 +25,9 @@ def blocked(message):
 
 
 def validate_policy(policy):
+    if isinstance(policy,dict) and policy.get('id') == 'POL_FROZEN_PANEL_UTC_STATE':
+        from research.panel_features import validate_policy as validate_panel_policy
+        return validate_panel_policy(policy)
     required = {'id', 'version', 'approval_state', 'sampling_mode', 'eligibility_rule',
                 'availability_precision_rule', 'freshness_rule', 'invalid_update_rule',
                 'collision_rule', 'missing_anchor_rule', 'phase_context_rule'}
@@ -119,6 +122,9 @@ def next_weekday(day):
 
 
 def resolve_source(root, feature, profile):
+    if feature.get('schema_version') == '0.11.0':
+        from research.panel_features import resolve_source as resolve_panel_source
+        return resolve_panel_source(root,feature,profile)
     if 'external_alignment_policy' not in profile: blocked('Missing approved external alignment policy')
     policy = load_policy(root, profile['external_alignment_policy'])
     store = FeatureStore(root); candidates = []
@@ -201,6 +207,9 @@ def observation_headers(store, manifest):
 
 
 def phase_rows(root, source, period):
+    if source.get('native_panel_profile') == 'frozen_panel_v1':
+        from research.panel_features import phase_rows as panel_rows
+        return panel_rows(root,source,period)
     store = FeatureStore(root); manifest = store.resolve(source['materialization'])
     if manifest['definition'] != source['feature'] or manifest['metadata'] != source['metadata']:
         blocked('Frozen external source semantics differ')
@@ -266,6 +275,9 @@ def verify_selected_lineage(store, lineage, row, source):
 
 
 def state_at(rows, anchor, policy):
+    if policy.get('id') == 'POL_FROZEN_PANEL_UTC_STATE':
+        from research.panel_features import state_at as panel_state
+        return panel_state(rows,anchor,policy)
     validate_policy(policy); normalize_time(anchor, 'date')
     eligible = [row for row in rows if all(temporal_eligible(row[k], 'date', anchor, 'date')['eligible']
                 for k in ('available_at', 'evaluation_cutoff'))]
@@ -329,8 +341,15 @@ def load(root, plan, prepared, phase, horizon, period):
             'feature_materialization': source['materialization']['id'], 'feature_lineage': None if feature is None else feature['lineage'],
             'target_materialization': member['targets'][str(horizon)]['materialization'], 'target_row_id': target['id'],
             'target_operands': target['operands'], 'price_snapshot': member['price_snapshot']}
+        output_value = feature['value'] if feature and reason is None else None
+        if output_value is not None and source.get('pair_orientation_multiplier') == -1:
+            from decimal import Decimal
+            output_value = str(-Decimal(output_value))
+        if source.get('native_panel_profile'):
+            evidence['panel_alignment'] = {key: source[key] for key in
+                ('source_layer','frozen_max_asof','source_pair','target_pair','pair_orientation_multiplier')}
         rows.append({'date': target['prediction_anchor'], 'instrument': member['instrument_id'],
-            'feature': feature['value'] if feature and reason is None else None,
+            'feature': output_value,
             'target': target['value'] if target['status'] == 'valid' else None,
             'target_entry': target['entry_time'], 'target_end': target['exit_time'], 'valid': valid,
             'status': 'valid' if valid else 'unavailable', 'reason_codes': reasons,

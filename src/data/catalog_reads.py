@@ -16,6 +16,11 @@ def catalog_read_active():
     return _CURRENT.get() is not None
 
 
+def namespace_inventory_allowed(root):
+    context=_CURRENT.get()
+    return bool(context is not None and context.allow_namespace_inventory and Path(root)==context.root)
+
+
 class CatalogChanged(ValueError):
     """The catalog changed while a projection was being constructed."""
 
@@ -38,8 +43,9 @@ def _listing(path, pattern):
 
 
 class CatalogReads:
-    def __init__(self, root):
+    def __init__(self, root, *, allow_namespace_inventory=False):
         self.root = Path(root).resolve()
+        self.allow_namespace_inventory=allow_namespace_inventory
         self.files = {}
         self.listings = {}
         self.values = {}
@@ -66,8 +72,8 @@ class CatalogReads:
 
 
 @contextmanager
-def catalog_reads(root):
-    context = CatalogReads(root)
+def catalog_reads(root, *, allow_namespace_inventory=False):
+    context = CatalogReads(root,allow_namespace_inventory=allow_namespace_inventory)
     token = _CURRENT.set(context)
     try:
         yield context

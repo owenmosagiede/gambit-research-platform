@@ -73,6 +73,9 @@ class FeatureStore:
 
     def _validate(self, record):
         version=record.get('schema_version')
+        if version=='0.11.0':
+            from data.panel_import import validate_record as validate_panel
+            return validate_panel(record)
         if version=='0.10.0':
             from data.fx_funding import validate_record as validate_funding
             return validate_funding(record)
@@ -135,12 +138,29 @@ class FeatureStore:
         # Existing identifiers still take the ordinary version/file checks.
         names=(compact_memo(self.root,'definition_directory_membership',{},inventory,within_capture=True)
                if phase_active(self.root) else None)
+        ui_membership=False
+        if names is None:
+            from data.catalog_reads import namespace_inventory_allowed, memo as ui_memo, catalog_glob
+            if namespace_inventory_allowed(self.root):
+                def ui_inventory():
+                    return {folder:{p.name:True for p in catalog_glob(self.path('definitions/'+folder),'*')
+                                    if p.is_dir()} for folder in folders}
+                # Request-local directory witnesses prove negative lookups.
+                # CatalogCache rechecks membership before accepting/reusing a
+                # projection. Scientific resolution keeps its existing path.
+                names=ui_memo(self.root,'feature_definition_directory_membership',ui_inventory)
+                ui_membership=True
         for folder in folders:
             if names is not None and identifier not in names[folder]:continue
             candidate=f'definitions/{folder}/{identifier}/{version}.json'
             candidate_path=self.path(candidate)
             probe_definition(candidate_path)
             if candidate_path.is_file():matches.append(candidate)
+            elif ui_membership:
+                # The ID may already exist in another namespace while this
+                # exact version does not. Watch that directory too: adding a
+                # version inside it must not hide a newly ambiguous reference.
+                tuple(catalog_glob(candidate_path.parent,'*'))
         if len(matches)>1:raise PublicationError('Ambiguous definition identity')
         if matches:relative=matches[0]
         if relative is None:
@@ -427,6 +447,9 @@ def read_materialization(root, identifier, *, research=False):
     """Fresh independent read, with payload/schema/reference/operand verification."""
     store=FeatureStore(root)
     manifest=strict_json(stable_read(store.path(materialization_path(identifier))))
+    if manifest.get('schema_version')=='0.11.0':
+        from data.panel_import import read_materialization as read_panel
+        return read_panel(root,identifier)
     if manifest.get('schema_version')=='0.6.0':
         from data.fx_feature_store import read_fx_materialization
         return read_fx_materialization(root,identifier,research=research)

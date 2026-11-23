@@ -14,10 +14,20 @@ from research.store import inside, install_bytes
 CURRENCY_QUOTE = "currency_quote_input"
 PER_MEMBER = "per_instrument_input"
 SINGLE_SERIES = "selected_single_series"
+PANEL_SERIES = "frozen_panel_series"
 ENTITY_MAPPED = "entity_mapped_series"
 VALUE_PAIR = "fx_value_pair"
 
 CONTRACTS = {
+    PANEL_SERIES: {
+        "id":"APPLICATION_FROZEN_PANEL_SERIES", "version":"1.0.0",
+        "adapter":"frozen_panel_ts_v1", "definition_type":"feature_definition",
+        "scope_modes":{"instrument":"TS"},
+        "input_binding":"one_explicit_immutable_panel_field_preserve_original_source",
+        "orientation":"pair_fields_same_pair_negate_reverse_other_fields_unchanged",
+        "comparability":"individual_TS_only_no_currency_exposure_mapping_or_CS_broadcast",
+        "alignment":"original_UTC_intervals_staleness_and_frozen_ceiling_v1",
+    },
     VALUE_PAIR: {
         "id": "APPLICATION_FX_VALUE_PAIR", "version": "1.0.0",
         "adapter": "fx_value_pair_v1", "definition_type": "feature_recipe_definition",
@@ -120,6 +130,9 @@ def install_binding(root, record, kind):
         profile='fx_currency_price.1.0.0' if kind==CURRENCY_QUOTE else 'fx_price.1.0.0'
         if record['body']['input_contract']['source_profile']!=profile:
             raise ApplicationBlocked('APPLICATION_INPUT_MISMATCH','Price orientation does not match application')
+    elif kind == PANEL_SERIES:
+        from data.panel_import import validate_record
+        validate_record(record)
     else:
         from research.external_features import definition
         definition(root, {"id": record["id"], "version": record["version"]})

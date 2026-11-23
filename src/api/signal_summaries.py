@@ -112,6 +112,15 @@ def _recipe_presentation(store, recipe):
 
 
 def _output_summary(store,loaded):
+    if loaded[0]['feature'].get('schema_version') == '0.11.0':
+        from api.panel_library import summary
+        output=summary(store,loaded[0]); output['detail_href']=OUTPUT_PREFIX+output['signal_id']
+        output['research']=_research(loaded[0]['library_entries'])
+        output['materializations']=[{'id':loaded[0]['manifest']['id'],'reference':reference(loaded[0]['manifest']),
+            'row_count':output['row_count'],'status_counts':output['status_counts'],
+            'coverage':output['coverage'],'readiness_capabilities':output['readiness_capabilities'],
+            'href':output['detail_href']+'?materialization_id='+loaded[0]['manifest']['id']}]
+        return output
     output=_metadata_summary(store,loaded) if loaded[0].get('metadata_only') else _summary(store,loaded)
     output['detail_href']=OUTPUT_PREFIX+output['signal_id']
     output['research']=_research(loaded[0]['library_entries'])
@@ -140,6 +149,14 @@ def _load_output_metadata(root, identifier, *, store=None):
     if not bindings:raise SignalNotFound('No stored output metadata')
     feature=store.resolve(feature_ref)
     if feature['body']['signal_id']!=identifier:raise PublicationError('Signal identity mismatch')
+    if feature.get('schema_version') == '0.11.0':
+        from api.panel_library import item
+        selected=item(root,feature,metadata_only=True)
+        if bindings != {selected['manifest']['id']:reference(selected['manifest'])}:
+            raise PublicationError('Native panel output references differ')
+        selected.update(library_entries=entries,metadata_only=True,
+            catalog_coverage=feature['body']['projection']['summary'])
+        return store,[selected]
     loaded=[]
     for binding in bindings.values():
         manifest=store.resolve(binding)
@@ -184,7 +201,8 @@ def _registered_entry(store, feature):
         'source':{'label':provider['body']['provider']+' · '+provider['body']['native_series_id'],
                   'input_contract':{'source_view':reference(view)}},
         'transformations':[{'node':step['node'],'operator':step['operator'],
-            'label':store.resolve(step['operator'])['display_name'],'parameters':step['parameters']}
+            'label':store.resolve(step['operator'])['display_name'],
+            'parameters':[] if feature.get('schema_version')=='0.11.0' else step['parameters']}
             for step in recipe['steps']], 'observation_count':None,'outputs':[]}
 
 
@@ -412,6 +430,8 @@ def get_signal_output_detail(root,identifier,materialization_id=None):
     from api.signal_library import _authoritative_research
     result=_detail(store,loaded,identifier,selected_id,
         research=_authoritative_research(root,loaded[0]['feature']['id']) or _research(loaded[0]['library_entries']),output_prefix=OUTPUT_PREFIX)
+    if loaded[0]['feature'].get('schema_version') == '0.11.0':
+        return result
     result['materializations']=[{'id':x['manifest']['id'],'reference':reference(x['manifest']),
         'row_count':x['manifest']['row_count'],'status_counts':x['manifest']['status_counts'],
         'coverage':x['catalog_coverage'],'href':OUTPUT_PREFIX+identifier+'?materialization_id='+x['manifest']['id']} for x in metadata]
