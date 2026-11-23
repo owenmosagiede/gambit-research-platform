@@ -536,8 +536,13 @@
       if (retrospective) tr.append(el("td", row.available_at === null ? "Unknown" : row.available_at));
       const td = el("td", undefined, "lineage-cell");
       const details = el("details");
-      details.append(el("summary", "View reference"), el("code", row.lineage.id, "signal-id"),
-        el("span", `Version ${row.lineage.version}`, "cell-secondary"), el("code", row.lineage.content_sha256, "signal-id"));
+      if (reference(row.lineage)) {
+        details.append(el("summary", "View reference"), el("code", row.lineage.id, "signal-id"),
+          el("span", `Version ${row.lineage.version}`, "cell-secondary"), el("code", row.lineage.content_sha256, "signal-id"));
+      } else {
+        details.append(el("summary", "View source evidence"));
+        appendJson(details, "Frozen source record", row.lineage);
+      }
       td.append(details); tr.append(td); observations.body.append(tr);
     }
     fragment.append(observations.wrap);

@@ -36,7 +36,7 @@ def fixture(folder,kind):
         for i,(layer,at,until,day,value,mask) in enumerate(states,1):
             db.execute('INSERT INTO feature_states VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (i,1,layer,at,until,day,day,day,day,'D','percent per annum',json.dumps({'level':value,'change_1':None}),
-                 json.dumps({'level':[i]}),json.dumps({'current_observation_id':i}),json.dumps({'change_1':'lookback absent'}),mask,2))
+                 json.dumps({'level':[i]}),json.dumps({'left_state_id':i,'right_state_id':i} if kind=='expansion' else {'current_observation_id':i}),json.dumps({'change_1':'lookback absent'}),mask,2))
         if kind=='common':(folder/'engineering.json').write_text(json.dumps({'capture_at':CAP}))
         else:
             db.execute('CREATE TABLE metadata(key TEXT,value_json TEXT)')
@@ -121,10 +121,19 @@ class PanelImportTests(unittest.TestCase):
         self.assertEqual([r['available_at'] for r in rows],['2020-01-01T12:00:00Z','2020-01-02T12:00:00Z'])
         state,_,reason=panel_features.state_at(rows,'2020-01-02',panel_features.policy())
         self.assertEqual(state['value'],'1.0');self.assertIsNone(reason)
+        self.assertEqual(state['reference_end'],'2019-12-31')
         state,_,reason=panel_features.state_at(rows,'2020-01-03',panel_features.policy())
         self.assertIsNone(state['value']);self.assertEqual(reason,'SOURCE_MISSING_OR_HELD')
         self.assertNotIn('differential',self.chosen('macro')['display_name'])
         self.assertIn('differential',f['display_name'])
+
+    def test_derived_market_state_ages_out_between_publications(self):
+        rows=panels.read(self.root,self.chosen('expansion','retrospective'))['observations']
+        self.assertNotIn('current_observation_id',rows[0]['lineage']['source_lineage'])
+        _,age,reason=panel_features.state_at(rows,'2020-01-15',panel_features.policy())
+        self.assertEqual(age,14);self.assertIsNone(reason)
+        _,age,reason=panel_features.state_at(rows,'2020-01-16',panel_features.policy())
+        self.assertEqual(age,15);self.assertEqual(reason,'FEATURE_STALE')
 
     def test_ETF_capture_is_latest_only_and_filed_rows_are_not_retrospective(self):
         capture=panels.read(self.root,self.chosen('etf','capture'))['observations']
@@ -179,6 +188,12 @@ class PanelImportTests(unittest.TestCase):
         context=self.chosen('etf','capture')
         context_detail=get_signal_detail(self.root,context['body']['signal_id'])
         self.assertEqual(context_detail['signal']['source_layer'],'capture')
+        from api.signal_summaries import _load_output_metadata,_output_summary,get_signal_output_detail
+        s,loaded=_load_output_metadata(self.root,self.chosen('expansion')['body']['signal_id'])
+        output=_output_summary(s,loaded);saved=output['materializations'][0]
+        self.assertEqual(saved['href'],output['detail_href']+'?materialization_id='+saved['id'])
+        opened=get_signal_output_detail(self.root,output['signal_id'])
+        self.assertEqual(opened['materializations'][0]['href'],saved['href'])
         f=self.chosen('expansion');detail=get_signal_detail(self.root,f['body']['signal_id'])
         self.assertEqual(detail['statistics']['valid_count'],1)
         self.assertEqual(detail['research']['state'],'untested')

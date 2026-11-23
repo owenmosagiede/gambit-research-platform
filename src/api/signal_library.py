@@ -216,7 +216,7 @@ def _detail(store, loaded, identifier, materialization_id=None, *, research=None
     manifest, feature = selected['manifest'], selected['feature']
     if feature.get('schema_version') == '0.11.0':
         from api.panel_library import detail
-        return detail(store,loaded,identifier,materialization_id,research)
+        return detail(store,loaded,identifier,materialization_id,research,output_prefix=output_prefix)
     recipe = feature['body']['recipe']
     _, provider = _source(store, selected)
     evaluation = store.resolve(recipe['evaluation_policy']) if recipe.get('evaluation_policy') else None

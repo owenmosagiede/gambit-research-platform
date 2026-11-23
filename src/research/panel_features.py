@@ -125,7 +125,7 @@ def state_at(rows, anchor, value):
     # Macro has a fully materialized daily grid with its own cadence-specific
     # staleness decisions; sparse market vectors require query-time age checks.
     table = row['lineage']['source_table']
-    if table == 'feature_vectors' or (table == 'feature_states' and 'current_observation_id' in row['lineage'].get('source_lineage',{})):
+    if row['lineage']['package'] in ('etf','expansion'):
         maximum = 14 if row['frequency']=='D' else 150
         if age is None or age < 0 or age > maximum: return row,age,'FEATURE_STALE'
     return row,age,None

@@ -44,7 +44,7 @@ def summary(store, selected, *, research=None):
         'frozen_max_asof':snapshot['body']['frozen_max_asof']}
 
 
-def detail(store, loaded, identifier, materialization_id=None, research=None):
+def detail(store, loaded, identifier, materialization_id=None, research=None, *, output_prefix='/api/signal-library/'):
     selected = loaded[0]; manifest = selected['manifest']; feature = selected['feature']
     if materialization_id and materialization_id != manifest['id']:
         from api.signal_library import SignalNotFound
@@ -55,7 +55,7 @@ def detail(store, loaded, identifier, materialization_id=None, research=None):
         'selected_materialization_id':manifest['id'],
         'materializations':[{'id':manifest['id'],'reference':reference(manifest),
             'row_count':len(rows),'status_counts':summary(store,selected)['status_counts'],
-            'coverage':_coverage(rows),'href':'/api/signal-library/'+identifier}],
+            'coverage':_coverage(rows),'href':output_prefix+identifier+'?materialization_id='+manifest['id']}],
         'statistics':descriptive_statistics(rows,p['unit_label']),'recipe':feature['body']['recipe'],
         'source_metadata':dict(selected['metadata'],projection=p),
         'timing':{'precision':'UTC (source precision warnings retained)','history_mode':'emitted_history',

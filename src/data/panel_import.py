@@ -423,7 +423,11 @@ def source_rows(db, p, start=None, end=None):
             ids = [r['currency_id']] if table == 'country_features' else [r['base_id'],r['quote_id']]
             operands = []
             for cid in ids:
-                x = db.execute('''SELECT c.lineage_id,c.frequency,d.iso_date reference_time,c.missing_mask,c.blocker_mask
+                x = db.execute('''SELECT c.lineage_id,c.frequency,d.iso_date reference_time,
+                    CASE c.frequency WHEN 'M' THEN date(d.iso_date,'+1 month','-1 day')
+                    WHEN 'Q' THEN date(d.iso_date,'+3 months','-1 day')
+                    WHEN 'A' THEN date(d.iso_date,'+12 months','-1 day')
+                    ELSE d.iso_date END reference_end,c.missing_mask,c.blocker_mask
                     FROM country_features c LEFT JOIN dates d ON d.ordinal=c.period_ordinal
                     WHERE mode_id=? AND asof_id=? AND feature_id=? AND currency_id=?''',
                     (r['mode_id'],r['asof_id'],r['feature_id'],cid)).fetchone()
@@ -433,7 +437,9 @@ def source_rows(db, p, start=None, end=None):
             evidence = {'country_operands': operands, 'source_missing_mask': r['missing_mask'],
                 'source_block_mask': block, 'source_warning_mask': r['warning_mask']}
             reason = None if value is not None and not block else 'SOURCE_MISSING_OR_HELD'
-            frequency = 'native'; reference_end = reference_time
+            frequency = 'native'
+            ends=[x['reference_end'] for x in operands if x['reference_end']]
+            reference_end=max(ends) if ends else None
         else:
             values = json.loads(r['values_json']); value = values.get(field)
             block = r.get('block_mask', 0); missing = json.loads(r['missing_json'])
@@ -458,7 +464,7 @@ def source_rows(db, p, start=None, end=None):
                 if r['unit'] != sel['native_unit'] or frequency != sel['native_frequency']:
                     block |= 8;reason='NATIVE_UNIT_OR_CADENCE_REGIME_CHANGED'
         if block: value = None
-        evidence.update(source_table=table if package != 'etf' else 'feature_vectors', row_locator=locator, field=field)
+        evidence.update(package=package,source_table=table if package != 'etf' else 'feature_vectors', row_locator=locator, field=field)
         yield scientific({'entity_id':p['entity_id'],'measure':field,'dimensions':[],
             'reference_time':reference_time,'reference_end':reference_end,'frequency':frequency,
             'available_at':available,'evaluation_cutoff':available,'available_until':until,

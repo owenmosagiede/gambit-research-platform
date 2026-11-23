@@ -119,7 +119,7 @@ def _output_summary(store,loaded):
         output['materializations']=[{'id':loaded[0]['manifest']['id'],'reference':reference(loaded[0]['manifest']),
             'row_count':output['row_count'],'status_counts':output['status_counts'],
             'coverage':output['coverage'],'readiness_capabilities':output['readiness_capabilities'],
-            'href':output['detail_href']}]
+            'href':output['detail_href']+'?materialization_id='+loaded[0]['manifest']['id']}]
         return output
     output=_metadata_summary(store,loaded) if loaded[0].get('metadata_only') else _summary(store,loaded)
     output['detail_href']=OUTPUT_PREFIX+output['signal_id']
@@ -201,7 +201,8 @@ def _registered_entry(store, feature):
         'source':{'label':provider['body']['provider']+' · '+provider['body']['native_series_id'],
                   'input_contract':{'source_view':reference(view)}},
         'transformations':[{'node':step['node'],'operator':step['operator'],
-            'label':store.resolve(step['operator'])['display_name'],'parameters':step['parameters']}
+            'label':store.resolve(step['operator'])['display_name'],
+            'parameters':[] if feature.get('schema_version')=='0.11.0' else step['parameters']}
             for step in recipe['steps']], 'observation_count':None,'outputs':[]}
 
 
