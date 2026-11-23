@@ -49,7 +49,7 @@ class CatalogCache:
                     self.verified_entries.pop(key, None)
                 for attempt in range(2):
                     try:
-                        with catalog_reads(root) as dependencies:
+                        with catalog_reads(root,allow_namespace_inventory=True) as dependencies:
                             result = read()
                         if not dependencies.unchanged():
                             raise CatalogChanged('Catalog changed during reading')

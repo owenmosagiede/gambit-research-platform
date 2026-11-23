@@ -140,8 +140,8 @@ class FeatureStore:
                if phase_active(self.root) else None)
         ui_membership=False
         if names is None:
-            from data.catalog_reads import catalog_read_active, memo as ui_memo, catalog_glob
-            if catalog_read_active():
+            from data.catalog_reads import namespace_inventory_allowed, memo as ui_memo, catalog_glob
+            if namespace_inventory_allowed(self.root):
                 def ui_inventory():
                     return {folder:{p.name:True for p in catalog_glob(self.path('definitions/'+folder),'*')
                                     if p.is_dir()} for folder in folders}

@@ -216,11 +216,11 @@ class PanelImportTests(unittest.TestCase):
         feature=self.chosen('expansion');store=FeatureStore(self.root)
         duplicate=self.root/'definitions/providers'/feature['id']/'1.0.0.json'
         duplicate.parent.mkdir(parents=True)
-        with catalog_reads(self.root) as dependencies:
+        with catalog_reads(self.root,allow_namespace_inventory=True) as dependencies:
             self.assertEqual(store.resolve(reference(feature)),feature)
             duplicate.write_bytes(canonical_bytes(feature)+b'\n')
             self.assertFalse(dependencies.unchanged())
-        with catalog_reads(self.root),self.assertRaisesRegex(PublicationError,'Ambiguous definition'):
+        with catalog_reads(self.root,allow_namespace_inventory=True),self.assertRaisesRegex(PublicationError,'Ambiguous definition'):
             FeatureStore(self.root).resolve(reference(feature))
 
     def test_unit_regime_boundary_never_carries_an_old_unit_forward(self):
