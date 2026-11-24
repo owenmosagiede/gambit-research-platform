@@ -104,7 +104,11 @@ def scores(prices, rates, pair, family, inflation=None, *, end_exclusive='2025-0
     price_map = {r['reference_time']: r for r in prices if r['reference_time'] < end_exclusive}
     if not price_map: return []
     price_start = min(price_map)
-    start = max(rates[c][0]['date'] for c in (pair[:3], pair[3:]))
+    rate_start = max(rates[c][0]['date'] for c in (pair[:3], pair[3:]))
+    # Volatility can use prices from before rates begin. Keep publication inside
+    # the joint source scope while warming the independent price lookback.
+    start = min(rate_start, price_start) if family == 'risk_63' else rate_start
+    first_output = max(rate_start, price_start)
     inflation_years = {}
     if family == 'real_actual':
         from data.fx_value import first_actuals
@@ -152,7 +156,7 @@ def scores(prices, rates, pair, family, inflation=None, *, end_exclusive='2025-0
                     operands['inflation'] = {'reference_year': year, 'base': b, 'quote': q}
                 else: reason = 'PUBLISHED_COMMON_ACTUAL_INFLATION_UNAVAILABLE'
         if number is not None and not math.isfinite(number): raise ValueError('Nonfinite carry score')
-        if day >= price_start:
+        if day >= first_output:
             output.append({'date': day, 'first_anchor': next_weekday(day),
                 'value': decimal_text(Decimal(str(number))) if number is not None else None,
                 'reason': reason, 'operands': operands})
