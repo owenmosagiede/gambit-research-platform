@@ -73,6 +73,9 @@ class FeatureStore:
 
     def _validate(self, record):
         version=record.get('schema_version')
+        if version=='0.12.0':
+            from data.fx_carry import validate_record as validate_carry
+            return validate_carry(record)
         if version=='0.11.0':
             from data.panel_import import validate_record as validate_panel
             return validate_panel(record)

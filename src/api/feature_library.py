@@ -78,6 +78,14 @@ def list_feature_library(root, *, store=None):
             features.append({'id': record['id'], 'version': record['version'], 'reference': reference(record),
                 'name': record['display_name'], 'kind': 'fx_value_recipe', 'registration_state': 'registered',
                 'transformations': [], 'signal_id': None})
+    from data.fx_carry import FAMILIES as CARRY_FAMILIES, recipe as carry_recipe
+    for family in CARRY_FAMILIES:
+        selected = carry_recipe(family)
+        if store.path(record_path(selected)).is_file():
+            record = store.resolve(reference(selected))
+            features.append({'id': record['id'], 'version': record['version'], 'reference': reference(record),
+                'name': record['display_name'], 'kind': 'fx_carry_recipe', 'registration_state': 'registered',
+                'transformations': [], 'signal_id': None})
     issues=[]
     for path in sorted(catalog_glob(store.path('definitions/features'), '*/*.json')):
         try:
@@ -184,6 +192,41 @@ def _value_resolution(root, definition, scope):
         'submission_compatible': compatible, 'research_spec': reference(profile)}
 
 
+def _carry_resolution(root, definition, scope):
+    from research import inputs
+    from research.carry_inputs import load_profile
+    from research.schedule import apply_schedule, load_schedule
+    profile = apply_schedule(load_profile(root), load_schedule(root), price_time_series=True)
+    intent = {'feature': {key: definition[key] for key in ('id', 'version')},
+              'scope': {key: scope[key] for key in ('id', 'version')},
+              'target_family': 'price_return', 'expected_direction': 'DISCOVERY_SIGN_V1'}
+    issues, outputs = [], []
+    try:
+        plan = inputs.resolve_plan(root, intent, profile)
+        source = plan['carry_source']
+        outputs = [{'reference': source['snapshot'], 'row_count': source['row_count'],
+                    'coverage': source['coverage']}]
+        compatible = True
+        reason = 'Retrospective carry inputs verified for horizons ' + ', '.join(map(str, plan['horizons'])) + '.'
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        compatible = False
+        reason = str(exc)
+        issues.append({'code': 'CARRY_INPUTS_UNAVAILABLE', 'message': reason})
+    readiness = {'retrospective_research': {'decision': 'provisional' if compatible else 'blocked', 'reason': reason},
+                 'historical_replay': {'decision': 'unresolved', 'reason': 'Benchmark rates and spot retain retrospective reference dates; historical availability is unverified.'},
+                 'live_use': {'decision': 'unresolved', 'reason': 'Research publication only.'}}
+    return {'schema_version': '1.0.0',
+        'recipe': {'reference': reference(definition), 'name': definition['display_name'], 'kind': 'fx_carry_recipe'},
+        'scope': {key: scope[key] for key in ('id', 'version', 'reference', 'display_name', 'membership_snapshot')},
+        'registration_state': 'registered', 'selection_read_only': True, 'member_count': len(scope['members']),
+        'members': [{'instrument_id': pair, 'state': 'materialized' if compatible else 'blocked',
+                     'reason': reason, 'materializations': outputs, 'readiness': readiness} for pair in scope['members']],
+        'summary': {'materialized_member_count': int(compatible), 'missing_member_count': 0,
+                    'blocked_member_count': 0 if compatible else len(scope['members'])},
+        'source_materializations': outputs, 'source_application_note': reason, 'issues': issues,
+        'submission_compatible': compatible, 'research_spec': reference(profile)}
+
+
 def get_feature_resolution(root, identifier, version, scope_id, scope_version):
     if not isinstance(identifier,str) or not FEATURE_ID.fullmatch(identifier):raise InvalidFeatureQuery('Invalid Feature identity')
     if not isinstance(version,str) or not SCOPE_VERSION.fullmatch(version):raise InvalidFeatureQuery('Exact Feature version required')
@@ -197,6 +240,8 @@ def get_feature_resolution(root, identifier, version, scope_id, scope_version):
     if definition.get('schema_version') == '0.11.0':
         from api.panel_library import resolution
         result=resolution(root,definition,resolve_scope(root,scope_id,scope_version))
+    elif definition.get('schema_version') == '0.12.0':
+        result = _carry_resolution(root, definition, resolve_scope(root, scope_id, scope_version))
     elif definition.get('schema_version') == '0.9.0':
         result = _value_resolution(root, definition, resolve_scope(root, scope_id, scope_version))
     elif definition['record_type']=='feature_recipe_definition':

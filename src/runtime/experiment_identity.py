@@ -68,6 +68,10 @@ def freeze(jobs, intent, impl, *, feature_manifest_index=None):
             from research.panel_features import load_profile as panel_profile
             profile = panel_profile(jobs.root)
             price_time_series = True
+        elif capability['kind'] == feature_applications.CARRY_PAIR:
+            from research.carry_inputs import load_profile as carry_profile
+            profile = carry_profile(jobs.root)
+            price_time_series = True
         elif capability['kind'] == feature_applications.VALUE_PAIR:
             from research.value_inputs import load_profile as value_profile
             profile = value_profile(jobs.root)

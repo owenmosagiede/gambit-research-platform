@@ -17,8 +17,18 @@ SINGLE_SERIES = "selected_single_series"
 PANEL_SERIES = "frozen_panel_series"
 ENTITY_MAPPED = "entity_mapped_series"
 VALUE_PAIR = "fx_value_pair"
+CARRY_PAIR = "fx_carry_pair"
 
 CONTRACTS = {
+    CARRY_PAIR: {
+        "id": "APPLICATION_FX_CARRY_PAIR", "version": "1.0.0",
+        "adapter": "fx_carry_pair_v1", "definition_type": "feature_recipe_definition",
+        "scope_modes": {"instrument": "TS"},
+        "input_binding": "pinned_pair_spot_benchmark_rates_and_optional_dated_actual_inflation",
+        "orientation": "long_base_short_quote",
+        "comparability": "individual_pair_TS_retrospective_only",
+        "alignment": "assumed_reference_date_strictly_before_target_anchor_not_historical_PIT",
+    },
     PANEL_SERIES: {
         "id":"APPLICATION_FROZEN_PANEL_SERIES", "version":"1.0.0",
         "adapter":"frozen_panel_ts_v1", "definition_type":"feature_definition",
@@ -121,7 +131,10 @@ def install_binding(root, record, kind):
     actual = load_definition(root, {"id": record["id"], "version": record["version"]})
     if reference(actual) != reference(record) or record["record_type"] != value["definition_type"]:
         raise ApplicationBlocked("APPLICATION_INPUT_MISMATCH", "Feature definition does not match application contract")
-    if kind == VALUE_PAIR:
+    if kind == CARRY_PAIR:
+        from data.fx_carry import validate_record
+        validate_record(record)
+    elif kind == VALUE_PAIR:
         from data.fx_value import validate_record
         validate_record(record)
     elif kind in (PER_MEMBER,CURRENCY_QUOTE):
