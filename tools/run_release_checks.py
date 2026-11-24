@@ -13,6 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = [
+    'test_fx_carry',
     'test_panel_import',
     'test_fx_funding', 'test_paired_returns',
     'test_research_metrics',

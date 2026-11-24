@@ -86,6 +86,13 @@ def _research(entries):
 
 
 def _recipe_presentation(store, recipe):
+    if recipe.get('schema_version') == '0.12.0':
+        from data.fx_carry import validate_record
+        validate_record(recipe)
+        return {'kind': 'fx_carry_recipe', 'id': recipe['id'], 'recipe': reference(recipe),
+            'name': recipe['display_name'], 'source': {'label': 'Retrospective benchmark rates, pair prices and optional published actual inflation',
+                'input_contract': {'profile': recipe['body']['input_contract'], 'family': recipe['body']['family']}},
+            'transformations': [], 'observation_count': None, 'outputs': []}
     if recipe.get('schema_version') == '0.9.0':
         from data.fx_value import validate_record
         validate_record(recipe)
@@ -358,6 +365,10 @@ def list_signal_summaries(root):
 
 def _output_candidates(root, feature):
     """Exact selected-recipe Feature references, without a stored-output scan."""
+    if feature.get('schema_version') == '0.12.0':
+        from data.fx_carry import validate_record
+        validate_record(feature)
+        return {}
     if feature.get('schema_version') == '0.9.0':
         # Pair value snapshots are exact trial inputs in the value catalog.
         # This endpoint lists the older source-bound Feature materializations.
