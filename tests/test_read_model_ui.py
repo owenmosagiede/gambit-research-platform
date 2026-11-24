@@ -16,7 +16,7 @@ window:{location:{hash:input.hash||'#signals'},setTimeout:(fn,ms)=>{timers.set(+
 fetch:async(url,options)=>{calls.push({url,method:options.method});let data=input.routes ? (input.routes[url.split('?')[0]]||{http:404}) : input.responses[Math.min(offset++,input.responses.length-1)];return {ok:!data.http,status:data.http||200,json:async()=>data};}};
 const flush=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setImmediate(r));};const walk=n=>[n,...n.children.filter(x=>x instanceof Element).flatMap(walk)];
 (async()=>{if(input.renderer)vm.runInNewContext(fs.readFileSync(input.renderer,'utf8'),ctx);vm.runInNewContext(fs.readFileSync(input.script,'utf8'),ctx);await flush();for(const step of input.steps||[]){const b=Object.values(ids).flatMap(walk).find(n=>n.tag==='button'&&n.textContent===step);if(!b)throw Error('Missing '+step);b.listeners.click();await flush();}
-console.log(JSON.stringify({calls,text:Object.values(ids).flatMap(walk).map(n=>n.textContent).join(' '),svgs:Object.values(ids).flatMap(walk).filter(n=>n.tag==='svg').length,hidden:get('signal-detail-home').hidden,timers:[...timers.values()].map(t=>t.ms)}));})().catch(e=>{console.error(e);process.exitCode=1;});
+console.log(JSON.stringify({calls,text:Object.values(ids).flatMap(walk).map(n=>n.textContent).join(' '),svgs:Object.values(ids).flatMap(walk).filter(n=>n.tag==='svg').length,hidden:get('signal-detail-home').hidden,tables:Object.values(ids).flatMap(walk).filter(n=>n.tag==='table').map(t=>walk(t).filter(n=>n.tag==='tr').map(r=>r.children.map(c=>walk(c).map(n=>n.textContent).filter(Boolean).join(' ')))),timers:[...timers.values()].map(t=>t.ms)}));})().catch(e=>{console.error(e);process.exitCode=1;});
 '''
 
 
@@ -30,6 +30,39 @@ class ReadModelUITests(unittest.TestCase):
         data={'script':str(ROOT/'ui/read-model.js'),'enabled':True,'responses':[response([])],**kwargs}
         process=subprocess.run([shutil.which('node') or 'node','-e',HARNESS],input=json.dumps(data),text=True,capture_output=True,check=True)
         return json.loads(process.stdout)
+
+    def ledger(self, horizons):
+        item={'job':{'request_id':'bounded-fixture','status':'succeeded','updated_at':'2026-11-24T12:00:00Z',
+                     'message':'Execution finished','horizons':horizons,'results':[]}}
+        return self.run_ui(hash='#ledger',responses=[response([item])])
+
+    def test_paired_ledger_uses_each_target_decision_instead_of_aggregate_completion(self):
+        view=self.ledger([{'horizon':21,'p1_status':'complete','p2_status':'complete','paired_targets':{
+            'price_return':{'p1_status':'rejected','p2_status':'not_admitted'},
+            'total_return':{'p1_status':'admitted','p2_status':'VALIDATED'}}}])
+        self.assertEqual(view['tables'][0],[
+            ['Horizon · weekdays','Spot P1','Spot P2','Modelled Total Return P1','Modelled Total Return P2'],
+            ['21','Rejected','Not admitted','Admitted','Validated']])
+        self.assertIn('Execution: Completed',view['text'])
+
+    def test_paired_ledger_keeps_inconclusive_failure_and_in_progress_distinct(self):
+        view=self.ledger([
+            {'horizon':1,'paired_targets':{'price_return':{'p1_status':'admitted','p2_status':'FAILED'},
+                                         'total_return':{'p1_status':'unresolved','p2_status':'UNRESOLVED'}}},
+            {'horizon':7,'paired_targets':{'price_return':{'p1_status':'running','p2_status':'pending'},
+                                         'total_return':{'p1_status':'admitted','p2_status':'not_run'}}}])
+        self.assertEqual(view['tables'][0][1:],[
+            ['1','Admitted','Failed','Inconclusive','Inconclusive'],
+            ['7','Running','Pending','Admitted','Not run']])
+
+    def test_missing_paired_branch_never_falls_back_to_completion_or_pass(self):
+        view=self.ledger([{'horizon':63,'p1_status':'complete','p2_status':'complete','paired_targets':{
+            'price_return':{'p1_status':'admitted','p2_status':'VALIDATED'}}}])
+        self.assertEqual(view['tables'][0][1],['63','Admitted','Validated','Not recorded','Not recorded'])
+
+    def test_single_target_ledger_preserves_three_columns_and_saved_outcomes(self):
+        view=self.ledger([{'horizon':7,'p1_status':'admitted','p2_status':'FAILED'}])
+        self.assertEqual(view['tables'][0],[['Horizon · weekdays','P1','P2'],['7','Admitted','Failed']])
 
     def test_disabled_ui_does_not_fetch_or_poll(self):
         self.assertEqual(self.run_ui(enabled=False)['calls'],[])

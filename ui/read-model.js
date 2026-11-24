@@ -48,7 +48,7 @@
   function references(parent, value) {
     const d=node("details",undefined,"definition-panel"); d.append(node("summary","Exact saved references"),node("pre",JSON.stringify(value,null,2))); parent.append(d);
   }
-  const words = value => ({succeeded:"Completed",p1:"P1",p2:"P2"})[value] || String(value || "Not recorded").replaceAll("_"," ").toLowerCase().replace(/^./,c=>c.toUpperCase());
+  const words = value => ({succeeded:"Completed",p1:"P1",p2:"P2",unresolved:"Inconclusive",UNRESOLVED:"Inconclusive"})[value] || String(value || "Not recorded").replaceAll("_"," ").toLowerCase().replace(/^./,c=>c.toUpperCase());
   const badge = (value, scientific=false) => node("span",words(value),"research-badge " +
     (scientific && ["VALIDATED","admitted"].includes(value) ? "positive" : scientific && ["FAILED","rejected"].includes(value) ? "negative" : "neutral"));
   const stamp = value => value ? value.slice(0,19).replace("T"," ")+" UTC" : "not recorded";
@@ -58,11 +58,23 @@
     heading.append(node("strong",item.presentation?.title || "Saved experiment"),node("span",item.presentation?.subtitle || item.intent?.scope?.id || job.request_id),node("span",`${item.queue_position ? "Waiting #"+item.queue_position+" · " : ""}Execution: ${words(job.status)} · updated ${stamp(job.updated_at)}`));
     card.append(heading,node("p",job.message),node("p","Execution status describes the job. P1 and P2 below are its stored scientific outcomes.","field-note"));
     if (item.queue_position) card.append(node("p",`Waiting position ${item.queue_position}`));
-    const table=node("table",undefined,"research-table"), head=node("tr");
-    for (const title of ["Horizon · weekdays","P1","P2"]) head.append(node("th",title));
-    table.append(head);
-    for (const h of job.horizons || []) { const tr=node("tr"); tr.append(node("td",String(h.horizon))); for (const value of [h.p1_status,h.p2_status]) { const td=node("td");td.append(badge(value,true));tr.append(td); } table.append(tr); }
-    card.append(table);
+    const horizons=job.horizons || [], paired=horizons.some(h=>h.paired_targets);
+    const table=node("table",undefined,"research-table"), thead=node("thead"), head=node("tr"), tbody=node("tbody");
+    const titles=paired ? ["Horizon · weekdays","Spot P1","Spot P2","Modelled Total Return P1","Modelled Total Return P2"] : ["Horizon · weekdays","P1","P2"];
+    for (const title of titles) { const th=node("th",title);th.setAttribute("scope","col");head.append(th); }
+    thead.append(head);table.append(thead,tbody);
+    for (const h of horizons) {
+      const tr=node("tr"), horizon=node("th",String(h.horizon));horizon.setAttribute("scope","row");tr.append(horizon);
+      // Combined paired statuses report processing completion, never scientific decisions.
+      const values=paired ? [h.paired_targets?.price_return?.p1_status,h.paired_targets?.price_return?.p2_status,
+        h.paired_targets?.total_return?.p1_status,h.paired_targets?.total_return?.p2_status] : [h.p1_status,h.p2_status];
+      for (const value of values) { const td=node("td");td.append(badge(value,true));tr.append(td); }
+      tbody.append(tr);
+    }
+    const scroll=node("div",undefined,"ledger-outcomes-scroll");
+    scroll.setAttribute("role","region");scroll.setAttribute("aria-label","Scientific outcomes by horizon" );
+    scroll.setAttribute("tabindex","0");scroll.append(table);card.append(scroll);
+    if (paired) card.append(node("p","Spot and Modelled Total Return have separate outcomes. P1 records discovery admission; P2 records validation. Scroll the table sideways on smaller screens.","field-note"));
     references(card,{request_id:job.request_id,intent:item.intent,provenance:item.provenance,event_sha256:job.event_sha256,results:job.results});
     return card;
   }

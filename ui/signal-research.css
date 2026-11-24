@@ -117,6 +117,11 @@
 .read-model-records summary { cursor:pointer; }
 .read-model-records summary > strong { display:block; font-size:18px; margin-bottom:8px; }
 .read-model-records summary > span { display:block; color:var(--g-muted); margin-block:5px; font-size:13px; }
+.read-model-records .ledger-outcomes-scroll { max-width:100%; overflow-x:auto; margin-block:20px; }
+.read-model-records .ledger-outcomes-scroll:focus-visible { outline:2px solid var(--g-muted); outline-offset:3px; }
+.read-model-records .ledger-outcomes-scroll .research-table { margin-block:0; }
+.read-model-records .ledger-outcomes-scroll .research-table:has(th:nth-child(5)) { min-width:640px; }
+.read-model-records .ledger-outcomes-scroll .research-table .research-badge { white-space:nowrap; }
 .read-model-records .research-table { width:100%; border-collapse:collapse; margin-block:20px; }
 .read-model-records .research-table th,.read-model-records .research-table td { padding:12px; border-bottom:1px solid var(--g-border); text-align:left; }
 .live-activity { border-left:4px solid var(--g-link); }
