@@ -69,6 +69,21 @@ class CarryCalculationTests(unittest.TestCase):
         risk=carry.scores(late_prices,r,'EURUSD','risk_63',end_exclusive=d[1301])[0]
         self.assertIsNone(risk['value'])
 
+    def test_risk_uses_prices_before_the_first_available_rate(self):
+        p,r,d=fixture(170)
+        late_rates={'EUR':r['EUR'][100:],'USD':r['USD'][80:]}
+        rows=carry.scores(p,late_rates,'EURUSD','risk_63',end_exclusive=d[101])
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['date'],d[100])
+        self.assertIsNotNone(rows[0]['value'],'Available prior prices must warm volatility at the first rate date')
+        returns=[math.log(float(p[i]['value'])/float(p[i-1]['value'])) for i in range(37,100)]
+        expected=((1+100/10000)/100)/(stdev(returns)*math.sqrt(252))
+        self.assertAlmostEqual(float(rows[0]['value']),expected,places=10)
+        changed=deepcopy(p);changed[100]['value']='999'
+        self.assertEqual(rows,carry.scores(changed,late_rates,'EURUSD','risk_63',end_exclusive=d[101]))
+        missing=deepcopy(p);missing[99].update(status='missing',value=None)
+        self.assertIsNone(carry.scores(missing,late_rates,'EURUSD','risk_63',end_exclusive=d[101])[0]['value'])
+
     def test_risk_denominator_excludes_current_close(self):
         p,r,d=fixture(80); rows=carry.scores(p,r,'EURUSD','risk_63')
         changes=[math.log(float(p[i]['value'])/float(p[i-1]['value'])) for i in range(1,64)]
