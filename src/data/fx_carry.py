@@ -132,7 +132,7 @@ def scores(prices, rates, pair, family, inflation=None, *, end_exclusive='2025-0
                 old = list(rate_history)[-63] if len(rate_history) >= 63 else None
                 if old is not None: number = differential - old
                 else: reason = 'RATE_LOOKBACK_UNAVAILABLE'
-                operands['lookback_differential'] = old
+                operands['lookback_differential'] = decimal_text(Decimal(str(old))) if old is not None else None
             elif family == 'relative_1260':
                 if len(rate_history) == 1260 and all(x is not None for x in rate_history):
                     sd = stdev(rate_history)
