@@ -47,7 +47,23 @@ class CarryCalculationTests(unittest.TestCase):
         p,r,d=fixture(80); rows=carry.scores(p,r,'EURUSD','change_63')
         self.assertTrue(all(x['value'] is None for x in rows[:63]))
         self.assertAlmostEqual(float(rows[63]['value']),63/10000)
-        self.assertEqual(rows[63]['operands']['lookback_differential'],1)
+        self.assertEqual(rows[63]['operands']['lookback_differential'],'1')
+        self.assertEqual(rows[64]['operands']['lookback_differential'],'1.0001')
+
+    def test_all_recipe_observations_satisfy_persistent_canonical_contract(self):
+        import json
+        p,r,d=fixture(1262)
+        inflation=[{'currency':c,'edition':'2009-oct','year':2009,'available_on':d[0],
+                    'value_pct':value,'is_actual':1,'actual_evidence':'synthetic_publication'}
+                   for c,value in [('EUR','2'),('USD','1')]]
+        for family in carry.FAMILIES:
+            with self.subTest(family=family):
+                rows=carry.scores(p,r,'EURUSD',family,inflation,end_exclusive=d[1261])
+                self.assertTrue(any(row['value'] is not None for row in rows))
+                # The publication format rejects binary floats even inside
+                # provenance. Exercise complete calculated rows, not mocks.
+                for row in rows:
+                    self.assertEqual(json.loads(canonical_bytes(row)),row)
 
     def test_zscore_uses_prior_1260_complete_values_excluding_current(self):
         p,r,d=fixture(1262); rows=carry.scores(p,r,'EURUSD','relative_1260')
