@@ -103,7 +103,8 @@ def scores(prices, rates, pair, family, inflation=None, *, end_exclusive='2025-0
     states = Rates({c: [r for r in rates[c] if r['date'] < end_exclusive] for c in (pair[:3], pair[3:])})
     price_map = {r['reference_time']: r for r in prices if r['reference_time'] < end_exclusive}
     if not price_map: return []
-    start = max(min(price_map), *(rates[c][0]['date'] for c in (pair[:3], pair[3:])))
+    price_start = min(price_map)
+    start = max(rates[c][0]['date'] for c in (pair[:3], pair[3:]))
     inflation_years = {}
     if family == 'real_actual':
         from data.fx_value import first_actuals
@@ -121,7 +122,7 @@ def scores(prices, rates, pair, family, inflation=None, *, end_exclusive='2025-0
                     'quote_rate': ({k: quote[k] for k in ('date', 'rate_pct', 'source_row_sha256')} if quote else None)}
         number = None
         reason = 'RATE_STATE_UNAVAILABLE' if differential is None else None
-        if differential is not None:
+        if differential is not None and day >= price_start:
             if family == 'level': number = differential
             elif family == 'change_63':
                 old = list(rate_history)[-63] if len(rate_history) >= 63 else None
@@ -151,9 +152,10 @@ def scores(prices, rates, pair, family, inflation=None, *, end_exclusive='2025-0
                     operands['inflation'] = {'reference_year': year, 'base': b, 'quote': q}
                 else: reason = 'PUBLISHED_COMMON_ACTUAL_INFLATION_UNAVAILABLE'
         if number is not None and not math.isfinite(number): raise ValueError('Nonfinite carry score')
-        output.append({'date': day, 'first_anchor': next_weekday(day),
-            'value': decimal_text(Decimal(str(number))) if number is not None else None,
-            'reason': reason, 'operands': operands})
+        if day >= price_start:
+            output.append({'date': day, 'first_anchor': next_weekday(day),
+                'value': decimal_text(Decimal(str(number))) if number is not None else None,
+                'reason': reason, 'operands': operands})
         # Current close and current differential enter only tomorrow's baseline.
         rate_history.append(differential)
         row = price_map.get(day)

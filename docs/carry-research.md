@@ -5,6 +5,9 @@ The user authorized testing the fixed five recipes on 31 selected G10 pairs on
 release reconstruction is separate future production work. These features never
 assert historical point-in-time or live certification.
 
+Rate-only lookbacks can use rate observations before the pair price history
+begins; published feature outputs still begin within the pair price scope.
+
 The immutable definitions in `data.fx_carry` fix nominal base-minus-quote carry,
 carry divided by prior 63-weekday annualized spot log-return volatility, a
 63-weekday differential change, a prior-1260-weekday differential z-score, and a

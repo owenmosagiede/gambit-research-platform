@@ -57,6 +57,18 @@ class CarryCalculationTests(unittest.TestCase):
         r['EUR'][100]['rate_pct']=None
         self.assertIsNone(carry.scores(p,r,'EURUSD','relative_1260')[1260]['value'])
 
+    def test_rate_lookbacks_use_available_history_before_pair_prices_begin(self):
+        p,r,d=fixture(1400)
+        late_prices=p[1300:]
+        row=carry.scores(late_prices,r,'EURUSD','relative_1260',end_exclusive=d[1301])[0]
+        history=[1+i/10000 for i in range(40,1300)]
+        self.assertEqual(row['date'],d[1300])
+        self.assertAlmostEqual(float(row['value']),((1+1300/10000)-mean(history))/stdev(history),places=10)
+        change=carry.scores(late_prices,r,'EURUSD','change_63',end_exclusive=d[1301])[0]
+        self.assertAlmostEqual(float(change['value']),63/10000,places=10)
+        risk=carry.scores(late_prices,r,'EURUSD','risk_63',end_exclusive=d[1301])[0]
+        self.assertIsNone(risk['value'])
+
     def test_risk_denominator_excludes_current_close(self):
         p,r,d=fixture(80); rows=carry.scores(p,r,'EURUSD','risk_63')
         changes=[math.log(float(p[i]['value'])/float(p[i-1]['value'])) for i in range(1,64)]
