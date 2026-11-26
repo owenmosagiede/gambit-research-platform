@@ -277,17 +277,32 @@ class Extractor:
                 seen.add(key); selected.append(value)
         by_recipe = defaultdict(list)
         for value in selected: by_recipe[value['row']['recipe']['id']].append(value)
+        library_groups = defaultdict(list)
         for rid, values in sorted(by_recipe.items()):
             bindings = {encoded(v['row']['recipe']) for v in values}
             if len(bindings) != 1:
                 self.issue('recipe', rid); continue
             def load_recipe():
                 store = FeatureStore(self.root)
-                entry = _registered_entry(store, store.resolve(values[0]['row']['recipe']))
+                feature = store.resolve(values[0]['row']['recipe'])
+                entry = _registered_entry(store, feature)
+                from api.macro_recipe_groups import descriptor
+                group = descriptor(self.root, store, feature)
+                if group: entry['macro_group'] = group
                 compact(entry)
                 return entry
             entry = self.try_unit('recipe', rid, [], load_recipe)
             if not entry: continue
+            group_id = entry.get('macro_group', {}).get('id', rid)
+            library_groups[group_id].append({'entry': entry, 'values': values})
+        for rid, members in sorted(library_groups.items()):
+            values = [v for member in members for v in member['values']]
+            if members[0]['entry'].get('macro_group'):
+                from api.macro_recipe_groups import presentation
+                try: entry = presentation(members)
+                except (ValueError, KeyError, TypeError):
+                    self.issue('recipe', rid); continue
+            else: entry = members[0]['entry']
             rows = [v['row'] for v in values]
             entry['research'] = {'state': 'results_linked', 'label': 'Research results recorded',
                 'relationship_count': len({encoded(r['relationship']) for r in rows}),

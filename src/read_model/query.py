@@ -94,8 +94,10 @@ def page(directory, kind, query=None, *, recipe=None):
     elif kind == 'recipes':
         table = 'recipes'; clauses, params = _where(query, kind); keys=['name','id']; directions=['ASC','ASC']
     elif kind == 'branches':
-        if query: raise InvalidQuery('Use the exact recipe and page cursor')
+        if set(query) - {'scope'}: raise InvalidQuery('Use the exact recipe, optional pair and page cursor')
         table = 'branches'; clauses=['recipe=?']; params=[recipe]; keys=['id']; directions=['ASC']
+        if 'scope' in query:
+            clauses.append('scope=?'); params.append(query['scope'])
     else: raise InvalidQuery('Unknown collection')
     where = ' AND '.join(clauses) or '1'
     with snapshot(directory, cursor['generation'] if cursor else generation) as (db, manifest):
