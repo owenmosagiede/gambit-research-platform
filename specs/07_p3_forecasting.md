@@ -58,8 +58,10 @@ the percentage unavailable. Each result retains its exact model, architecture,
 family mapping, removal unit, pair/Target/horizon, evaluation period and uncertainty.
 
 The Signal Library ranks greatest to least by saved incremental contribution,
-including zero and negative measured values. A versioned ranking profile selects
-models and aggregates all applicable model-context scores with coverage shown;
+including zero and negative measured values. Each signal has a many-to-many model
+membership list and separate score/rank per model. The default ranking profile
+selects one model/version and orders its members; cross-model aggregation is an
+explicit optional summary, with all applicable context scores and coverage shown;
 missing/unevaluated contributions remain explicitly unranked. Weights, standalone
 metrics and P2 validation never substitute for incremental value. Original per-signal,
 family and shared-basket dependencies remain visible. [27](27_p3_incremental_value_and_library_ranking.md)
@@ -69,7 +71,7 @@ weight adjustment, model switching or trade follows from the ranking.
 
 ## 4. Output units and shape
 
-**Proposed interface:** a SignalForecast references one validated relationship, its parent, instrument/member, exact Target/horizon, forecast timestamp, score, calibration fit, fresh value, decay policy/age and resulting decayed value. InstrumentHorizonForecast contains the instrument, Target reference and economic basis, explicit horizon quantity/unit, cutoff/availability, expected return, typed uncertainty, exact architecture and constituent roster, original leaf and any within-family/across-family/effective weights/contributions, optional user FamilyMapping and FamilyForecast references, diagnostics, exclusions/blockers and complete lineage. Separate SignalIncrementalContribution records reference the model/forecast and full-versus-without-signal evaluation; RankingProfile/RankingSnapshot records supply model-context scores, coverage and ranks as derived Signal Library metadata. They are published after mature outcomes with their own availability timestamps, never retroactively inserted into issued forecasts. A field whose method is not approved is unavailable with a reason, not a fabricated zero.
+**Proposed interface:** a SignalForecast references one validated relationship, its parent, instrument/member, exact Target/horizon, forecast timestamp, score, calibration fit, fresh value, decay policy/age and resulting decayed value. InstrumentHorizonForecast contains the instrument, Target reference and economic basis, explicit horizon quantity/unit, cutoff/availability, expected return, typed uncertainty, exact architecture and constituent roster, original leaf and any within-family/across-family/effective weights/contributions, optional user FamilyMapping and FamilyForecast references, diagnostics, exclusions/blockers and complete lineage. Separate SignalIncrementalContribution records reference the model/forecast and full-versus-without-signal evaluation; ModelSignalMembership/ModelSignalRank and RankingProfile/RankingSnapshot records supply the many-to-many model directory, separate per-model scores/ranks, coverage and optional labelled summary ranks as derived Signal Library metadata. They are published after mature outcomes with their own availability timestamps, never retroactively inserted into issued forecasts. A field whose method is not approved is unavailable with a reason, not a fabricated zero.
 
 For a Target whose canonical return unit is `U`, calibrated expected return and forecast error are in `U`, and forecast-error covariance/variance is in `U²`. If a standard deviation is displayed, it must be explicitly typed and converted from the appropriate variance. Source `w' Σe w` denotes a combination of forecast-error covariances; it is not automatically uncertainty of an estimated conditional expected return. **The relation to P4's expected-return-estimation covariance remains an explicit scientific gate.** No default spot basis, calendar horizon, percentage scale or interchangeable generic uncertainty scalar is selected here.
 

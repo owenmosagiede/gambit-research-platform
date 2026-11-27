@@ -184,19 +184,57 @@ valid contribution evidence are visible as `Not yet measured`, `Pending`,
 rank. A P2 failure or absence of P3 evaluation is not a measured worst score.
 Keep the existing recipe details, pairs and exact P1/P2 results accessible.
 
-A visible, versioned RankingProfile defines which models the page means:
-one selected architecture and configuration policy, exact return family/basis,
-horizon/clock, common campaign/window/availability and evidence class, plus an
-ordered model roster with fixed aggregation rules. One model per selected
-instrument/Target context prevents attempts, duplicate vintages or extra models
-for a popular pair from buying additional votes. The user can select another
-profile; the page never picks whichever architecture gives each signal its best
-score. A cross-architecture summary is a separately named profile with explicit
-weights, not the default same-architecture view.
+### Model membership and per-model ranks
 
-For each library entry, its applicable model set is fixed from that profile's
-full-model usage/dependency manifests, before evaluation outcomes. The default
-aggregate is the equal-context mean of the entry's measured percentage scores
+A signal can belong to many full models, and each model can contain many signals.
+Membership is a many-to-many projection of the authoritative full-model usage
+manifests, not another copy of the signal definition. Preserve exact model ID and
+version, architecture, current/historical membership status, pair/Target/horizon,
+evaluation campaign/window and as-of availability. Zero combination weight does
+not remove membership; missing contribution evidence does not remove membership.
+Ablation counterfactuals are evaluation variants, not extra user-facing full models
+that inflate the signal's model count.
+
+Each signal's expanded library row shows **Models using this signal**. For every
+model/version it lists that model's incremental score, **rank within that model**,
+number of ranked/model-member signals, evaluation context, coverage and evidence
+status, with a link to the model's ranked signal list. A signal may be #1 in model
+A and #8 in model B. Neither rank is overwritten by the other. Keep historical
+memberships and ranks accessible with their original evidence cutoff.
+
+The default ranking mode is `SINGLE_MODEL`. A model selector chooses the model
+being evaluated and its exact version/evaluation profile. The page then filters
+to that model's signal members and sorts them by incremental contribution to
+**that model**, greatest to least. The displayed score and rank come from the same
+model snapshot. The user can reverse the ordering or sort by other displayed
+fields; the stored contribution rank itself does not change with a display sort.
+The selected model/version, Target/horizon and window remain visible and persist
+through filtering/pagination. A model with several instrument/Target/horizon
+contexts requires an explicit compatible context or separately named summary;
+the UI never silently pools incomparable contexts.
+
+A versioned RankingProfile pins `mode=SINGLE_MODEL`, one selected model/version,
+architecture/configuration, exact Target/horizon/clock, evaluation campaign/window,
+availability/evidence class, candidate members and scoring/tie/coverage rules.
+The model directory/all-signals view can expose the membership list for each
+signal without inventing one universal cross-model rank. Changing the selected
+model loads its own signal ordering and membership; a nonmember is not a losing
+or zero-contribution signal in that model.
+
+### Optional multi-model summary
+
+`MULTI_MODEL_SUMMARY` is an explicitly selected summary profile, **not the default
+model ranking**. It freezes an ordered model roster, compatible return basis,
+horizon/clock and campaign/evidence class/window plus aggregation/coverage rules.
+One model per selected instrument/Target context prevents attempts, duplicate
+vintages or extra models for a popular pair from buying additional votes. A
+cross-architecture summary additionally pins its architecture weights. A summary
+rank never replaces the individual per-model ranks or model-membership table.
+The page never picks whichever model gives each signal its best score.
+
+For an optional summary, each library entry's applicable model set is fixed from
+that profile's full-model usage/dependency manifests, before evaluation outcomes.
+The summary aggregate is the equal-context mean of the entry's measured percentage scores
 over **all applicable** models. Count a parent/group once per model context;
 do not sum non-additive effects of its grouped parents or relationship branches.
 An entry absent from a model is structurally not applicable, not a measured zero.
@@ -204,14 +242,15 @@ If any applicable context is pending or unavailable, the entry's aggregate is
 incomplete and unranked; do not average only its successful/positive contexts.
 
 Show applicable/measured model counts and evaluated coverage next to the score.
-Different entries may be used in different models; the default overall score
+Different entries may be used in different models; the optional summary score
 therefore means **average incremental gain in the selected models that use this
 entry**, not a model-independent universal quality. A matched-model filter can
 restrict comparisons to entries evaluated on the same explicit model panel.
 No significance claim or IID error bar is obtained by averaging correlated
 models, architectures, currency pairs or overlapping horizons.
 
-Sort by the unrounded aggregate score descending. Equal exact scores share
+In `SINGLE_MODEL`, sort by that model's unrounded contribution score descending.
+Only a `MULTI_MODEL_SUMMARY` sorts by its declared aggregate score. Equal exact scores share
 competition rank (`1,1,3`); stable entry ID orders tied display rows without
 claiming different merit. Display rounding must not alter scoring/ranking.
 Persist the profile, complete candidate roster, aggregation weights, scores,
@@ -234,10 +273,12 @@ available; never infer incremental ranks from today's P2 passes.
 | --- | --- |
 | IncrementalEvaluationPolicy | Method/version/hash, removal unit and dependency semantics, loss/score/sign, full and reduced fit rules, null references, exact evaluation schedule/window, maturity/coverage/effective-N requirements, inference, exposure and implementation. |
 | ModelSignalUsage | Model/architecture/policy/version, original parent/relationship/leaf roster, FamilyMapping and tree, calibration/basket dependencies, applicable instrument/Target/horizon and issue cutoffs. |
+| ModelSignalMembership | Derived many-to-many entry/parent to full-model ID/version and usage-manifest refs, exact context, current/historical membership and availability; zero-weight members retained, ablation-only variants excluded from the model directory. |
+| ModelSignalRank | Exact model/version/context/evaluation and RankingSnapshot refs, signal or verified recipe group, incremental score/status, rank/ties and ranked/member denominators, coverage/evidence/as-of times; separate records for each model. |
 | SignalIncrementalContribution | Parent or verified library group refs, model context, full/counterfactual model/fit/forecast refs, removal/intervention manifest, matching Target/interval/sample, both losses, raw MSE gain, normalised score or blocker, counts, uncertainty/subperiod/exposure evidence and computation time/cutoff. |
 | RankingEntityMapping | Stable library group/entry and grouping-policy version, exact constituent canonical parents and verified projection refs, hash/provenance; display aliases excluded from numerical identity. |
-| RankingProfile | Exact model roster and configuration, return basis/horizon/clock, campaign/evidence class/window, candidate/removal entities, applicability, coverage and equal-context aggregation policy, tie/inference rules and user selection/availability. |
-| RankingSnapshot | Profile/hash and generation, ranked and explicitly unranked entries, source contribution refs, aggregate scores and full denominator/model coverage, rank/ties, evidence cutoff, computation and implementation refs. |
+| RankingProfile | Mode (`SINGLE_MODEL` default or explicit `MULTI_MODEL_SUMMARY`), selected exact model/version or summary roster/configuration, Target/horizon/clock, campaign/evidence/window, member/removal entities, coverage/ties/inference; aggregation rules only for a summary, plus user selection/availability. |
+| RankingSnapshot | Profile/mode/model-context refs, hash and generation, members with ranked/explicitly unranked entries, source contribution refs, model-specific scores or explicitly labelled summary aggregates, rank/ties and full denominators/coverage, evidence cutoff/computation/implementation. |
 
 These are logical immutable evidence contracts pending closed schema/engine
 implementation. Large paired forecast/error histories live once in referenced
@@ -297,7 +338,8 @@ Changing this specification does not trigger N+1 fits or new research now.
 7. Full and reduced scores use exactly matching anchors/labels. Extra reduced-model
    coverage cannot improve its comparison; a required failed/pending context keeps
    the aggregate unranked rather than selecting a favourable slice.
-8. Context scores +20% and -10% aggregate to +5% under equal-context weights.
+8. In an explicit multi-model summary, context scores +20% and -10% aggregate
+   to +5% under equal-context weights; neither overwrites its per-model score/rank.
    An entry absent from one model is marked not applicable, not assigned zero.
 9. Equal measured scores share ranks `1,1,3` with stable ID tie ordering. A negative
    measured score ranks below zero; an unmeasured P2-failed entry has no rank.
@@ -310,6 +352,14 @@ Changing this specification does not trigger N+1 fits or new research now.
 12. Saved contributions project into a stable-generation ranked list. Reading
     page two cannot launch ablations or switch generations silently. With no P3
     contribution records, the page displays no invented #1 signal.
+13. Signal X scores +20% in model A and -10% in model B, while Y scores +10% and
+    +5%. X ranks #1 in A and #2 in B; Y ranks #2 in A and #1 in B. The signal's
+    model table retains both memberships/ranks, and changing the model selector
+    changes the list ordering without averaging the two scores.
+14. A zero-weight model member remains listed with its measured/unmeasured rank
+    status. A signal outside the selected model is not assigned a zero or last
+    place. Sorting by name does not rewrite the stored contribution rank; model
+    version and snapshot selection survive navigation/pagination.
 
 These are contract requirements and synthetic identities, not implemented
 evaluation, empirical scores for current signals, a deployed ranking page or

@@ -99,10 +99,20 @@ Unmeasured, pending, insufficient or unavailable evidence is visible without a
 numeric rank. A recipe grouping uses its verified canonical-parent mapping and
 joint group ablation, not a sum of non-additive child importances.
 
-The default aggregate is the equal-context mean across all models in the frozen
-profile that use the recipe; missing required contribution contexts keep the
-aggregate incomplete. Display that coverage explicitly. The page cannot select
-the best model/window separately for each signal. Original recipe definitions,
+The default page ranking is **within the selected model**, with a model/version
+selector and visible Target/horizon/evaluation window. A signal can belong to
+many models and has a separate incremental score and rank in each. Expanding it
+shows a Models using this signal table with model links, per-model scores/ranks,
+ranked/member counts, coverage, current/historical membership and evidence status.
+Choosing a model filters to its members and orders signals by contribution to
+that model. Nonmembers are not assigned zero or last place; zero-weight members
+remain visible. Display sorting can change without rewriting contribution ranks.
+
+An aggregate across models is an explicitly selected, clearly labelled summary
+profile, not the default rank and not a replacement for per-model results. It
+uses the equal-context mean across all applicable frozen contexts with coverage
+shown; missing required evidence keeps that summary incomplete. The page never
+selects the best model/window separately for each signal. Original definitions,
 pairs and P1/P2 results remain accessible beneath the ranked entries.
 
 RankingSnapshot publication follows label maturity and records its availability.

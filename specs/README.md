@@ -233,7 +233,9 @@ architectures, not an installed engine or populated family mapping.
 signal's incremental predictive value a P3 responsibility and first-class derived
 metadata. Paired causal full/without-signal evaluation supplies accuracy-gain
 scores, model-context coverage and uncertainty. Versioned profiles/snapshots rank
-the library from greatest to least measured contribution, preserving negative
+the selected model's signal members from greatest to least measured contribution.
+Each signal retains its membership and separate rank in every model; a cross-model
+summary is optional and explicitly labelled. Ranking preserves negative
 scores, explicit unranked states and original pair/test evidence. It defines
 hierarchical/basket ablation, null references, grouped recipe aggregation and
 as-of publication; no ranking engine or page is installed by the specification.
