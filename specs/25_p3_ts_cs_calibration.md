@@ -43,11 +43,13 @@ Fit an intercept and one slope by equal-anchor-weight ordinary least squares:
 
 `mu_TS(t) = y_mean + b * z_current(t)`
 
-The version-1 mapping has no winsorisation, score clipping, ridge penalty,
+The version-1 individual mapping has no winsorisation, score clipping, ridge penalty,
 member pooling or outcome-selected hyperparameters. `b <= 0`, zero/nonfinite
 score scale or insufficient evidence blocks the fit; do not reverse the frozen
 direction or silently replace the signal with an intercept-only forecast.
-An observed current `z = 0` legitimately forecasts the intercept.
+An observed current `z = 0` legitimately forecasts the intercept. These rules
+apply to individual score calibration; the separate ridge **combination**
+architectures in [26](26_p3_combination_architectures.md) operate afterward.
 
 This is already a full-return forecast. Its fitted intercept is part of its
 calibration. A basket forecast is never appended to it.
@@ -185,8 +187,8 @@ values and original source-update counts are persisted separately.
 
 ## 6. Combination, decay and one common contribution
 
-Complete each constituent's return mapping before P3's existing constrained
-combination. Only `FULL_TARGET_RETURN` values for the same instrument, exact
+Complete each constituent's return mapping before the selected flat or
+hierarchical architecture in [26](26_p3_combination_architectures.md). Only `FULL_TARGET_RETURN` values for the same instrument, exact
 Target basis, horizon and decision cutoff enter the convex combination:
 
 `mu_combined = sum_j v_j*mu_j`, with `v_j >= 0` and `sum_j v_j = 1`.
@@ -216,7 +218,10 @@ policy, not a hidden change to the preserved P3 design.
 Fit the existing forecast-error dependence system on each **full reconstructed**
 forecast, not on a mixture of full TS errors and relative CS errors. The
 constituent roster retains the common-provider dependency. CS basket context
-does not grant additional independent signal count or family weight.
+does not grant additional independent signal count or family weight. A
+hierarchical result uses the product of within-family and across-family weights
+for each original leaf, retaining all cross-family/shared-provider dependence;
+family nodes do not add a new basket or recalibrate the underlying raw scores.
 
 ## 7. Error and uncertainty semantics
 

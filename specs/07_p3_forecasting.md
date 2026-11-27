@@ -1,6 +1,6 @@
 # 07 — P3 individual forecasting and combination
 
-Status: **review draft with explicit scientific gates; no canonical P3 engine implemented**. The TS/CS calibration and basket-baseline contract is now defined in [25](25_p3_ts_cs_calibration.md); its bounded version-1 defaults are specification choices, not installed production policies or empirical certification. Dependencies: [01](01_canonical_objects.md), [02](02_data_and_readiness.md), [03](03_features_targets_scopes.md), [06](06_p2_validation.md). The [preserved P3/P4 reference](references/p3_p4_design_reference.txt) remains the intended design. Source requirements below are distinguished from proposed interfaces; unresolved estimators are not filled with legacy defaults.
+Status: **review draft with explicit scientific gates; no canonical P3 engine implemented**. The TS/CS calibration and basket-baseline contract is now defined in [25](25_p3_ts_cs_calibration.md); its bounded version-1 defaults are specification choices, not installed production policies or empirical certification. The user's additional flat/hierarchical architectures and manual family mapping are defined in [26](26_p3_combination_architectures.md), explicitly amending the original flat-only combination requirement. Dependencies: [01](01_canonical_objects.md), [02](02_data_and_readiness.md), [03](03_features_targets_scopes.md), [06](06_p2_validation.md). The [preserved P3/P4 reference](references/p3_p4_design_reference.txt) remains the intended design. Source requirements below are distinguished from proposed interfaces; unresolved estimators are not filled with legacy defaults.
 
 ## 1. Inputs and boundary
 
@@ -8,7 +8,7 @@ Status: **review draft with explicit scientific gates; no canonical P3 engine im
 
 P3 admits only the exact relationship with valid P2 evidence and compatible readiness at its forecast cutoff. A library may display all tested relationships, but failed, unresolved, merely admitted and historical-unmapped relationships cannot enter P3. A 63-observation relationship is not a 7-observation forecast. For CS, bind validated Scope and membership/eligibility before score generation and forecast allocation to instrument members.
 
-**Proposed input bundle:** eligible relationship roster, immutable scoped score/Target histories, current score references, forecast cutoff, pinned calibration/decay/dependence/combination policies and implementation manifest, required readiness evidence and applicable randomness. Family ID is optional derived metadata, never a prerequisite that replaces constituent relationships.
+**Proposed input bundle:** eligible relationship roster, immutable scoped score/Target histories, current score references, forecast cutoff, pinned calibration/decay/dependence/combination policies and implementation manifest, required readiness evidence and applicable randomness. FamilyMapping is manually assigned by the user and required for hierarchical architectures in [26](26_p3_combination_architectures.md); it is optional for flat numerical combination. It never replaces constituent relationship identities or supplies scientific validation.
 
 ## 2. Permitted information set
 
@@ -24,16 +24,30 @@ Every historical forecast must be reproducible using only information available 
 | Decay | `d(0)=1`; decayed forecast is fresh forecast × `d(age)`; aging reduces predictive influence. Apply the same historical decay rule when calculating forecast errors. | Define age clock, defensible model, freshness eligibility and estimation timeline. Unsupported decay cannot become indefinite invented carry-forward. |
 | Forecast-error histories | For compatible instrument × Target basis × horizon, error is realized Target return minus the historical constituent forecast. | Pin historical forecast versions, realized label availability, compatible sample alignment and treatment of missing/overlapping histories. |
 | Dependence | Estimate a shrinkage covariance of constituent forecast errors, separate from market return covariance. | Approve estimator/shrinkage target, sample requirements, numerical tolerances and missing-history policy. |
-| Combination | Constrained generalized least squares using shrinkage forecast-error covariance; weights nonnegative and sum to one. | Pin estimator/solver/tie/failure rules. No equal-family or equal-signal fallback is implied. |
+| Combination | Retain flat constrained GLS with shrinkage error covariance; add the six flat/hierarchical equal, inverse-MSE and simplex-ridge alternatives in [26](26_p3_combination_architectures.md). | Freeze architecture, required user family mapping, weight-history/tuning/solver/missing-data policy. Equal weighting must be explicitly selected; it is never a fallback for another method. |
 | Diagnostics | Preserve forecast dispersion, effective independent count, largest contributions, signal/family concentrations and decay contributions. | Define exact diagnostic formulas and units; do not invent a count/concentration metric to fill a field. |
 
 Only compatible `FULL_TARGET_RETURN` constituents enter combination. A CS rank or `RELATIVE_ONLY` diagnostic is not a full forecast. Basket context is attributed inside the CS reconstruction, never appended to an already full TS forecast or entered as an additional pair-signal vote. Shared provider dependence remains in the full-return error histories; see [25](25_p3_ts_cs_calibration.md).
 
-Every eligible constituent is individually represented, even when it receives zero combination weight. Family metadata supports redundancy diagnosis and attribution; it never collapses members into an equal-weight family score. Do not choose combination weights from IC, Sharpe, family names or retrospective subjective preference.
+Every eligible constituent remains individually calibrated, represented and attributed, even with zero combination weight. Hierarchical architectures may explicitly form family forecasts after individual calibration, while retaining every original constituent and its effective final weight. User-owned family membership and declared architecture determine grouping; no family assignment is inferred automatically. Do not choose numerical weights from IC, Sharpe, family names or retrospective subjective preference.
+
+### 3a. Available combination architectures
+
+| Architecture | Individual/family stage | Final stage |
+| --- | --- | --- |
+| Existing flat covariance-aware | All individual forecasts remain separate | Constrained GLS using shrinkage forecast-error covariance |
+| Flat equal weight | All individual forecasts remain separate | Equal weights |
+| Flat error weighted | All individual forecasts remain separate | Inverse historical forecast MSE |
+| Flat ridge | All individual forecasts remain separate | Simplex-constrained ridge |
+| Hierarchical equal weight | Equal weights within each manually assigned family | Equal weights across family forecasts |
+| Hierarchical error weighted | Inverse forecast MSE within each manually assigned family | Inverse historical family-forecast MSE across families |
+| Hierarchical ridge | Simplex-constrained ridge within each manually assigned family | Simplex-constrained ridge across family forecasts |
+
+The user explicitly chose the same named method at both hierarchical levels. The original method remains available; no new architecture is selected automatically. [26](26_p3_combination_architectures.md) defines exact formulae, manual FamilyMapping provenance, nested causal family-history requirements, missing-data behavior and acceptance cases. Its explicit alternatives supersede the original prohibition on family forecasts/equal weighting without altering the preserved reference text. All architectures retain the nonnegative, sum-to-one weight convention and combine compatible full-return forecasts.
 
 ## 4. Output units and shape
 
-**Proposed interface:** a SignalForecast references one validated relationship, its parent, instrument/member, exact Target/horizon, forecast timestamp, score, calibration fit, fresh value, decay policy/age and resulting decayed value. InstrumentHorizonForecast contains the instrument, Target reference and economic basis, explicit horizon quantity/unit, cutoff/availability, expected return, typed uncertainty, exact constituent roster, weights/contributions, diagnostic and family metadata references, exclusions/blockers and complete lineage. A field whose method is not approved is unavailable with a reason, not a fabricated zero.
+**Proposed interface:** a SignalForecast references one validated relationship, its parent, instrument/member, exact Target/horizon, forecast timestamp, score, calibration fit, fresh value, decay policy/age and resulting decayed value. InstrumentHorizonForecast contains the instrument, Target reference and economic basis, explicit horizon quantity/unit, cutoff/availability, expected return, typed uncertainty, exact architecture and constituent roster, original leaf and any within-family/across-family/effective weights/contributions, optional user FamilyMapping and FamilyForecast references, diagnostics, exclusions/blockers and complete lineage. A field whose method is not approved is unavailable with a reason, not a fabricated zero.
 
 For a Target whose canonical return unit is `U`, calibrated expected return and forecast error are in `U`, and forecast-error covariance/variance is in `U²`. If a standard deviation is displayed, it must be explicitly typed and converted from the appropriate variance. Source `w' Σe w` denotes a combination of forecast-error covariances; it is not automatically uncertainty of an estimated conditional expected return. **The relation to P4's expected-return-estimation covariance remains an explicit scientific gate.** No default spot basis, calendar horizon, percentage scale or interchangeable generic uncertainty scalar is selected here.
 
@@ -53,16 +67,17 @@ Reuse fit/forecast artifacts only for identical scoped inputs, fitting policy, p
 
 ## 8. Persistence
 
-Persist compact immutable fit manifests, individual forecast/error-history references, covariance/roster ordering, combination weights, diagnostic definitions/evidence, source decisions and final forecast records. Large histories live once as referenced payloads. Record forecast versions as they existed before observing subsequent labels; later estimates never overwrite them. P3 attribution references parent and exact relationship IDs. The library reads authoritative evidence and does not become a second forecast store.
+Persist compact immutable fit manifests, individual forecast/error-history references, covariance/roster ordering, architecture and policy references, any user FamilyMapping/family forecasts and inner/outer/effective leaf weights, diagnostic definitions/evidence, source decisions and final forecast records. Large histories live once as referenced payloads. Record forecast versions as they existed before observing subsequent labels; later estimates never overwrite them. P3 attribution references parent and exact relationship IDs. The library reads authoritative evidence and does not become a second forecast store.
 
 ## 9. Acceptance scenarios
 
 - A parent with validated 63-observation and failed 21-observation relationships supplies only 63-observation evidence; no 7-observation output is created.
 - Different CS Scopes bind before score computation; changing Scope invalidates scoped scores while preserving the parent recipe identity.
-- Two constituents in one family remain separately calibrated and attributed. Family labels do not change their science or create equal weights.
+- Two constituents in one family remain separately calibrated and attributed. Hierarchical equal weighting uses explicit family/leaf weights from 26; a label alone never changes validation or selects an architecture. Missing manual assignments block only architectures requiring them.
+- Hierarchical error and ridge fit both levels causally; outer history uses original family forecast vintages, not today-refitted inner weights. All seven architecture outputs retain original-leaf and shared-basket attribution.
 - A not-yet-matured label cannot influence any fit at an earlier cutoff; historical decay matches operational decay exactly.
 - Unsupported stale carry-forward blocks; it does not create a fresh forecast with an invented decay coefficient.
 - Weight/roster mismatch, missing covariance validity, missing uncertainty type or mixed economic bases fails validation.
 - A new data batch without live readiness is not admitted solely on an old historical certificate.
 
-These are required future engine acceptance cases, not scientific tests run now. Specification [25](25_p3_ts_cs_calibration.md) supplies the calibration/baseline contract and bounded arithmetic reference cases. Other return families and horizon clocks, forecast-error versus estimation uncertainty, decay/dependence/weight-estimation policies, diagnostics and engine equivalence evidence remain gated. P3 produces forecasts and attribution; it never chooses positions.
+These are required future engine acceptance cases, not scientific tests run now. Specification [25](25_p3_ts_cs_calibration.md) supplies the calibration/baseline contract and bounded arithmetic reference cases. Specification [26](26_p3_combination_architectures.md) defines the additional combination architectures. Other return families and horizon clocks, forecast-error versus estimation uncertainty, concrete decay/dependence/weight-history/tuning/solver policies, diagnostics and engine equivalence evidence remain gated. P3 produces forecasts and attribution; it never chooses positions.

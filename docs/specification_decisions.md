@@ -1,5 +1,15 @@
 # Specification decisions and implementation gates
 
+> Subsequent 27 November 2026 architecture decision: the user added six P3
+> combination alternatives alongside the existing flat covariance-aware method,
+> required manual family membership, and explicitly selected equal/equal,
+> error/error and ridge/ridge at the two hierarchical levels.
+> [Specification 26](../specs/26_p3_combination_architectures.md) records the
+> amendment to the original flat-only/no-family-forecast rule. The reference text
+> and all historical research identities remain unchanged. The new architecture
+> semantics do not install a policy, infer a user's family assignment or close
+> the outstanding numeric/readiness/implementation gates.
+
 > 27 November 2026 calibration design update: the user requested a complete P3
 > TS/CS comparison and basket-component definition. [Specification 25](../specs/25_p3_ts_cs_calibration.md)
 > now defines the exact-Target full-return boundary, version-1 TS/CS estimators,
@@ -51,6 +61,7 @@ code, synthetic fixture values, directory names or the existence of a schema.
 | U10 | Approve this FX gross spot family: simple decimal-fraction returns for 1/7/21/63/252 scheduled weekdays, Monday–Friday with no holiday exclusions | Exactly 215 logical instrument/horizon combinations; resolve exact endpoints first, exclude anchor from counting, retain unavailable reasons; no extra convention or unrelated-family default |
 | U11 | Approve provisional cross construction on equal provider date labels where historical timing is unknown | Unknown synchronization does not alone prevent this family's materialization; known incompatible sessions, currency/direction mismatches, invalid prices and conflicts remain blocked |
 | U12 | Zero scheduled entry delay anchors returns at the anchor close only | No execution-fill certification; Feature availability, label maturity, strict training cutoffs, discovery/validation boundaries and live readiness remain unchanged |
+| U13 | Add flat equal/error/ridge and hierarchical equal/error/ridge alongside existing P3 combination; families are assigned manually by the user, with the same method at both hierarchical levels | Optional family forecast nodes retain all individual calibrated leaves, nested provenance and effective contributions; no automatic clustering/assignment or default architecture change |
 
 ## Engineering proposals introduced in this draft
 
@@ -63,6 +74,7 @@ code, synthetic fixture values, directory names or the existence of a schema.
 | E05 | Parent library is a projection over relationship and result links | All results remain traceable to one authoritative record; no editable metric copies |
 | E06 | Read-only legacy adapters and explicit mapping records before any migration | Preserve original IDs/content and exposed research periods; establish exact compatibility |
 | E07 | Stage-specific implementation gates allow intake/storage work before unresolved forecasting/portfolio mathematics | A blocked calculation never produces fake readiness or running status |
+| E08 | Define error weighting as inverse historical forecast MSE and ridge as positive-lambda, simplex-constrained squared-error/L2 combination, preserving the original nonnegative sum-to-one boundary | Full node-history/tuning/solver policies and isolated numerical implementation remain required; unconstrained ridge needs a distinct architecture |
 
 ## Scientific and operational questions still open
 
