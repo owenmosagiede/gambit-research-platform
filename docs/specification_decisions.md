@@ -1,5 +1,14 @@
 # Specification decisions and implementation gates
 
+> 27 November 2026 calibration design update: the user requested a complete P3
+> TS/CS comparison and basket-component definition. [Specification 25](../specs/25_p3_ts_cs_calibration.md)
+> now defines the exact-Target full-return boundary, version-1 TS/CS estimators,
+> baseline providers, calibration timing/sample defaults, exposure and no-double-counting
+> rules. This resolves those design choices only. No production policy is registered,
+> P1/P2 result reinterpreted, canonical P3 engine implemented, or P4 uncertainty/solver
+> gate closed by the document. The older decision register below remains historical
+> context except where this dated update explicitly narrows a gate.
+
 > Subsequent 9 October FX approval: the user resolved the two pending FX-family decisions.
 > Simple gross spot returns at 1, 7, 21, 63 and 252 scheduled weekdays now use an explicit
 > Monday–Friday/no-holiday calendar, exclusive forward counting, anchor-close entry and exact
@@ -60,9 +69,9 @@ code, synthetic fixture values, directory names or the existence of a schema.
 | ID | Question / exact gate | Blocks | Needed evidence or decision |
 | --- | --- | --- | --- |
 | Q01 | Resolved for the present FX gross spot family by U10–U12; which basis and clock apply to other research cases remains open | Only other cases lacking explicit contracts; not this approved FX completion | Register a case-specific policy; no global default, valid-observation substitution or reinterpretation of this FX approval |
-| Q02 | What return basis/common clock and transformation are permitted for P3 calibration and P4 horizon combination? | P3/P4 affected calculations | Approved dimensional specification; supplied log example is conceptual, not universal |
+| Q02 | P3 calibration resolved for the bounded current FX profile by [25](../specs/25_p3_ts_cs_calibration.md): preserve exact Target/horizon/units, reconstruct full CS return once. Other Target families and P4 horizon-rate conversion remain open. | Other families and P4 horizon combination; not the defined P3 calibration geometry | Implement and verify the versioned calibration contract; a log/common-rate convention is not inferred for P4 |
 | Q03 | How does forecast error covariance relate to uncertainty in estimated expected returns? | P3 uncertainty and P4 alpha-estimation-risk penalty | Separate definitions, units, estimators and empirical acceptance tests |
-| Q04 | Which as-of, training/refit, target-maturity and reuse timelines apply to calibration, decay, covariance and weights? | P3/P4 estimators | Leakage-safe versioned policies and replay cases |
+| Q04 | P3 calibration timing/refits, mature-only inputs and exposure rules are defined in [25](../specs/25_p3_ts_cs_calibration.md). Decay, covariance and weight estimation timelines remain open. | Remaining P3/P4 estimators and unimplemented calibration | Closed policies/validators, bounded arithmetic and leakage-safe replay evidence; retrospective selected-roster replay is not an untouched forecast record |
 | Q05 | How do P5 capital allocations/aggregate constraints feed P4 sleeve feasibility and final execution quantities? | P4/P5 executable allocation | Capital-envelope protocol, aggregate-risk model, rounding/feasibility checks and conflict policy |
 | Q06 | Which existing periods are already exposed and which validation cases remain admissible? | New P1/P2 scientific certification | Reconcile retained exposure histories and policies; never declare legacy-inspected periods untouched |
 | Q07 | Can each retained legacy method/operator reproduce its original result under the new interface? | Adoption of that component | Source/definition/implementation pins and bounded parity tests; no blanket certification |

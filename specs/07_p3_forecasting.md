@@ -1,6 +1,6 @@
 # 07 — P3 individual forecasting and combination
 
-Status: **review draft with explicit scientific gates; no P3 engine implemented**. Dependencies: [01](01_canonical_objects.md), [02](02_data_and_readiness.md), [03](03_features_targets_scopes.md), [06](06_p2_validation.md). The [preserved P3/P4 reference](references/p3_p4_design_reference.txt) remains the intended design. Source requirements below are distinguished from proposed interfaces; unresolved estimators are not filled with legacy defaults.
+Status: **review draft with explicit scientific gates; no canonical P3 engine implemented**. The TS/CS calibration and basket-baseline contract is now defined in [25](25_p3_ts_cs_calibration.md); its bounded version-1 defaults are specification choices, not installed production policies or empirical certification. Dependencies: [01](01_canonical_objects.md), [02](02_data_and_readiness.md), [03](03_features_targets_scopes.md), [06](06_p2_validation.md). The [preserved P3/P4 reference](references/p3_p4_design_reference.txt) remains the intended design. Source requirements below are distinguished from proposed interfaces; unresolved estimators are not filled with legacy defaults.
 
 ## 1. Inputs and boundary
 
@@ -14,18 +14,20 @@ P3 admits only the exact relationship with valid P2 evidence and compatible read
 
 Every historical forecast must be reproducible using only information available at its recorded cutoff. Predictor observations satisfy their PIT policy; a historical label may enter estimation only after its Target endpoint and availability requirements have matured. Preserve each fit cutoff, eligible training observations, refit time and live forecast cutoff separately. Replaying a final model across earlier history is not automatically valid forecast-error history.
 
-**Scientific gate:** the exact training/calibration, decay-fitting, covariance-fitting and weight-estimation timelines are not yet approved. Their windows, update frequency, holdout usage, label overlap/maturity treatment and exposure policy must be explicit before calculation. Retaining P1/P2 methods does not select a P3 estimator or authorize using an already examined validation window for tuning.
+**Calibration decision:** [25](25_p3_ts_cs_calibration.md) defines the version-1 TS/CS mapping, common Target units, historical-mean or independently validated basket provider, 60-month matured-label fitting window, monthly refits, sample requirements and forward evaluation/exposure rules. Implement and verify that contract before forecasting. **Remaining scientific gates:** decay-fitting, covariance-fitting and weight-estimation timelines and their exact numerical policies remain unresolved. Their windows, update frequency, holdout usage, label overlap/maturity treatment and exposure policy must be explicit before calculation. Retaining P1/P2 methods does not select a P3 estimator or authorize using an already examined validation window for tuning.
 
 ## 3. Source calculations and unresolved estimator choices
 
 | Stage | Intended source requirement | Contract gate before implementation |
 | --- | --- | --- |
-| Individual calibration | Convert each validated relationship's score independently into expected return in its exact Target economic units. TS/CS estimators may differ. | Approve estimator, training sample, mapping, regularization and minimum evidence for each permitted geometry. |
+| Individual calibration | TS maps directly to full Target return; CS maps centered ranks to relative return and reconstructs full return with one explicit baseline provider. Both use the exact Target economic units. | Mapping, estimator, fit/refit sample, minimum evidence, exposure and provider rules are defined in [25](25_p3_ts_cs_calibration.md); closed validators and numerical/adapter implementation remain required. |
 | Decay | `d(0)=1`; decayed forecast is fresh forecast × `d(age)`; aging reduces predictive influence. Apply the same historical decay rule when calculating forecast errors. | Define age clock, defensible model, freshness eligibility and estimation timeline. Unsupported decay cannot become indefinite invented carry-forward. |
 | Forecast-error histories | For compatible instrument × Target basis × horizon, error is realized Target return minus the historical constituent forecast. | Pin historical forecast versions, realized label availability, compatible sample alignment and treatment of missing/overlapping histories. |
 | Dependence | Estimate a shrinkage covariance of constituent forecast errors, separate from market return covariance. | Approve estimator/shrinkage target, sample requirements, numerical tolerances and missing-history policy. |
 | Combination | Constrained generalized least squares using shrinkage forecast-error covariance; weights nonnegative and sum to one. | Pin estimator/solver/tie/failure rules. No equal-family or equal-signal fallback is implied. |
 | Diagnostics | Preserve forecast dispersion, effective independent count, largest contributions, signal/family concentrations and decay contributions. | Define exact diagnostic formulas and units; do not invent a count/concentration metric to fill a field. |
+
+Only compatible `FULL_TARGET_RETURN` constituents enter combination. A CS rank or `RELATIVE_ONLY` diagnostic is not a full forecast. Basket context is attributed inside the CS reconstruction, never appended to an already full TS forecast or entered as an additional pair-signal vote. Shared provider dependence remains in the full-return error histories; see [25](25_p3_ts_cs_calibration.md).
 
 Every eligible constituent is individually represented, even when it receives zero combination weight. Family metadata supports redundancy diagnosis and attribution; it never collapses members into an equal-weight family score. Do not choose combination weights from IC, Sharpe, family names or retrospective subjective preference.
 
@@ -63,4 +65,4 @@ Persist compact immutable fit manifests, individual forecast/error-history refer
 - Weight/roster mismatch, missing covariance validity, missing uncertainty type or mixed economic bases fails validation.
 - A new data batch without live readiness is not admitted solely on an old historical certificate.
 
-These are required future acceptance cases, not scientific tests run now. Approval gates remain exact return/horizon conventions, forecast-error versus estimation uncertainty, all estimation timelines, estimator/diagnostic details and bounded numerical reference cases. P3 produces forecasts and attribution; it never chooses positions.
+These are required future engine acceptance cases, not scientific tests run now. Specification [25](25_p3_ts_cs_calibration.md) supplies the calibration/baseline contract and bounded arithmetic reference cases. Other return families and horizon clocks, forecast-error versus estimation uncertainty, decay/dependence/weight-estimation policies, diagnostics and engine equivalence evidence remain gated. P3 produces forecasts and attribution; it never chooses positions.
