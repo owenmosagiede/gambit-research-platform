@@ -184,6 +184,30 @@ valid contribution evidence are visible as `Not yet measured`, `Pending`,
 rank. A P2 failure or absence of P3 evaluation is not a measured worst score.
 Keep the existing recipe details, pairs and exact P1/P2 results accessible.
 
+### Click-through to the complete signal research page
+
+The signal/recipe name in every ranked or unranked library row remains a clickable
+link to its existing full research page, resolved through the stable entry and
+verified parent/group references. The ranking is an index into that research,
+not a replacement for the page. A Models using this signal expansion and model
+links are separate controls; they do not consume the signal-name research link.
+
+Opening the signal shows all of its saved research: original definition and
+parameters, pair/instrument relationships, TS/CS Scopes, horizons, Spot/Total Return
+Targets, directions, periods and every recorded P1/P2 outcome, including failures
+and unresolved results, metrics, evidence and lineage. Its P3 model memberships,
+per-model ranks and contribution evidence are additional sections. The model
+selected on the ranking page does not silently hide other pairs, models or test
+results on the research page; any research-detail filter is explicit and clearable.
+
+Keep existing research deep links and identity resolution valid, including grouped
+macro recipes. Back navigation returns to the selected model/version/context,
+filters, display sort and ranking snapshot/page when available; a required snapshot
+refresh is explicit. Clicking through remains a read of saved research, not a
+new experiment, refit or ablation. Missing evidence is shown as unavailable without
+substituting another signal or removing access to the remaining research.
+
+
 ### Model membership and per-model ranks
 
 A signal can belong to many full models, and each model can contain many signals.
@@ -360,6 +384,11 @@ Changing this specification does not trigger N+1 fits or new research now.
     status. A signal outside the selected model is not assigned a zero or last
     place. Sorting by name does not rewrite the stored contribution rank; model
     version and snapshot selection survive navigation/pagination.
+
+15. Clicking a signal name from model A's ranked list opens that signal's complete
+    existing research page, including its other pairs/models and failed/unresolved
+    tests. It does not route to a contribution-only page or silently retain a
+    model-A-only research filter. Returning restores model A's list context.
 
 These are contract requirements and synthetic identities, not implemented
 evaluation, empirical scores for current signals, a deployed ranking page or

@@ -89,6 +89,18 @@ is the contract for that extension. P3 owns full-versus-without-signal evaluatio
 and publishes the results as derived Signal metadata; the library projects them.
 This section specifies future behavior, not an already deployed ranking API/UI.
 
+The signal name in each ranked or unranked row remains a clickable link to its
+existing complete research page. That page retains every original definition,
+pair/Scope, horizon/Target/direction/period, saved P1/P2 outcome and evidence,
+including failures and unresolved results. P3 memberships, per-model ranks and
+contribution evidence are added alongside that research. Selecting a model in the
+library does not silently restrict the research page to that model's results.
+Separate model links open model details; they do not replace the signal link.
+Existing deep links remain valid and Back returns to the selected model, filters,
+sort and ranking page/snapshot where available. Navigation reads saved evidence
+and never starts research, refits or ablations.
+
+
 The headline score is incremental out-of-sample forecast accuracy gained (%),
 computed from paired full and causally refitted ablated model MSE. It is not a
 current forecast weight, additive return contribution, standalone IC, P2 pass or
