@@ -230,6 +230,13 @@ No model may treat family errors as independent or divide risk by the number
 of families without evidence. Preserve forecast-error versus estimation-risk
 typing and the still-open P4 `Omega_alpha` bridge.
 
+Every architecture must also supply the model/leaf/dependency manifests and
+paired causal refits required by [27](27_p3_incremental_value_and_library_ranking.md)
+to measure incremental signal value. Effective forecast weights are attribution,
+not a replacement for that measured gain. Ablation-only empty-family/null-provider
+interventions in 27 are explicit counterfactual policies; ordinary production
+missing-data/fallback rules below remain strict.
+
 ## 7. Persistence, comparison and failure
 
 Required CombinationPolicy content: architecture ID/version, compatibility key,

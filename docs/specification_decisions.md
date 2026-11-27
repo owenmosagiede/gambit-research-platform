@@ -1,5 +1,14 @@
 # Specification decisions and implementation gates
 
+> Subsequent 27 November 2026 incremental-value decision: the user requires P3
+> to measure each signal's incremental value to the model containing it, preserve
+> this as metadata, and support a Signal Library ranked greatest to least by
+> incremental contribution. [Specification 27](../specs/27_p3_incremental_value_and_library_ranking.md)
+> defines paired causal refit ablation, predictive-loss scores, exact model context,
+> coverage/exposure and read-only as-of ranking. The predictive-MSE score, null
+> references and aggregation conventions are explicit design choices. No current
+> P2 result is reinterpreted as an incremental score; no engine or page is deployed.
+
 > Subsequent 27 November 2026 architecture decision: the user added six P3
 > combination alternatives alongside the existing flat covariance-aware method,
 > required manual family membership, and explicitly selected equal/equal,
@@ -62,6 +71,7 @@ code, synthetic fixture values, directory names or the existence of a schema.
 | U11 | Approve provisional cross construction on equal provider date labels where historical timing is unknown | Unknown synchronization does not alone prevent this family's materialization; known incompatible sessions, currency/direction mismatches, invalid prices and conflicts remain blocked |
 | U12 | Zero scheduled entry delay anchors returns at the anchor close only | No execution-fill certification; Feature availability, label maturity, strict training cutoffs, discovery/validation boundaries and live readiness remain unchanged |
 | U13 | Add flat equal/error/ridge and hierarchical equal/error/ridge alongside existing P3 combination; families are assigned manually by the user, with the same method at both hierarchical levels | Optional family forecast nodes retain all individual calibrated leaves, nested provenance and effective contributions; no automatic clustering/assignment or default architecture change |
+| U14 | P3 measures each signal's incremental value to its model as metadata, enabling a Signal Library ranked by incremental contribution | P3 owns derived full-versus-without-signal evaluation; the library ranks saved model-context evidence and preserves original research identities/results |
 
 ## Engineering proposals introduced in this draft
 
@@ -75,6 +85,7 @@ code, synthetic fixture values, directory names or the existence of a schema.
 | E06 | Read-only legacy adapters and explicit mapping records before any migration | Preserve original IDs/content and exposed research periods; establish exact compatibility |
 | E07 | Stage-specific implementation gates allow intake/storage work before unresolved forecasting/portfolio mathematics | A blocked calculation never produces fake readiness or running status |
 | E08 | Define error weighting as inverse historical forecast MSE and ridge as positive-lambda, simplex-constrained squared-error/L2 combination, preserving the original nonnegative sum-to-one boundary | Full node-history/tuning/solver policies and isolated numerical implementation remain required; unconstrained ridge needs a distinct architecture |
+| E09 | Use causal refit ablation and paired out-of-sample MSE reduction, normalised by without-signal loss, as the headline incremental-accuracy score; aggregate all applicable contexts under a frozen ranking profile | Model/architecture/pair/Target/horizon/window and coverage remain explicit; scores are non-additive, negative values retained, missing evidence unranked; schemas/refits/inference/projections remain implementation work |
 
 ## Scientific and operational questions still open
 

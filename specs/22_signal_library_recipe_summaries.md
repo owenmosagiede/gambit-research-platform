@@ -53,7 +53,7 @@ Preparing observations is not research. Empty relationship links display
 Untested. Nonempty links are retained by original Signal, exact projection and
 relationship, with trial/admission/validation references and attempt IDs intact.
 They display `Research results linked`, never a recipe-wide success status.
-Metrics are not copied, averaged or inferred. Scope, Target, horizon, direction,
+Authoritative P1/P2 metrics are not copied, averaged or inferred. The separately specified P3 incremental-contribution aggregation below never averages P1/P2 outcomes or replaces their evidence. Scope, Target, horizon, direction,
 Research Spec and period remain owned by their authoritative relationship/trial
 records. The list reads authoritative relationship/link envelopes without loading metric
 artifacts. Opening a definition with research retrieves and verifies authoritative
@@ -80,6 +80,37 @@ refer to actual stored outputs and require both conditions on the same output;
 definitions with no matching stored coverage do not match those filters. Search and
 research status filters remain available for registered definitions.
 
+
+## P3 incremental-contribution ranking — specified future extension
+
+The user requests the Signal Library to become a ranked view from the greatest
+incremental contributor down to the worst measured signal. [27](27_p3_incremental_value_and_library_ranking.md)
+is the contract for that extension. P3 owns full-versus-without-signal evaluation
+and publishes the results as derived Signal metadata; the library projects them.
+This section specifies future behavior, not an already deployed ranking API/UI.
+
+The headline score is incremental out-of-sample forecast accuracy gained (%),
+computed from paired full and causally refitted ablated model MSE. It is not a
+current forecast weight, additive return contribution, standalone IC, P2 pass or
+trading P&L. Rank descending under a visible versioned model/architecture,
+Target/horizon and evaluation-period profile; show model applicability/coverage,
+uncertainty and links to exact evaluations. Retain zero/negative measured scores.
+Unmeasured, pending, insufficient or unavailable evidence is visible without a
+numeric rank. A recipe grouping uses its verified canonical-parent mapping and
+joint group ablation, not a sum of non-additive child importances.
+
+The default aggregate is the equal-context mean across all models in the frozen
+profile that use the recipe; missing required contribution contexts keep the
+aggregate incomplete. Display that coverage explicitly. The page cannot select
+the best model/window separately for each signal. Original recipe definitions,
+pairs and P1/P2 results remain accessible beneath the ranked entries.
+
+RankingSnapshot publication follows label maturity and records its availability.
+As-of queries cannot see later scores. Metadata readers project compact records
+into a generation-pinned ranking index; GET requests never run model refits or
+ablations and do not create a separately editable score authority. Stable ranks,
+ties and pagination follow 27. Without P3 evaluations, keep the existing catalog
+and an honest unmeasured ranking state rather than manufacture a #1 signal.
 
 ## Preserved boundaries
 
