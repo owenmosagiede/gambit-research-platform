@@ -179,6 +179,24 @@ class CloudBackupTests(unittest.TestCase):
         self.assertEqual((self.output / 'research_platform/dir-to-file').read_text(), 'new file')
         backup.verify(self.output)
 
+    def test_database_and_mapped_sidecars_are_recopied_even_with_unchanged_stat_signature(self):
+        original_signature = backup.signature
+        for name in ['mapped.sqlite-shm', 'mapped.sqlite-wal', 'mapped.sqlite', 'mapped.db']:
+            with self.subTest(name=name), tempfile.TemporaryDirectory(dir=self.base) as temp:
+                source = Path(temp) / 'source'; source.mkdir()
+                path = source / name; path.write_bytes(b'old mapping bytes')
+                fixed = original_signature(path)
+                services = FakeServices(); stop = services.stop
+                def change(unit):
+                    if unit == backup.UNITS[0]: path.write_bytes(b'new mapping bytes')
+                    stop(unit)
+                services.stop = change
+                with patch.object(backup, 'signature', side_effect=lambda p: fixed if p == path else original_signature(p)):
+                    target = Path(temp) / 'copy'
+                    backup.stage({'research_platform': source}, target, services)
+                self.assertEqual((target / 'research_platform' / name).read_bytes(), b'new mapping bytes')
+                backup.verify(target)
+
     def test_sqlite_wal_changes_during_online_precopy_are_reconciled(self):
         db = sqlite3.connect(self.auth / 'auth.sqlite3')
         try:

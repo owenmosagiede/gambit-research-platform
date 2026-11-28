@@ -39,6 +39,8 @@ again. A verified precopy is reused only when its complete recorded source
 signature still matches; changed/new files are recopied and checked. Deleted or
 renamed precopy files are removed from staging. A source mutation or inconsistent
 final copy fails the backup. Source files are never deleted or overwritten.
+Authentication files, SQLite databases and WAL/SHM sidecars are always recopied
+under quiescence: memory-mapped bookkeeping can change without a new timestamp.
 
 Only this stopped-services reconciliation has a 30-minute alarm. On expiry the
 backup fails and restores the original service set. Worker draining remains
@@ -62,8 +64,12 @@ Tree traversal, manifest writing and restore verification stream their inputs;
 they do not retain a list of every path or manifest row in memory. The existing
 gambit_backup_v1 manifest format and historical backups remain readable. The
 sealing function returns only a small summary, releasing its index before
-restic runs. The service bounds Go memory with GOMEMLIMIT=1536MiB, GOGC=50,
-GOMAXPROCS=2 and a 2048MiB soft / 2304MiB hard service memory budget.
+restic runs. The service bounds Go memory with GOMEMLIMIT=512MiB, GOGC=25,
+GOMAXPROCS=2 and a 1536MiB hard service budget. MemoryHigh equals that hard cap,
+avoiding a lower soft threshold that can trap an unreclaimable working set in
+continuous reclaim. This conservative profile leaves room on the 4GiB host for
+the website, readers and research worker; verify the actual full backup after
+any separately reviewed resource change.
 
 The application restarts BEFORE encrypted upload. Upload failure therefore does
 not leave research offline. The timer runs daily at 11:00 UTC with up to ten

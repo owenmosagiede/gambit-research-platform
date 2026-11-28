@@ -125,7 +125,11 @@ def copy_tree(source, destination, *, index=None, label='', reconcile=False):
             try:
                 current = signature(path)
                 previous = index.execute('select signature from files where path=?', (key,)).fetchone() if index is not None else None
-                if reconcile and previous == (current,) and target.is_file():
+                # SQLite SHM uses mmap; repeated writes to already dirty pages
+                # need not refresh timestamps. Recopy databases and sidecars
+                # under quiescence rather than treating their stat as a proof.
+                database = label == 'auth' or path.suffix in {'.db', '.sqlite', '.sqlite3'} or path.name.endswith(('-wal', '-shm'))
+                if reconcile and not database and previous == (current,) and target.is_file():
                     index.execute('update files set seen=1 where path=?', (key,))
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
