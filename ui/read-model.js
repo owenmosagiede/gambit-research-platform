@@ -80,12 +80,15 @@
   }
   function recipeCard(item, generation) {
     const card=node("article",undefined,"signal-card");
-    card.append(node("p","RESEARCHED RECIPE","research-label"),node("h3",item.name));
+    const macro=item.kind==="macro_recipe_group";
+    card.append(node("p",macro ? "MACRO FEATURE" : "RESEARCHED RECIPE","research-label"),node("h3",item.name));
+    if(macro) card.append(node("p",`${item.pair_count} researched pairs`,"field-note"));
     const counts=node("div",undefined,"recipe-counts");
     for(const [label,value] of [["Researched relationships",item.research.relationship_count],["Research-stage passes",item.research.research_stage_pass_count]]) {
       const cell=node("div");cell.append(node("strong",String(value)),node("span",label));counts.append(cell);
     }
-    card.append(counts,node("p",`P1 admitted: ${item.research.p1_counts?.admitted ?? 0} saved results · P2 failed: ${item.research.p2_counts?.FAILED ?? 0} saved results`,"field-note"),node("p",item.research.description,"field-note"),button("View researched relationships",()=>showBranches(item,generation)));
+    card.append(counts,node("p",`P1 admitted: ${item.research.p1_counts?.admitted ?? 0} saved results · P2 failed: ${item.research.p2_counts?.FAILED ?? 0} saved results`,"field-note"),node("p",item.research.description,"field-note"),
+      button(macro ? "View pairs & results" : "View researched relationships",()=>macro ? showMacroPairs(item,generation) : showBranches(item,generation)));
     return card;
   }
   function pager(kind, container, data) {
@@ -125,13 +128,36 @@
       window.dispatchEvent(new CustomEvent("research-queue-settled",{detail:{verified:Boolean(s.data)}}));
     }
   }
-  async function showBranches(recipe,generation,cursor=null) {
+  function showMacroPairs(recipe,generation) {
+    selected?.controller.abort();window.SignalResearch?.cancel();
+    selected={recipe,generation,controller:new AbortController()};
+    const body=$("signal-detail-body");
+    $("signal-detail").hidden=false;$("signal-detail-home").hidden=false;
+    $("signal-detail-title").textContent=recipe.name;$("signal-catalog-view").hidden=true;
+    $("signal-detail-status").textContent=`${recipe.pair_count} researched pairs in the selected snapshot. Each outcome belongs to its pair, horizon and return target.`;
+    const table=node("table",undefined,"signal-table"),head=node("thead"),heading=node("tr"),rows=node("tbody");
+    for(const title of ["Pair","Relationships","P1 admitted","P2 passes","P2 failed","Results"]) {
+      const th=node("th",title);th.setAttribute("scope","col");heading.append(th);
+    }
+    head.append(heading);table.append(head,rows);
+    for(const pair of recipe.pairs) {
+      const row=node("tr"),name=node("th",pair.pair);name.setAttribute("scope","row");row.append(name);
+      for(const value of [pair.relationship_count,pair.p1_counts?.admitted ?? 0,pair.research_stage_pass_count,pair.p2_counts?.FAILED ?? 0]) row.append(node("td",String(value)));
+      const action=node("td");action.append(button(`View ${pair.pair} results`,()=>showBranches(recipe,generation,null,pair.pair)));row.append(action);rows.append(row);
+    }
+    const wrap=node("div",undefined,"table-scroll");wrap.setAttribute("role","region");wrap.setAttribute("aria-label","Macro Feature pairs and research outcomes");wrap.setAttribute("tabindex","0");wrap.append(table);
+    body.replaceChildren(node("p","Open a pair to inspect its separate Spot and Modelled Total Return outcomes, forecast horizons, directions and saved evidence.","field-note"),wrap);
+  }
+  async function showBranches(recipe,generation,cursor=null,pair=null) {
     selected?.controller.abort(); const controller=new AbortController();
+    window.SignalResearch?.cancel();
     selected={recipe,generation,controller}; const identity=selected;
     const panel=$("signal-detail"), body=$("signal-detail-body"), status=$("signal-detail-status");
-    panel.hidden=false; $("signal-detail-home").hidden=false; $("signal-detail-title").textContent=recipe.name;
+    panel.hidden=false; $("signal-detail-home").hidden=false; $("signal-detail-title").textContent=recipe.name+(pair ? ` · ${pair}` : "");
     $("signal-catalog-view").hidden=true; status.textContent="Loading recorded relationships…";
+    body.replaceChildren();
     const q=new URLSearchParams({limit:"50"});
+    if(pair) q.set("scope",pair);
     if (generation && !cursor) q.set("generation",generation);
     if (cursor) q.set("cursor",cursor);
     try {
@@ -139,6 +165,7 @@
       if (identity!==selected) return;
       status.textContent=freshness(data)+`${data.items.length} shown of ${data.total} evidence branches. Research-stage passes do not establish trading readiness.`;
       body.replaceChildren();
+      if(recipe.kind==="macro_recipe_group") body.append(button("All pairs",()=>showMacroPairs(recipe,generation)));
       const picker=node("select");picker.setAttribute("aria-label","Exact saved result");
       const contextKey=row=>JSON.stringify([row.scope,row.mode,row.expected_direction,row.target_family]);
       const contexts=[...new Map(data.items.map(row=>[contextKey(row),row])).entries()];
@@ -184,7 +211,7 @@
             if(choice!==selection||identity!==selected)throw new Error("Selection changed");
             const results=records.filter(([kind])=>kind==="trial").map(([,authority,t])=>({authority,...t.body,period:t.scientific_key.period,research_spec:t.scientific_key.research_spec}));
             const validations=records.filter(([kind])=>kind==="decision").map(([,authority,t])=>({authority,...t.body}));
-            return {recipe_id:recipe.id,relationships:[{...row,results,validations}],issues:[]};
+            return {recipe_id:row.recipe?.id || recipe.id,relationships:[{...row,results,validations}],issues:[]};
           },
           evidence:async(authority,signal)=>{
             const linked=new AbortController();signal.addEventListener("abort",()=>linked.abort(),{once:true});
@@ -193,12 +220,12 @@
             return request(prefix+"evidence/"+authority.id+"?generation="+data.freshness.generation,linked);
           }
         };
-        window.SignalResearch.mount(evidence,{recipe:{id:recipe.id}},source);
+        window.SignalResearch.mount(evidence,{recipe:row.recipe || {id:recipe.id}},source);
       }
       picker.addEventListener("change",choose);context.addEventListener("change",()=>{chosenHorizon=null;selectContext();});selectContext();
-      if (data.next_cursor) body.append(button("Next relationships",()=>showBranches(recipe,data.freshness.generation,data.next_cursor)));
-      body.append(button("Refresh relationships",()=>showBranches(recipe,null)));
-    } catch (error) { if (identity===selected) {status.textContent=error.message;body.replaceChildren(button("Retry",()=>showBranches(recipe,null)));} }
+      if (data.next_cursor) body.append(button("Next relationships",()=>showBranches(recipe,data.freshness.generation,data.next_cursor,pair)));
+      body.append(button("Refresh relationships",()=>showBranches(recipe,null,null,pair)));
+    } catch (error) { if (identity===selected) {status.textContent=error.message;body.replaceChildren(button("Retry",()=>showBranches(recipe,null,null,pair)));if(recipe.kind==="macro_recipe_group")body.append(button("All pairs",()=>showMacroPairs(recipe,generation)));} }
   }
   function navigate() {
     selected?.controller.abort();selected=null;window.SignalResearch?.cancel();

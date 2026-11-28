@@ -87,3 +87,21 @@ Experiment inputs and their Feature/Target/Scope resolution are unchanged. This
 change performs no migration, materialization, provider acquisition, research,
 P1/P2 execution or scientific policy alteration. It writes code, tests and this
 specification only; all existing scientific records and payloads are preserved.
+
+## Macro Feature groups in the dedicated read model
+
+The Signal Library groups frozen macro pair projections by their exact stored
+field, source snapshot, history layer, units and policies. One macro Feature card
+opens a pair table with research counts; opening a pair shows its saved outcomes
+by horizon, return target, direction and research period. Reverse-oriented source
+projections retain their original references while the pair table uses the exact
+tested Scope. Country-only inputs and non-macro Features keep their existing
+presentation. Matching display names alone never establish equivalence.
+
+`MACRO_FEATURE_<hash>` is a derived navigation key, not a registered Feature or
+scientific recipe reference. The read-model branch endpoint accepts this key and
+an optional exact `scope` filter. Cursors bind both the group and pair filter to
+the selected immutable generation. Each branch still carries its original pair
+Feature reference; trial metrics, evidence and provenance resolve that reference.
+Source histories, definitions, research IDs, scientific policies and execution
+fingerprints are unchanged. The original source APIs remain addressable.

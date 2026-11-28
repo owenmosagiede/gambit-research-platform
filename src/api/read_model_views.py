@@ -30,7 +30,7 @@ def serve(route, target, directory, *, head=False):
             label='evidence'; value=read_evidence(directory, match[1], values.get('generation'))
         elif endpoint in ('ledger','queue','recipes'):
             label = endpoint; value=query.page(directory,endpoint,values)
-        elif match := re.fullmatch(r'recipes/(FEATURE_(?:RECIPE_)?[0-9a-f]{64})/branches',endpoint):
+        elif match := re.fullmatch(r'recipes/((?:FEATURE_(?:RECIPE_)?|MACRO_FEATURE_)[0-9a-f]{64})/branches',endpoint):
             label='branches'; value=query.page(directory,'branches',values,recipe=match[1])
         elif match := re.fullmatch(r'(trial|relationship|decision|experiment)/([A-Za-z0-9_-]{1,128})',endpoint):
             if set(values)-{'generation'}: raise query.InvalidQuery('Unsupported detail query')

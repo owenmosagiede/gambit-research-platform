@@ -81,6 +81,35 @@ class ReadModelUITests(unittest.TestCase):
         view=self.run_ui(responses=[response([card]),response([row])],steps=['View researched relationships'])
         self.assertIn('generation=',view['calls'][1]['url']);self.assertIn('No completed P2 numerical evaluation',view['text']);self.assertFalse(view['hidden'])
 
+    def macro(self):
+        return {'id':'MACRO_FEATURE_'+'b'*64,'kind':'macro_recipe_group','name':'Annual GDP growth differential [archive]',
+                'pair_count':2,'pairs':[
+                    {'pair':'AUDUSD','relationship_count':8,'p1_counts':{'admitted':2},'p2_counts':{'FAILED':1},'research_stage_pass_count':1},
+                    {'pair':'USDJPY','relationship_count':6,'p1_counts':{'admitted':0},'p2_counts':{},'research_stage_pass_count':0}],
+                'research':{'relationship_count':14,'research_stage_pass_count':1,'description':'Exact pair hypotheses'}}
+
+    def test_macro_card_opens_all_pairs_without_loading_numerical_evidence(self):
+        view=self.run_ui(responses=[response([self.macro()])],steps=['View pairs & results'])
+        self.assertEqual(len(view['calls']),1)
+        self.assertIn('MACRO FEATURE',view['text']);self.assertIn('2 researched pairs',view['text'])
+        self.assertNotIn('AUDUSD Annual GDP',view['text'])
+        self.assertEqual(view['tables'][0],[
+            ['Pair','Relationships','P1 admitted','P2 passes','P2 failed','Results'],
+            ['AUDUSD','8','2','1','1','View AUDUSD results'],
+            ['USDJPY','6','0','0','0','View USDJPY results']])
+
+    def test_macro_pair_filter_survives_pagination_refresh_and_return_to_pairs(self):
+        row={'recipe':{'id':'FEATURE_'+'c'*64},'scope':{'id':'AUDUSD'},'mode':'TS','horizon':21,
+             'target_family':'total_return','expected_direction':'NEGATIVE','p1_status':'admitted','p2_status':'FAILED',
+             'p2_evaluation_ran':True,'research_stage_pass':False,'trial_results':[]}
+        view=self.run_ui(responses=[response([self.macro()]),response([row],next_cursor='next'),response([row]),response([row])],
+            steps=['View pairs & results','View AUDUSD results','Next relationships','Refresh relationships','All pairs'])
+        self.assertEqual(len(view['calls']),4)
+        self.assertTrue(all('scope=AUDUSD' in c['url'] for c in view['calls'][1:]))
+        self.assertIn('generation=',view['calls'][1]['url']);self.assertIn('cursor=next',view['calls'][2]['url'])
+        self.assertNotIn('generation=',view['calls'][3]['url'])
+        self.assertIn('View USDJPY results',view['text'])
+
     def test_returning_to_first_page_keeps_the_same_generation(self):
         view=self.run_ui(responses=[response([],next_cursor='next'),response([]),response([])],steps=['Next page','Previous page'])
         self.assertIn('generation='+'a'*32,view['calls'][2]['url'])
@@ -97,6 +126,35 @@ class ReadModelUITests(unittest.TestCase):
 
 
 class RichReadModelUITests(ReadModelUITests):
+    def test_macro_pair_dashboard_uses_original_feature_for_saved_metrics(self):
+        import tempfile
+        from read_model.projector import build as metadata
+        from read_model.chart_evidence import build as charts, read_evidence
+        from read_model.query import detail
+        from api.feature_research import feature_research
+        from test_feature_research_dashboard import fixture, RECIPE
+        from research.contracts import digest
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve()/'source';out=Path(temp).resolve()/'serving'
+            trials=fixture(root,mode='TS',scope='USDJPY',p2='FAILED')
+            row=feature_research(root,RECIPE)['relationships'][0]
+            row.update(recipe={'id':RECIPE,'version':'1.0.0','content_sha256':digest(RECIPE)},
+                       p2_evaluation_ran=True,research_stage_pass=False,p2_reason_codes=[])
+            metadata(root,out);charts(root,out)
+            card=self.macro()
+            routes={'/api/read-model/v1/recipes':response([card]),
+                    '/api/read-model/v1/recipes/'+card['id']+'/branches':response([row])}
+            for trial in trials:
+                routes['/api/read-model/v1/trial/'+trial['id']]=detail(out,'trial',trial['id'])
+                routes['/api/read-model/v1/evidence/'+trial['id']]=read_evidence(out,trial['id'])
+            for v in row['validation_results']:
+                routes['/api/read-model/v1/decision/'+v['id']]=detail(out,'decision',v['id'])
+            view=self.run_ui(routes=routes,renderer=str(ROOT/'ui/signal-research.js'),
+                             steps=['View pairs & results','View USDJPY results','P2 Validation'])
+            self.assertIn('Effect retention',view['text']);self.assertIn('0.48',view['text'])
+            self.assertIn(RECIPE,view['text']);self.assertGreater(view['svgs'],0)
+            self.assertIn('scope=USDJPY',view['calls'][1]['url'])
+
     def test_selected_saved_evidence_uses_only_bounded_endpoints_and_preserves_stage_metrics(self):
         import tempfile
         from read_model.projector import build as metadata
