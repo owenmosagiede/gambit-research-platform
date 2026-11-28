@@ -97,7 +97,7 @@ status is recorded in 13–23 and the current authority pointers above.
 | [04 Experiment submission](04_experiment_submission.md) | Exactly five inputs, request, resolution and attempts; needs 01–03/10/12 | Preserved foundation and current parent-Signal clarification | Existing structural implementation retained; persistent service and actual resolution unimplemented |
 | [05 P1 discovery](05_p1_discovery.md) | Retained methods, admission and outcomes; needs 01–04/12 | Versioned legacy engine/Research Spec/Admission source | Concrete method/version matrix and acceptance boundaries; exact component parity, exposure and selected-policy readiness required |
 | [06 P2 validation](06_p2_validation.md) | Prescribed validation into per-relationship eligibility; needs 01–05/12 | Legacy validation source and current user reuse decision | Retained rules/diagnostics and explicit gates; historical certification not copied automatically |
-| [07 P3 forecasting](07_p3_forecasting.md) | Individual calibration, decay, dependence and combination; needs 01/02/03/06 | Supplied P3/P4 design | Interfaces/validity/acceptance specified; exact units, uncertainty meaning and estimation timeline block numerical implementation |
+| [07 P3 forecasting](07_p3_forecasting.md) | Individual calibration, decay, dependence and combination; needs 01/02/03/06 | Supplied P3/P4 design | TS/CS calibration, exact-Target output and basket baseline now defined in [25](25_p3_ts_cs_calibration.md); seven flat/hierarchical architectures in [26](26_p3_combination_architectures.md) and incremental-value/library-ranking metadata in [27](27_p3_incremental_value_and_library_ranking.md); canonical engine and remaining numeric/readiness gates remain |
 | [08 P4 portfolios](08_p4_portfolios.md) | Sleeve construction using forecasts, market risk, costs and mandate; needs 01/02/07/09 | Supplied P3/P4 plus user sleeve decision | Ownership specified; common clock, uncertainty/cost/risk estimators and feasibility details gated |
 | [09 P5 and execution](09_p5_and_execution_boundary.md) | Shared-capital coordination and explicit order authority; needs 00/01/08 | User allocation decision, foundation and supplied boundary | Ownership settled; allocation mathematics, capital feedback, aggregate feasibility and execution policy remain open |
 | [10 Runtime/recovery/storage](10_runtime_recovery_storage.md) | Idempotency, publication, index recovery and retention; needs 01/02/04/12 | Legacy ledger and compact artifacts; storage inventory | Local publication/recovery protocol specified; runtime service/events, deployment policies and durability tests future |
@@ -207,3 +207,35 @@ The profile pins 43 source snapshots and 215 completed Targets; no historical ex
 schema, stored observation or scientific record is migrated by this addition.
 
 - [Feature application foundation](24_feature_application_contracts.md): explicit application bindings, shared compatibility checks, frozen semantics, and deferred entity mapping.
+
+## 25 — P3 TS/CS calibration and basket baseline
+
+[25](25_p3_ts_cs_calibration.md) defines the common full-Target-return forecast contract,
+univariate TS calibration, centered-rank CS calibration, exact reference-basket identity,
+historical-mean and separately validated conditional baseline providers, fitting/refit
+cutoffs, sample/missing-data rules, attribution and full-error dependence. It supplies
+bounded arithmetic acceptance cases. This is a specification update; no forecasting
+engine, production policy, scientific record or current research job is changed.
+
+## 26 — P3 combination architectures and manual families
+
+[26](26_p3_combination_architectures.md) retains the original flat covariance-aware
+method and adds flat equal, inverse-MSE and simplex-ridge methods plus hierarchical
+versions using the same method both within and across families. Family membership
+is assigned manually by the user through versioned metadata. It defines family
+forecast provenance, causal inner/outer fitting, effective leaf weights, shared
+basket/error attribution and strict failure/comparison rules. These are specified
+architectures, not an installed engine or populated family mapping.
+
+## 27 — P3 incremental value and ranked Signal Library
+
+[27](27_p3_incremental_value_and_library_ranking.md) makes measurement of each
+signal's incremental predictive value a P3 responsibility and first-class derived
+metadata. Paired causal full/without-signal evaluation supplies accuracy-gain
+scores, model-context coverage and uncertainty. Versioned profiles/snapshots rank
+the selected model's signal members from greatest to least measured contribution.
+Each signal retains its membership and separate rank in every model; a cross-model
+summary is optional and explicitly labelled. Ranking preserves negative
+scores, explicit unranked states and original pair/test evidence. It defines
+hierarchical/basket ablation, null references, grouped recipe aggregation and
+as-of publication; no ranking engine or page is installed by the specification.
