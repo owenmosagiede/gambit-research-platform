@@ -21,8 +21,49 @@ import tempfile
 VOLUME = Path('/srv/gambit')
 STATE = Path('/var/lib/gambit-backup')
 STAGE = STATE / 'staging/current'
+CONFIGURATION = Path('/etc/gambit')
 UNITS = ('gambit-worker.service', 'gambit-web.service')
 LOCKS = ('research-worker-service', 'research-executor', 'research-writer')
+MAX_QUIESCENT_SECONDS = 30 * 60
+
+
+class SourceChanged(RuntimeError):
+    pass
+
+
+def tree(root, *, omit=False, volatile=False):
+    """Stream directory entries without retaining a complete Path inventory."""
+    root = Path(root)
+    def visit(directory):
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    if omit and omitted(path.relative_to(root)): continue
+                    yield path
+                    if entry.is_dir(follow_symlinks=False): yield from visit(path)
+        except FileNotFoundError:
+            if not volatile: raise
+    yield from visit(root)
+
+
+def signature(path):
+    value = path.stat()
+    return json.dumps([value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns,
+                       value.st_ctime_ns, value.st_mode], separators=(',', ':'))
+
+
+@contextmanager
+def copy_deadline(seconds=MAX_QUIESCENT_SECONDS):
+    """Bound only the stopped-services copy; never interrupt worker draining."""
+    def expired(signum, frame):
+        raise TimeoutError('Quiescent backup reconciliation exceeded its time limit')
+    old_handler = signal.signal(signal.SIGALRM, expired)
+    old_timer = signal.setitimer(signal.ITIMER_REAL, seconds)
+    try: yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, *old_timer)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def now():
@@ -52,7 +93,7 @@ def digest(path):
             value.update(block)
     after = path.stat()
     if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
-        raise RuntimeError('File changed while copying: ' + str(path))
+        raise SourceChanged('File changed while copying: ' + str(path))
     return value.hexdigest(), after.st_size
 
 
@@ -64,31 +105,57 @@ def omitted(path):
             or path.name in {'worker_service.json', '.DS_Store'})
 
 
-def copy_tree(source, destination):
+def copy_tree(source, destination, *, index=None, label='', reconcile=False):
     source = Path(source)
     if source.is_symlink() or not source.is_dir():
         raise RuntimeError('Backup source must be an ordinary directory: ' + str(source))
-    destination.mkdir(parents=True, exist_ok=False, mode=0o700)
-    for path in sorted(source.rglob('*')):
+    destination.mkdir(parents=True, exist_ok=reconcile, mode=0o700)
+    for path in tree(source, omit=True, volatile=index is not None and not reconcile):
         relative = path.relative_to(source)
-        if omitted(relative): continue
         if path.is_symlink(): raise RuntimeError('Backup refuses symlinks: ' + str(path))
         target = destination / relative
+        if target.is_symlink(): raise RuntimeError('Symlink in staged backup')
+        if reconcile and target.exists() and target.is_dir() != path.is_dir():
+            if target.is_dir(): shutil.rmtree(target)
+            else: target.unlink()
         if path.is_dir():
             target.mkdir(exist_ok=True, mode=path.stat().st_mode & 0o777)
         elif path.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            before = digest(path)
-            shutil.copy2(path, target)
-            if digest(target) != before or digest(path) != before:
-                raise RuntimeError('Backup copy mismatch: ' + str(path))
+            key = (Path(label) / relative).as_posix()
+            try:
+                current = signature(path)
+                previous = index.execute('select signature from files where path=?', (key,)).fetchone() if index is not None else None
+                # SQLite SHM uses mmap; repeated writes to already dirty pages
+                # need not refresh timestamps. Recopy databases and sidecars
+                # under quiescence rather than treating their stat as a proof.
+                database = label == 'auth' or path.suffix in {'.db', '.sqlite', '.sqlite3'} or path.name.endswith(('-wal', '-shm'))
+                if reconcile and not database and previous == (current,) and target.is_file():
+                    index.execute('update files set seen=1 where path=?', (key,))
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                before = digest(path)
+                shutil.copy2(path, target)
+                if digest(target) != before or digest(path) != before:
+                    raise SourceChanged('Backup copy mismatch: ' + str(path))
+                if signature(path) != current:
+                    raise SourceChanged('File changed while copying: ' + str(path))
+                if index is not None:
+                    index.execute('insert or replace into files values (?,?,?,?,?)',
+                                  (key, current, before[0], before[1], int(reconcile)))
+            except (SourceChanged, FileNotFoundError):
+                if index is None or reconcile: raise
+                # A live file can change during precopy. It is never accepted
+                # until recopy/reconciliation under the existing writer locks.
+                continue
         else:
-            raise RuntimeError('Backup refuses special files: ' + str(path))
+            if path.exists(): raise RuntimeError('Backup refuses special files: ' + str(path))
+            if reconcile or index is None: raise FileNotFoundError(path)
 
 
 def sqlite_checks(root):
     checked = []
-    for path in sorted(root.rglob('*')):
+    for path in tree(root):
+        if path.is_symlink(): raise RuntimeError('Symlink in staged backup')
         if not path.is_file(): continue
         with path.open('rb') as stream:
             if stream.read(16) != b'SQLite format 3\x00': continue
@@ -106,44 +173,138 @@ def sqlite_checks(root):
                 if result != [('ok',)]: raise RuntimeError('SQLite integrity check failed: ' + str(path))
             finally: db.close()
         checked.append(path.relative_to(root).as_posix())
-    return checked
+    return sorted(checked)
 
 
-def seal(root):
+def seal(root, index=None):
     checked = sqlite_checks(root)
-    entries = []
-    for path in sorted(root.rglob('*')):
-        if path.is_symlink(): raise RuntimeError('Symlink in staged backup')
-        if not path.is_file() or path == root / 'backup-manifest.json': continue
-        sha, size = digest(path)
-        entries.append({'path': path.relative_to(root).as_posix(), 'sha256': sha, 'bytes': size})
-    value = {'schema': 'gambit_backup_v1', 'created_at': now(), 'consistency': 'worker_drained_web_stopped_writer_locks_held',
-             'file_count': len(entries), 'bytes': sum(x['bytes'] for x in entries),
-             'sqlite_checked': checked, 'entries': entries}
-    atomic_json(root / 'backup-manifest.json', value)
+    count = total = 0
+    # The spool is outside the sealed tree. Neither Paths nor manifest rows are
+    # accumulated in RAM, including while restic subsequently runs.
+    with tempfile.TemporaryFile(mode='w+t', dir=root.parent) as spool:
+        for path in tree(root):
+            if path.is_symlink(): raise RuntimeError('Symlink in staged backup')
+            if not path.is_file() or path == root / 'backup-manifest.json': continue
+            relative = path.relative_to(root).as_posix()
+            sha, size = digest(path)
+            if index is not None:
+                expected = index.execute('select sha256,bytes from files where path=? and seen=1', (relative,)).fetchone()
+                if expected != (sha, size): raise RuntimeError('Staged backup changed after verified copy: ' + relative)
+            spool.write(json.dumps({'path': relative, 'sha256': sha, 'bytes': size}, separators=(',', ':')) + '\n')
+            count += 1; total += size
+        value = {'schema': 'gambit_backup_v1', 'created_at': now(), 'consistency': 'worker_drained_web_stopped_writer_locks_held',
+                 'file_count': count, 'bytes': total, 'sqlite_checked': checked}
+        fd, temporary = tempfile.mkstemp(dir=root, prefix='.manifest-')
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                stream.write('{"entries":[')
+                spool.seek(0)
+                for number, row in enumerate(spool):
+                    if number: stream.write(',')
+                    stream.write(row.rstrip('\n'))
+                stream.write('],')
+                stream.write(json.dumps(value, sort_keys=True)[1:] + '\n')
+                stream.flush(); os.fsync(stream.fileno())
+            os.replace(temporary, root / 'backup-manifest.json')
+            descriptor = os.open(root, os.O_RDONLY)
+            try: os.fsync(descriptor)
+            finally: os.close(descriptor)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
     return value
 
 
+class JsonReader:
+    """Bounded JSON token reader for both historical and new v1 manifests."""
+    def __init__(self, stream):
+        self.stream, self.buffer, self.position, self.eof = stream, '', 0, False
+        self.decoder = json.JSONDecoder()
+
+    def fill(self):
+        remaining = self.buffer[self.position:]
+        if len(remaining) > 1024 * 1024: raise RuntimeError('Oversized backup manifest entry')
+        chunk = self.stream.read(64 * 1024)
+        self.buffer, self.position = remaining + chunk, 0
+        self.eof = not chunk
+
+    def peek(self):
+        while True:
+            while self.position < len(self.buffer) and self.buffer[self.position].isspace(): self.position += 1
+            if self.position < len(self.buffer): return self.buffer[self.position]
+            if self.eof: return ''
+            self.fill()
+
+    def take(self, token):
+        if self.peek() != token: raise RuntimeError('Malformed backup manifest')
+        self.position += 1
+
+    def value(self):
+        self.peek()
+        while True:
+            try: value, end = self.decoder.raw_decode(self.buffer, self.position)
+            except json.JSONDecodeError:
+                if self.eof: raise RuntimeError('Malformed backup manifest') from None
+                self.fill(); continue
+            # A scalar number may end exactly on a read boundary. Refill before
+            # accepting it so 123 + 456 cannot be parsed as the value 123.
+            if not self.eof and (end == len(self.buffer) or self.buffer[end] not in ' \t\r\n,}:]'):
+                self.fill(); continue
+            self.position = end
+            return value
+
+
+def manifest_entries(stream, metadata):
+    reader = JsonReader(stream); reader.take('{'); keys = set()
+    while reader.peek() != '}':
+        if keys: reader.take(',')
+        key = reader.value()
+        if not isinstance(key, str) or key in keys: raise RuntimeError('Duplicate or invalid backup manifest key')
+        keys.add(key); reader.take(':')
+        if key == 'entries':
+            reader.take('['); first = True
+            while reader.peek() != ']':
+                if not first: reader.take(',')
+                first = False
+                entry = reader.value()
+                if not isinstance(entry, dict): raise RuntimeError('Invalid backup manifest entry')
+                yield entry
+            reader.take(']')
+        else: metadata[key] = reader.value()
+    reader.take('}')
+    if reader.peek() or 'entries' not in keys or metadata.get('schema') != 'gambit_backup_v1':
+        raise RuntimeError('Malformed or unsupported backup manifest')
+
+
 def verify(root):
-    root = Path(root).resolve()
-    value = json.loads((root / 'backup-manifest.json').read_text())
-    if any(p.is_symlink() for p in root.rglob('*')):
-        raise RuntimeError('Symlink in restored backup')
-    seen = set()
-    for entry in value['entries']:
-        relative = Path(entry['path']); path = root / relative
-        if (relative.is_absolute() or '..' in relative.parts or path.is_symlink()
-                or not path.resolve().is_relative_to(root) or entry['path'] in seen):
-            raise RuntimeError('Unsafe or duplicate backup manifest path')
-        seen.add(entry['path'])
-        if digest(path) != (entry['sha256'], entry['bytes']):
-            raise RuntimeError('Restored byte mismatch: ' + entry['path'])
-    actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file() and p != root / 'backup-manifest.json'}
-    if actual != seen or len(seen) != value['file_count']:
+    root = Path(root).resolve(); value = {}; count = total = 0
+    # Uniqueness is checked on disk; a Python set of every path also grows too
+    # large on the real research store. The restored tree remains read-only.
+    with tempfile.TemporaryDirectory(prefix='gambit-backup-inventory-') as folder:
+        seen = sqlite3.connect(Path(folder) / 'inventory.sqlite3')
+        try:
+            seen.execute('pragma cache_size=-2048'); seen.execute('pragma journal_mode=off')
+            seen.execute('create table paths (path text primary key) without rowid')
+            with (root / 'backup-manifest.json').open() as stream:
+                for entry in manifest_entries(stream, value):
+                    relative = Path(entry['path']); path = root / relative
+                    if (relative.is_absolute() or '..' in relative.parts or path.is_symlink()
+                            or relative.as_posix() != entry['path'] or not path.resolve().is_relative_to(root)):
+                        raise RuntimeError('Unsafe or duplicate backup manifest path')
+                    try: seen.execute('insert into paths values (?)', (entry['path'],))
+                    except sqlite3.IntegrityError: raise RuntimeError('Unsafe or duplicate backup manifest path') from None
+                    if digest(path) != (entry['sha256'], entry['bytes']):
+                        raise RuntimeError('Restored byte mismatch: ' + entry['path'])
+                    count += 1; total += entry['bytes']
+        finally: seen.close()
+    actual = 0
+    for path in tree(root):
+        if path.is_symlink(): raise RuntimeError('Symlink in restored backup')
+        if path.is_file() and path != root / 'backup-manifest.json': actual += 1
+    if actual != count or count != value['file_count'] or total != value['bytes']:
         raise RuntimeError('Restored file inventory mismatch')
     if sqlite_checks(root) != value['sqlite_checked']:
         raise RuntimeError('Restored SQLite inventory mismatch')
-    return {'files_verified': len(seen), 'bytes_verified': value['bytes'], 'sqlite_checked': value['sqlite_checked']}
+    return {'files_verified': count, 'bytes_verified': total, 'sqlite_checked': value['sqlite_checked']}
 
 
 class Services:
@@ -213,19 +374,49 @@ def recover_services():
     services.remember([])
 
 
-def stage(sources, destination, services):
+def stage(sources, destination, services, progress=None):
     root = sources['research_platform']
-    with quiescent(root, services):
-        destination.mkdir(parents=True, exist_ok=False, mode=0o700)
-        for label, source in sources.items():
-            if Path(label).name != label: raise RuntimeError('Unsafe backup label')
-            copy_tree(source, destination / label)
-        return seal(destination)
+    destination = Path(destination)
+    destination.mkdir(parents=True, exist_ok=False, mode=0o700)
+    def report(phase):
+        if progress: progress(phase)
+    with tempfile.TemporaryDirectory(prefix='gambit-precopy-', dir=destination.parent) as folder:
+        index = sqlite3.connect(Path(folder) / 'verified.sqlite3')
+        try:
+            index.execute('pragma cache_size=-2048'); index.execute('pragma journal_mode=off')
+            index.execute('create table files (path text primary key, signature text, sha256 text, bytes integer, seen integer) without rowid')
+            report('precopy_services_online')
+            for label, source in sources.items():
+                if Path(label).name != label or label in {'.', '..', ''}: raise RuntimeError('Unsafe backup label')
+                copy_tree(source, destination / label, index=index, label=label)
+            index.commit()
+            with quiescent(root, services):
+                with copy_deadline():
+                    report('quiescent_reconciliation')
+                    for label, source in sources.items():
+                        copy_tree(source, destination / label, index=index, label=label, reconcile=True)
+                    for path in tree(destination):
+                        if path.is_symlink(): raise RuntimeError('Symlink in staged backup')
+                        if path.is_file() and not index.execute('select 1 from files where path=? and seen=1', (path.relative_to(destination).as_posix(),)).fetchone():
+                            path.unlink()  # Disposable precopy only; never the authority.
+                    index.commit()
+            # All remaining reads are against the completed private copy. Source
+            # writers and the website can run throughout SQLite/hash verification.
+            report('verifying_staged_copy_services_online')
+            return seal(destination, index)
+        finally: index.close()
 
 
 def restic(*args):
     # Credentials are supplied by the root-only service EnvironmentFile.
-    result = subprocess.run(['restic', *args], check=True, text=True, capture_output=True)
+    try:
+        result = subprocess.run(['restic', *args], check=True, text=True, capture_output=True)
+    except subprocess.CalledProcessError as error:
+        # Detailed output stays root-private, outside health responses/journals.
+        atomic_json(STATE / 'last-restic-failure.json',
+                    {'at': now(), 'command': args[0], 'exit_code': error.returncode,
+                     'stdout': error.stdout, 'stderr': error.stderr})
+        raise
     return result.stdout
 
 
@@ -241,21 +432,32 @@ def run_backup():
         try:
             if STAGE.is_symlink(): raise RuntimeError('Unsafe staging directory')
             if STAGE.exists(): shutil.rmtree(STAGE)  # Disposable copy only; never the authority.
-            sources = {'research_platform': root, 'auth': VOLUME / 'auth', 'configuration': Path('/etc/gambit')}
-            size = sum(p.stat().st_size for source in sources.values() for p in source.rglob('*')
-                       if p.is_file() and not p.is_symlink() and not omitted(p.relative_to(source)))
+            sources = {'research_platform': root, 'auth': VOLUME / 'auth', 'configuration': CONFIGURATION}
+            size = sum(p.stat().st_size for source in sources.values() for p in tree(source, omit=True)
+                       if p.is_file() and not p.is_symlink())
             if shutil.disk_usage(STATE).free < size * 1.1 + 1024 ** 3:
                 raise RuntimeError('Insufficient backup staging capacity; services were not stopped')
-            manifest = stage(sources, STAGE, Services())
-            status.update(status='uploading', staged_files=manifest['file_count'], staged_bytes=manifest['bytes'])
+            def progress(phase):
+                status.update(phase=phase, phase_started_at=now())
+                atomic_json(STATE / 'status.json', status)
+            progress('unlocking_stale_repository_locks')
+            # Serialized by backup.lock. Standard unlock removes only stale
+            # locks; never use --remove-all or remove a live owner's lock.
+            restic('unlock')
+            manifest = stage(sources, STAGE, Services(), progress)
+            status.update(status='uploading', phase='encrypted_upload', phase_started_at=now(),
+                          staged_files=manifest['file_count'], staged_bytes=manifest['bytes'])
             atomic_json(STATE / 'status.json', status)
             output = restic('backup', '--json', '--tag', 'gambit-production', str(STAGE))
             summary = next(json.loads(line) for line in output.splitlines() if json.loads(line).get('message_type') == 'summary')
             snapshot = summary['snapshot_id']
+            status['uploaded_snapshot_id'] = snapshot
+            progress('retention')
             # Retention applies only to production snapshots from this stable path.
             restic('forget', '--tag', 'gambit-production', '--path', str(STAGE), '--keep-daily', '7', '--keep-weekly', '4', '--prune')
+            progress('repository_integrity_check')
             restic('check')
-            status.update(status='succeeded', finished_at=now(), snapshot_id=snapshot)
+            status.update(status='succeeded', phase='complete', finished_at=now(), snapshot_id=snapshot)
             atomic_json(STATE / 'status.json', status)
             print(json.dumps(status))
         except Exception as error:

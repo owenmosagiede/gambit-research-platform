@@ -9,6 +9,9 @@ ConditionPathExists=/etc/gambit/backup-enabled
 Type=oneshot
 User=root
 EnvironmentFile=/etc/gambit/backup/restic.env
+Environment=GOMEMLIMIT=512MiB GOGC=25 GOMAXPROCS=2
+MemoryHigh=1536M
+MemoryMax=1536M
 ExecStart=/opt/gambit/venv/bin/python /srv/gambit/research_platform/deploy/backup_cloud.py run
 ExecStopPost=/opt/gambit/venv/bin/python /srv/gambit/research_platform/deploy/backup_cloud.py recover-services
 TimeoutStartSec=infinity

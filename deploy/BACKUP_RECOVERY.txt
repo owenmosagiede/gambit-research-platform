@@ -25,21 +25,51 @@ with matching OS prerequisites. Check the full Python build string and source
 release before allowing frozen work to execute. Operations/UI release archives
 are present in that same encrypted snapshot. See outputs/cloud_cutover_verification.txt.
 
-CONSISTENCY
-Daily backup first drains the worker through its existing SIGTERM behavior. The
-web application can serve and queue new work during that drain. Next it stops
-the web service, takes all research ownership/writer locks and copies the store,
-authentication database and Gambit configuration into a protected staging area.
-Queued submissions and historical results are preserved. Stale worker ownership
-and lock files are excluded. No research method or frozen job identity is changed.
+CONSISTENCY AND BOUNDED DOWNTIME
+Daily backup first precopies the store, authentication database and Gambit
+configuration while services remain online. A temporary on-disk SQLite index
+records each successfully verified source file's device, inode, size, mtime,
+ctime, mode and content hash. Changed/disappearing live files are left unaccepted.
+This index is disposable backup bookkeeping, never a research record.
 
-All copied bytes are checked against their source. SQLite integrity is checked
-on temporary database/WAL clones so verification cannot mutate the saved copy.
+The backup then drains the worker through its existing SIGTERM behavior. The
+website remains available during that drain. It stops the web service and takes
+the existing research service/executor/writer locks. Every source path is visited
+again. A verified precopy is reused only when its complete recorded source
+signature still matches; changed/new files are recopied and checked. Deleted or
+renamed precopy files are removed from staging. A source mutation or inconsistent
+final copy fails the backup. Source files are never deleted or overwritten.
+Authentication files, SQLite databases and WAL/SHM sidecars are always recopied
+under quiescence: memory-mapped bookkeeping can change without a new timestamp.
+
+Only this stopped-services reconciliation has a 30-minute alarm. On expiry the
+backup fails and restores the original service set. Worker draining remains
+unbounded so no research job is force-killed to meet a backup deadline. Queued
+submissions and historical results are preserved. Stale worker ownership and
+lock files are excluded. No research method or frozen job identity is changed.
+
+All copied bytes are checked against their source. Services restart immediately
+after the consistent copy is finalized. SQLite integrity and manifest hashing
+then run against the private staged copy while Gambit is online. Staged hashes
+must match the hashes verified during copying, including reused precopy files.
+SQLite checks use temporary database/WAL clones so they cannot mutate saved bytes.
+Only after these checks can upload begin or a successful snapshot be recorded.
 Only services that were running before the backup are restarted, including on
 ordinary failure. ExecStopPost uses a durable journal to recover stopped services
 if the backup process dies. Root/admin changes must not be made during a backup.
 No new onboarding/other write services may be installed without adding them to
 this quiescence contract. The current deployed design has only web and worker.
+
+Tree traversal, manifest writing and restore verification stream their inputs;
+they do not retain a list of every path or manifest row in memory. The existing
+gambit_backup_v1 manifest format and historical backups remain readable. The
+sealing function returns only a small summary, releasing its index before
+restic runs. The service bounds Go memory with GOMEMLIMIT=512MiB, GOGC=25,
+GOMAXPROCS=2 and a 1536MiB hard service budget. MemoryHigh equals that hard cap,
+avoiding a lower soft threshold that can trap an unreclaimable working set in
+continuous reclaim. This conservative profile leaves room on the 4GiB host for
+the website, readers and research worker; verify the actual full backup after
+any separately reviewed resource change.
 
 The application restarts BEFORE encrypted upload. Upload failure therefore does
 not leave research offline. The timer runs daily at 11:00 UTC with up to ten
@@ -63,6 +93,20 @@ timer disabled until a full backup and restore check have passed. Create the
 root-owned /etc/gambit/backup-enabled marker, run the service once, inspect its
 status and snapshot ID, then enable/start gambit-backup.timer. This is ordinary
 server scheduling and does not depend on an AI agent or an open browser/laptop.
+
+Backup status also records its current phase: precopy_services_online,
+quiescent_reconciliation, or verifying_staged_copy_services_online. A staging or
+uploading status is not a completed backup. Success still requires upload,
+retention and restic check; failures never satisfy the fresh-backup gates.
+
+While holding the local backup lock, each run first executes standard restic
+unlock, which removes only stale repository locks left by interrupted processes.
+It never uses --remove-all. A repository preflight failure is recorded before
+services stop. Upload, retention and repository_integrity_check have distinct
+phases. An uploaded_snapshot_id alone is not success: the original retention
+and check must both pass. Detailed restic failures are retained in root-private
+/var/lib/gambit-backup/last-restic-failure.json, never exposed through public
+health responses or dumped to the service journal.
 
 RESTORE REHEARSAL
 Load the root-only /etc/gambit/backup/restic.env into the administrative environment.
