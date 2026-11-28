@@ -99,6 +99,15 @@ quiescent_reconciliation, or verifying_staged_copy_services_online. A staging or
 uploading status is not a completed backup. Success still requires upload,
 retention and restic check; failures never satisfy the fresh-backup gates.
 
+While holding the local backup lock, each run first executes standard restic
+unlock, which removes only stale repository locks left by interrupted processes.
+It never uses --remove-all. A repository preflight failure is recorded before
+services stop. Upload, retention and repository_integrity_check have distinct
+phases. An uploaded_snapshot_id alone is not success: the original retention
+and check must both pass. Detailed restic failures are retained in root-private
+/var/lib/gambit-backup/last-restic-failure.json, never exposed through public
+health responses or dumped to the service journal.
+
 RESTORE REHEARSAL
 Load the root-only /etc/gambit/backup/restic.env into the administrative environment.
 Run deploy/backup_cloud.py restore-check --snapshot EXACT_HEX_SNAPSHOT_ID using

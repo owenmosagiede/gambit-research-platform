@@ -409,7 +409,14 @@ def stage(sources, destination, services, progress=None):
 
 def restic(*args):
     # Credentials are supplied by the root-only service EnvironmentFile.
-    result = subprocess.run(['restic', *args], check=True, text=True, capture_output=True)
+    try:
+        result = subprocess.run(['restic', *args], check=True, text=True, capture_output=True)
+    except subprocess.CalledProcessError as error:
+        # Detailed output stays root-private, outside health responses/journals.
+        atomic_json(STATE / 'last-restic-failure.json',
+                    {'at': now(), 'command': args[0], 'exit_code': error.returncode,
+                     'stdout': error.stdout, 'stderr': error.stderr})
+        raise
     return result.stdout
 
 
@@ -433,16 +440,24 @@ def run_backup():
             def progress(phase):
                 status.update(phase=phase, phase_started_at=now())
                 atomic_json(STATE / 'status.json', status)
+            progress('unlocking_stale_repository_locks')
+            # Serialized by backup.lock. Standard unlock removes only stale
+            # locks; never use --remove-all or remove a live owner's lock.
+            restic('unlock')
             manifest = stage(sources, STAGE, Services(), progress)
-            status.update(status='uploading', staged_files=manifest['file_count'], staged_bytes=manifest['bytes'])
+            status.update(status='uploading', phase='encrypted_upload', phase_started_at=now(),
+                          staged_files=manifest['file_count'], staged_bytes=manifest['bytes'])
             atomic_json(STATE / 'status.json', status)
             output = restic('backup', '--json', '--tag', 'gambit-production', str(STAGE))
             summary = next(json.loads(line) for line in output.splitlines() if json.loads(line).get('message_type') == 'summary')
             snapshot = summary['snapshot_id']
+            status['uploaded_snapshot_id'] = snapshot
+            progress('retention')
             # Retention applies only to production snapshots from this stable path.
             restic('forget', '--tag', 'gambit-production', '--path', str(STAGE), '--keep-daily', '7', '--keep-weekly', '4', '--prune')
+            progress('repository_integrity_check')
             restic('check')
-            status.update(status='succeeded', finished_at=now(), snapshot_id=snapshot)
+            status.update(status='succeeded', phase='complete', finished_at=now(), snapshot_id=snapshot)
             atomic_json(STATE / 'status.json', status)
             print(json.dumps(status))
         except Exception as error:

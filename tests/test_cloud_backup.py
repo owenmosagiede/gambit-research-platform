@@ -6,6 +6,7 @@ import io
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import tempfile
 import time
 import unittest
@@ -280,3 +281,67 @@ class CloudBackupTests(unittest.TestCase):
         self.assertTrue(all(state == 'active' for state in phases[0][1].values()))
         self.assertTrue(all(state == 'inactive' for state in phases[1][1].values()))
         self.assertTrue(all(state == 'active' for state in phases[2][1].values()))
+
+    def run_backup_fixture(self, operator):
+        volume = self.base / 'volume'; root = volume / 'research_platform'; root.mkdir(parents=True)
+        (root / 'migration-manifest.json').write_text('{}')
+        (root / 'history.json').write_text('immutable fixture history')
+        (volume / 'auth').mkdir(); configuration = self.base / 'configuration'; configuration.mkdir()
+        services = FakeServices(); state = self.base / 'state'
+        with patch.object(backup, 'VOLUME', volume), patch.object(backup, 'STATE', state), \
+             patch.object(backup, 'STAGE', self.base / 'staging'), patch.object(backup, 'CONFIGURATION', configuration), \
+             patch.object(backup.Path, 'is_mount', return_value=True), patch.object(backup, 'Services', return_value=services), \
+             patch.object(backup, 'restic', side_effect=lambda *args: operator(args, services, state)):
+            backup.run_backup()
+        return json.loads((state / 'status.json').read_text()), services
+
+    def test_full_backup_cleans_only_stale_locks_and_finishes_after_retention_and_check(self):
+        commands = []; phases = []
+        def operator(args, services, state):
+            commands.append(args)
+            phases.append(json.loads((state / 'status.json').read_text())['phase'])
+            self.assertTrue(all(value == 'active' for value in services.states.values()))
+            if args[0] == 'backup': return json.dumps({'message_type': 'summary', 'snapshot_id': 'a' * 64}) + '\n'
+            return ''
+        status, services = self.run_backup_fixture(operator)
+        self.assertEqual([args[0] for args in commands], ['unlock', 'backup', 'forget', 'check'])
+        self.assertEqual(commands[0], ('unlock',))
+        self.assertFalse(any('--remove-all' in args for args in commands))
+        self.assertEqual(phases, ['unlocking_stale_repository_locks', 'encrypted_upload', 'retention', 'repository_integrity_check'])
+        self.assertEqual(status['status'], 'succeeded')
+        self.assertEqual(status['phase'], 'complete')
+        self.assertEqual(status['snapshot_id'], 'a' * 64)
+
+    def test_retention_failure_preserves_uploaded_snapshot_without_claiming_success(self):
+        def operator(args, services, state):
+            if args[0] == 'backup': return json.dumps({'message_type': 'summary', 'snapshot_id': 'b' * 64}) + '\n'
+            if args[0] == 'forget': raise RuntimeError('fixture retention failure')
+            return ''
+        with self.assertRaisesRegex(RuntimeError, 'fixture retention failure'):
+            self.run_backup_fixture(operator)
+        status = json.loads((self.base / 'state/status.json').read_text())
+        self.assertEqual(status['status'], 'failed')
+        self.assertEqual(status['phase'], 'retention')
+        self.assertEqual(status['uploaded_snapshot_id'], 'b' * 64)
+        self.assertNotIn('snapshot_id', status)
+
+    def test_repository_failure_happens_before_services_stop(self):
+        observed = []
+        def operator(args, services, state):
+            observed.extend(services.events)
+            raise RuntimeError('fixture repository unavailable')
+        with self.assertRaisesRegex(RuntimeError, 'fixture repository unavailable'):
+            self.run_backup_fixture(operator)
+        self.assertEqual(observed, [])
+        self.assertFalse((self.base / 'staging').exists())
+        self.assertEqual(json.loads((self.base / 'state/status.json').read_text())['status'], 'failed')
+
+    def test_restic_failure_details_are_retained_in_private_diagnostics(self):
+        error = subprocess.CalledProcessError(1, ['restic', 'forget'], output='fixture output', stderr='fixture detail')
+        with patch.object(backup, 'STATE', self.base), patch.object(backup.subprocess, 'run', side_effect=error):
+            with self.assertRaises(subprocess.CalledProcessError): backup.restic('forget')
+        path = self.base / 'last-restic-failure.json'; detail = json.loads(path.read_text())
+        self.assertEqual(detail['command'], 'forget')
+        self.assertEqual(detail['exit_code'], 1)
+        self.assertEqual(detail['stderr'], 'fixture detail')
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
